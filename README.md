@@ -44,6 +44,7 @@
 - **Python 3.10+** - 运行脚本所需（[下载地址](https://www.python.org/downloads/)）
 - **uv** - Python 包与环境管理工具（[安装文档](https://docs.astral.sh/uv/)）
 - **Node.js 18+** - 运行 React 前端开发服务（[下载地址](https://nodejs.org/)）
+- **pnpm** - 前端包管理器（`npm install -g pnpm` 或 [安装文档](https://pnpm.io/installation)）
 - **Claude Code** - 命令行 AI 助手（[使用指南](https://docs.anthropic.com/claude-code)）
 - **Anthropic API 密钥** - 用于 Claude Agent SDK（设置 `ANTHROPIC_API_KEY`）
 - **ffmpeg** - 视频处理工具（[下载地址](https://ffmpeg.org/download.html)）
@@ -64,7 +65,7 @@ uv sync
 
 # 3. 安装前端依赖
 cd frontend
-npm install
+pnpm install
 cd ..
 
 # 4. 配置 API 密钥
@@ -106,7 +107,7 @@ uv run uvicorn webui.server.app:app --reload --port 8080
 
 # 终端 2：启动前端开发服务
 cd frontend
-npm run dev
+pnpm dev
 
 # 在浏览器中打开
 # http://localhost:5173
@@ -116,7 +117,7 @@ npm run dev
 
 ```bash
 cd frontend
-npm run build
+pnpm build
 cd ..
 uv run uvicorn webui.server.app:app --reload --port 8080
 # 然后访问 http://localhost:8080

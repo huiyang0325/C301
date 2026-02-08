@@ -292,8 +292,8 @@ uv run uvicorn webui.server.app:app --reload --port 8080
 
 # 终端 2：启动前端
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 在浏览器中打开 http://localhost:5173
