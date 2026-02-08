@@ -16,6 +16,7 @@ import { LandingPage } from "./components/landing-page.js";
 import { useAppRouter } from "./hooks/use-app-router.js";
 import { useDocumentTitle } from "./hooks/use-document-title.js";
 import { useProjectsState } from "./hooks/use-projects-state.js";
+import { useTasksState } from "./hooks/use-tasks-state.js";
 import { useUsageState } from "./hooks/use-usage-state.js";
 import { useAssistantState } from "./hooks/use-assistant-state.js";
 
@@ -85,6 +86,18 @@ function App() {
         usagePageSize,
     } = useUsageState({
         routeKind: route.kind,
+        pushToast,
+    });
+
+    const {
+        tasks: tasksData,
+        stats: tasksStats,
+        connected: tasksConnected,
+        queuedTasks: tasksQueuedTasks,
+        runningTasks: tasksRunningTasks,
+        completedTasks: tasksCompletedTasks,
+        refreshTasks: tasksRefresh,
+    } = useTasksState({
         pushToast,
     });
 
@@ -181,6 +194,13 @@ function App() {
             handleRenameSession=${handleRenameSession}
             handleDeleteSession=${handleDeleteSession}
             messageArea=${assistantMessageArea}
+            tasksData=${tasksData}
+            tasksStats=${tasksStats}
+            tasksConnected=${tasksConnected}
+            tasksQueuedTasks=${tasksQueuedTasks}
+            tasksRunningTasks=${tasksRunningTasks}
+            tasksCompletedTasks=${tasksCompletedTasks}
+            tasksRefresh=${tasksRefresh}
             usageProjects=${usageProjects}
             usageFilters=${usageFilters}
             setUsageFilters=${setUsageFilters}

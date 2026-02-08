@@ -3,7 +3,7 @@ import htm from "htm";
 
 import { PROJECT_TABS, ROUTE_KIND, VIEW_META } from "../constants.js";
 import { cn } from "../utils.js";
-import { IconAssistant, IconProject, IconSpark, IconUsage } from "./icons.js";
+import { IconAssistant, IconProject, IconSpark, IconTasks, IconUsage } from "./icons.js";
 
 const html = htm.bind(React.createElement);
 
@@ -19,7 +19,7 @@ export function AppShell({
     children,
 }) {
     const fixedViewportLayout =
-        route.kind === ROUTE_KIND.ASSISTANT || route.kind === ROUTE_KIND.WORKSPACE;
+        route.kind === ROUTE_KIND.ASSISTANT || route.kind === ROUTE_KIND.WORKSPACE || route.kind === ROUTE_KIND.TASKS;
     const currentWorkspaceTabLabel =
         PROJECT_TABS.find((item) => item.key === route.tab)?.label || PROJECT_TABS[0].label;
     const workspaceTitle = selectedProjectItem?.title || route.projectName || "未选择项目";
@@ -66,6 +66,18 @@ export function AppShell({
                         <span>对话管理</span>
                     </button>
                     <button
+                        onClick=${() => onNavigate({ kind: ROUTE_KIND.TASKS })}
+                        className=${cn(
+                            "app-menu-item w-full rounded-xl px-3 py-2.5 flex items-center gap-3 text-sm border",
+                            route.kind === ROUTE_KIND.TASKS
+                                ? "border-neon-400/40 bg-neon-500/10 text-neon-300"
+                                : "border-white/10 bg-white/5 text-slate-300 hover:border-white/25"
+                        )}
+                    >
+                        <${IconTasks} />
+                        <span>任务队列</span>
+                    </button>
+                    <button
                         onClick=${() => onNavigate({ kind: ROUTE_KIND.USAGE })}
                         className=${cn(
                             "app-menu-item w-full rounded-xl px-3 py-2.5 flex items-center gap-3 text-sm border",
@@ -109,9 +121,10 @@ export function AppShell({
                               `}
                     </div>
 
-                    <div className="md:hidden grid grid-cols-3 gap-1.5">
+                    <div className="md:hidden grid grid-cols-4 gap-1.5">
                         <button onClick=${() => onNavigate({ kind: ROUTE_KIND.PROJECTS })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.PROJECTS || route.kind === ROUTE_KIND.WORKSPACE ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>项目</button>
                         <button onClick=${() => onNavigate({ kind: ROUTE_KIND.ASSISTANT })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.ASSISTANT ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>对话</button>
+                        <button onClick=${() => onNavigate({ kind: ROUTE_KIND.TASKS })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.TASKS ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>队列</button>
                         <button onClick=${() => onNavigate({ kind: ROUTE_KIND.USAGE })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.USAGE ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>费用</button>
                     </div>
 

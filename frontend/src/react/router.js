@@ -37,6 +37,10 @@ export function parseRouteFromLocation() {
         return { kind: ROUTE_KIND.ASSISTANT };
     }
 
+    if (pathname === "/app/tasks") {
+        return { kind: ROUTE_KIND.TASKS };
+    }
+
     if (pathname === "/app/usage") {
         return { kind: ROUTE_KIND.USAGE };
     }
@@ -66,6 +70,10 @@ export function buildUrl(route) {
 
     if (route.kind === ROUTE_KIND.ASSISTANT) {
         return "/app/assistant";
+    }
+
+    if (route.kind === ROUTE_KIND.TASKS) {
+        return "/app/tasks";
     }
 
     if (route.kind === ROUTE_KIND.USAGE) {

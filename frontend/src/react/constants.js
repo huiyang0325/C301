@@ -3,6 +3,7 @@ export const ROUTE_KIND = {
     PROJECTS: "projects",
     WORKSPACE: "workspace",
     ASSISTANT: "assistant",
+    TASKS: "tasks",
     USAGE: "usage",
 };
 
@@ -27,6 +28,10 @@ export const VIEW_META = {
     [ROUTE_KIND.ASSISTANT]: {
         label: "对话管理",
         description: "集中管理助手会话，统一查看技能调用记录。",
+    },
+    [ROUTE_KIND.TASKS]: {
+        label: "任务队列",
+        description: "查看图片和视频生成任务的实时状态。",
     },
     [ROUTE_KIND.USAGE]: {
         label: "费用统计",

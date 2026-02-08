@@ -4,6 +4,7 @@ import htm from "htm";
 import { DEFAULT_TAB, ROUTE_KIND } from "../constants.js";
 import { AssistantPage } from "../pages/assistant-page.js";
 import { ProjectsPage } from "../pages/projects-page.js";
+import { TasksPage } from "../pages/tasks-page.js";
 import { UsagePage } from "../pages/usage-page.js";
 import { WorkspacePage } from "../pages/workspace-page.js";
 
@@ -36,6 +37,14 @@ export function DashboardRouterView({
     handleRenameSession,
     handleDeleteSession,
     messageArea,
+    // 任务队列 props
+    tasksData,
+    tasksStats,
+    tasksConnected,
+    tasksQueuedTasks,
+    tasksRunningTasks,
+    tasksCompletedTasks,
+    tasksRefresh,
     usageProjects,
     usageFilters,
     setUsageFilters,
@@ -100,6 +109,20 @@ export function DashboardRouterView({
                 onRenameSession=${handleRenameSession}
                 onDeleteSession=${handleDeleteSession}
                 messageArea=${messageArea}
+            />
+        `;
+    }
+
+    if (route.kind === ROUTE_KIND.TASKS) {
+        return html`
+            <${TasksPage}
+                tasks=${tasksData}
+                stats=${tasksStats}
+                connected=${tasksConnected}
+                queuedTasks=${tasksQueuedTasks}
+                runningTasks=${tasksRunningTasks}
+                completedTasks=${tasksCompletedTasks}
+                onRefresh=${tasksRefresh}
             />
         `;
     }
