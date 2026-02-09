@@ -3,6 +3,7 @@ Assistant service orchestration.
 """
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,7 @@ except ImportError:
 class AssistantReply:
     text: str
     action: Optional[dict[str, Any]] = None
+    content_blocks: Optional[list[dict[str, Any]]] = None
 
 
 class AssistantService:
@@ -245,11 +247,18 @@ class AssistantService:
                 },
             )
             reply = await self._build_stream_reply(session=session, text=text, stream_request=stream_request)
-            reply_text = reply.text.strip() or "任务已完成，但未生成可显示内容。"
+
+            # If we have structured content blocks, serialize them as JSON
+            # Otherwise, fall back to plain text
+            if reply.content_blocks:
+                message_content = json.dumps(reply.content_blocks, ensure_ascii=False)
+            else:
+                message_content = reply.text.strip() or "任务已完成，但未生成可显示内容。"
+
             assistant_message = self.store.add_message(
                 session_id=session.id,
                 role="assistant",
-                content=reply_text,
+                content=message_content,
                 event_type="message",
             )
             await stream_request.emit(
@@ -292,7 +301,9 @@ class AssistantService:
                 return await self._reply_with_claude_sdk_stream(
                     session=session,
                     user_text=text,
-                    on_delta=lambda chunk: stream_request.emit("delta", {"text": chunk}),
+                    on_delta=lambda chunk: stream_request.emit("delta", {"type": "text_delta", "text": chunk}),
+                    on_tool_use=lambda block: stream_request.emit("tool_use", block),
+                    on_tool_result=lambda block: stream_request.emit("tool_result", block),
                 )
             except Exception as exc:
                 error_detail = self._format_sdk_error(exc)
@@ -467,6 +478,8 @@ class AssistantService:
         session: AgentSession,
         user_text: str,
         on_delta: Optional[Callable[[str], Awaitable[Any]]],
+        on_tool_use: Optional[Callable[[dict[str, Any]], Awaitable[Any]]] = None,
+        on_tool_result: Optional[Callable[[dict[str, Any]], Awaitable[Any]]] = None,
     ) -> AssistantReply:
         self._apply_sdk_network_env()
         prompt = self._build_sdk_prompt(session, user_text)
@@ -475,23 +488,53 @@ class AssistantService:
         stream_messages: list[Any] = []
         merged_text = ""
         emitted_delta = False
+        all_content_blocks: list[dict[str, Any]] = []
+        tool_use_map: dict[str, str] = {}  # tool_use_id -> tool_name
+
         async for message in query(prompt=prompt, options=options):
             stream_messages.append(message)
-            partial_delta = self._extract_partial_delta(message)
-            if partial_delta:
-                merged_text += partial_delta
-                emitted_delta = True
-                if on_delta:
-                    await on_delta(partial_delta)
-                continue
 
-            candidate = self._extract_text_candidate(message)
-            if not candidate:
-                continue
-            merged_text, delta = self._accumulate_stream_candidate(merged_text, candidate)
-            if on_delta and delta:
-                emitted_delta = True
-                await on_delta(delta)
+            # Extract and emit content blocks
+            blocks = self._extract_content_blocks(message)
+
+            for block in blocks:
+                # Track tool_use_id to name mapping
+                if block["type"] == "tool_use":
+                    tool_use_map[block.get("id", "")] = block.get("name", "")
+                # Enrich tool_result with tool_name
+                elif block["type"] == "tool_result":
+                    tool_use_id = block.get("tool_use_id", "")
+                    block["tool_name"] = tool_use_map.get(tool_use_id, "")
+
+                all_content_blocks.append(block)
+                if block["type"] == "text":
+                    text = block["text"]
+                    if text and on_delta:
+                        merged_text += text
+                        emitted_delta = True
+                        await on_delta(text)
+                elif block["type"] == "tool_use" and on_tool_use:
+                    await on_tool_use(block)
+                elif block["type"] == "tool_result" and on_tool_result:
+                    await on_tool_result(block)
+
+            # Fallback: extract partial delta from stream events
+            if not blocks:
+                partial_delta = self._extract_partial_delta(message)
+                if partial_delta:
+                    merged_text += partial_delta
+                    emitted_delta = True
+                    if on_delta:
+                        await on_delta(partial_delta)
+                    continue
+
+                candidate = self._extract_text_candidate(message)
+                if not candidate:
+                    continue
+                merged_text, delta = self._accumulate_stream_candidate(merged_text, candidate)
+                if on_delta and delta:
+                    emitted_delta = True
+                    await on_delta(delta)
 
         reply_text = merged_text.strip() or self._extract_reply_text(stream_messages)
         if not reply_text:
@@ -503,8 +546,12 @@ class AssistantService:
             for chunk in self._split_text_chunks(reply_text):
                 await on_delta(chunk)
 
+        # Merge consecutive text blocks for cleaner storage
+        merged_blocks = self._merge_consecutive_text_blocks(all_content_blocks)
+
         return AssistantReply(
             text=reply_text,
+            content_blocks=merged_blocks if merged_blocks else None,
             action={
                 "mode": "claude_agent_sdk",
                 "success": True,
@@ -701,6 +748,24 @@ class AssistantService:
             return []
         return [value[index : index + chunk_size] for index in range(0, len(value), chunk_size)]
 
+    @staticmethod
+    def _merge_consecutive_text_blocks(
+        blocks: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Merge consecutive text blocks into single blocks for cleaner storage."""
+        if not blocks:
+            return []
+
+        merged: list[dict[str, Any]] = []
+        for block in blocks:
+            block_type = block.get("type")
+            # Only merge consecutive text blocks (not skill_content or other types)
+            if block_type == "text" and merged and merged[-1].get("type") == "text":
+                merged[-1]["text"] = merged[-1].get("text", "") + block.get("text", "")
+            else:
+                merged.append(block.copy())
+        return merged
+
     def _try_legacy_bridge(
         self, session: AgentSession, text: str
     ) -> Optional[AssistantReply]:
@@ -888,3 +953,109 @@ class AssistantService:
                 continue
             return text
         return ""
+
+    @staticmethod
+    def _clean_tool_output(content: str, max_length: int = 2000) -> str:
+        """Clean tool output by removing line numbers and truncating if too long."""
+        if not content:
+            return ""
+
+        import re
+        # Remove line number prefixes like "    1→", "   12→", "  123→"
+        lines = content.split("\n")
+        cleaned_lines = []
+        for line in lines:
+            # Match pattern: optional spaces + digits + arrow (→)
+            cleaned = re.sub(r"^\s*\d+→", "", line)
+            cleaned_lines.append(cleaned)
+
+        result = "\n".join(cleaned_lines)
+
+        # Truncate if too long, keeping head and tail
+        if len(result) > max_length:
+            head_size = max_length // 2 - 50
+            tail_size = max_length // 2 - 50
+            result = (
+                result[:head_size]
+                + "\n\n... [内容已截断] ...\n\n"
+                + result[-tail_size:]
+            )
+
+        return result.strip()
+
+    def _extract_content_blocks(self, message: Any) -> list[dict[str, Any]]:
+        """Extract ContentBlock list from SDK message."""
+        blocks: list[dict[str, Any]] = []
+
+        # Check for AssistantMessage with content list
+        content = getattr(message, "content", None)
+        if not isinstance(content, list):
+            return blocks
+
+        # Check message role to detect skill content injection
+        # SDK uses class name to distinguish message types
+        msg_type_name = type(message).__name__
+        message_role = getattr(message, "role", None)
+        is_user_message = message_role == "user" or msg_type_name == "UserMessage"
+
+        # For UserMessage, check if it has tool_use_result (tool result) or not (skill content)
+        # Skill content is injected as UserMessage with TextBlock but NO tool_use_result
+        tool_use_result = getattr(message, "tool_use_result", None)
+        is_skill_content_message = is_user_message and tool_use_result is None
+
+        def _get_attr(obj: Any, name: str, default: Any = None) -> Any:
+            """Safely get attribute from object or dict."""
+            if isinstance(obj, dict):
+                return obj.get(name, default)
+            return getattr(obj, name, default)
+
+        for block in content:
+            is_dict = isinstance(block, dict)
+            block_type = _get_attr(block, "type")
+
+            if block_type == "text" or hasattr(block, "text"):
+                text = _get_attr(block, "text", "")
+                if text:
+                    # Skill content is a UserMessage with TextBlock but NO tool_use_result
+                    if is_skill_content_message:
+                        blocks.append({"type": "skill_content", "text": text})
+                    else:
+                        blocks.append({"type": "text", "text": text})
+
+            elif block_type == "tool_use" or (not is_dict and hasattr(block, "name")):
+                blocks.append({
+                    "type": "tool_use",
+                    "id": _get_attr(block, "id", ""),
+                    "name": _get_attr(block, "name", ""),
+                    "input": _get_attr(block, "input", {}),
+                })
+
+            elif block_type == "tool_result" or (not is_dict and hasattr(block, "tool_use_id")):
+                raw_content = _get_attr(block, "content", "")
+                if isinstance(raw_content, list):
+                    # Extract text from content list
+                    text_parts = []
+                    for item in raw_content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            text_parts.append(item.get("text", ""))
+                        elif hasattr(item, "text"):
+                            text_parts.append(getattr(item, "text", ""))
+                    raw_content = "\n".join(text_parts)
+
+                blocks.append({
+                    "type": "tool_result",
+                    "tool_use_id": _get_attr(block, "tool_use_id", ""),
+                    "content": self._clean_tool_output(str(raw_content) if raw_content else ""),
+                    "is_error": _get_attr(block, "is_error", False) or False,
+                })
+
+            elif block_type == "thinking" or (not is_dict and hasattr(block, "thinking")):
+                thinking = _get_attr(block, "thinking", "")
+                if thinking:
+                    blocks.append({
+                        "type": "thinking",
+                        "thinking": thinking,
+                        "signature": _get_attr(block, "signature", ""),
+                    })
+
+        return blocks
