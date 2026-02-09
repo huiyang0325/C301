@@ -1,7 +1,46 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ROUTE_KIND } from "../constants.js";
-import { parseStreamData } from "../utils.js";
+
+function parseSsePayload(event) {
+    if (!event || typeof event.data !== "string" || !event.data) {
+        return {};
+    }
+    try {
+        return JSON.parse(event.data);
+    } catch {
+        return {};
+    }
+}
+
+function applyTurnPatch(previousTurns, patch) {
+    const current = Array.isArray(previousTurns) ? previousTurns : [];
+    if (!patch || typeof patch !== "object") {
+        return current;
+    }
+
+    const op = patch.op;
+    if (op === "reset") {
+        return Array.isArray(patch.turns) ? patch.turns : [];
+    }
+    if (op === "append") {
+        if (!patch.turn || typeof patch.turn !== "object") {
+            return current;
+        }
+        return [...current, patch.turn];
+    }
+    if (op === "replace_last") {
+        if (!patch.turn || typeof patch.turn !== "object") {
+            return current;
+        }
+        if (current.length === 0) {
+            return [patch.turn];
+        }
+        return [...current.slice(0, -1), patch.turn];
+    }
+
+    return current;
+}
 
 export function useAssistantState({
     initialProjectName,
@@ -19,11 +58,13 @@ export function useAssistantState({
     const [assistantMessagesLoading, setAssistantMessagesLoading] = useState(false);
     const [assistantInput, setAssistantInput] = useState("");
     const [assistantSending, setAssistantSending] = useState(false);
-    const [assistantStreamingBlocks, setAssistantStreamingBlocks] = useState([]);
     const [assistantError, setAssistantError] = useState("");
+    const [assistantPendingQuestion, setAssistantPendingQuestion] = useState(null);
+    const [assistantAnsweringQuestion, setAssistantAnsweringQuestion] = useState(false);
     const [assistantSkills, setAssistantSkills] = useState([]);
     const [assistantSkillsLoading, setAssistantSkillsLoading] = useState(false);
     const [assistantRefreshToken, setAssistantRefreshToken] = useState(0);
+    const [sessionStatus, setSessionStatus] = useState("idle");
     const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
     const [sessionDialogMode, setSessionDialogMode] = useState("create");
     const [sessionDialogTitle, setSessionDialogTitle] = useState("");
@@ -36,29 +77,24 @@ export function useAssistantState({
 
     const assistantStreamRef = useRef(null);
     const assistantChatScrollRef = useRef(null);
+    const reconnectTimeoutRef = useRef(null);
+    const sessionStatusRef = useRef("idle");
 
     const assistantActive = assistantPanelOpen || routeKind === ROUTE_KIND.ASSISTANT;
     const currentAssistantProject = assistantScopeProject || currentProjectName || "";
+    const assistantComposedMessages = assistantMessages;
 
-    const assistantComposedMessages = useMemo(() => {
-        const base = Array.isArray(assistantMessages) ? [...assistantMessages] : [];
-        if (assistantStreamingBlocks.length > 0) {
-            base.push({
-                id: "streaming-assistant",
-                role: "assistant",
-                content: assistantStreamingBlocks,
-            });
-        }
-        return base;
-    }, [assistantMessages, assistantStreamingBlocks]);
+    useEffect(() => {
+        sessionStatusRef.current = sessionStatus;
+    }, [sessionStatus]);
 
+    // Project scope handling
     useEffect(() => {
         if (projects.length === 0) {
             setAssistantScopeProject("");
             return;
         }
-
-        setAssistantScopeProject((previous) => previous || projects[0].name);
+        setAssistantScopeProject((prev) => prev || projects[0].name);
     }, [projects]);
 
     useEffect(() => {
@@ -74,31 +110,27 @@ export function useAssistantState({
     }, [assistantPanelOpen, routeKind]);
 
     const closeActiveStream = useCallback(() => {
-        if (!assistantStreamRef.current) {
-            return;
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
         }
-
-        assistantStreamRef.current.close();
-        assistantStreamRef.current = null;
+        if (assistantStreamRef.current) {
+            assistantStreamRef.current.close();
+            assistantStreamRef.current = null;
+        }
     }, []);
 
     useEffect(() => () => closeActiveStream(), [closeActiveStream]);
 
     const loadAssistantSessions = useCallback(async () => {
-        if (!assistantActive) {
-            return;
-        }
-
+        if (!assistantActive) return;
         setAssistantLoadingSessions(true);
         try {
             const data = await window.API.listAssistantSessions(currentAssistantProject || null);
             const sessions = data.sessions || [];
             setAssistantSessions(sessions);
-
-            setAssistantCurrentSessionId((previous) => {
-                if (previous && sessions.some((session) => session.id === previous)) {
-                    return previous;
-                }
+            setAssistantCurrentSessionId((prev) => {
+                if (prev && sessions.some((s) => s.id === prev)) return prev;
                 return sessions[0]?.id || "";
             });
         } catch (error) {
@@ -113,10 +145,7 @@ export function useAssistantState({
     }, [loadAssistantSessions, assistantRefreshToken]);
 
     const loadAssistantSkills = useCallback(async () => {
-        if (!assistantActive) {
-            return;
-        }
-
+        if (!assistantActive) return;
         setAssistantSkillsLoading(true);
         try {
             const data = await window.API.listAssistantSkills(currentAssistantProject || null);
@@ -133,361 +162,302 @@ export function useAssistantState({
         void loadAssistantSkills();
     }, [loadAssistantSkills]);
 
-    const loadAssistantMessages = useCallback(
-        async (sessionId) => {
-            if (!sessionId) {
-                setAssistantMessages([]);
+    const connectStream = useCallback((sessionId) => {
+        closeActiveStream();
+
+        const streamUrl = window.API.getAssistantStreamUrl(sessionId);
+        const source = new EventSource(streamUrl);
+        assistantStreamRef.current = source;
+
+        source.addEventListener("turn_snapshot", (event) => {
+            const data = parseSsePayload(event);
+            setAssistantMessages(Array.isArray(data.turns) ? data.turns : []);
+        });
+
+        source.addEventListener("turn_patch", (event) => {
+            const patch = parseSsePayload(event);
+            setAssistantMessages((previous) => applyTurnPatch(previous, patch));
+        });
+
+        // Backward compatibility: raw SSE messages are ignored for rendering.
+        source.addEventListener("message", (event) => {
+            const message = parseSsePayload(event);
+            if (message.type === "ask_user_question") {
+                const questions = Array.isArray(message.questions) ? message.questions : [];
+                if (message.question_id && questions.length > 0) {
+                    setAssistantPendingQuestion({
+                        id: message.question_id,
+                        questions,
+                    });
+                    setAssistantAnsweringQuestion(false);
+                }
                 return;
             }
-
-            setAssistantMessagesLoading(true);
-            try {
-                const data = await window.API.listAssistantMessages(sessionId);
-                setAssistantMessages(data.messages || []);
-            } catch (error) {
-                pushToast(`加载消息失败：${error.message}`, "error");
-            } finally {
-                setAssistantMessagesLoading(false);
+            if (message.type === "result") {
+                const isSuccess = message.subtype === "success";
+                const status = isSuccess ? "completed" : "error";
+                sessionStatusRef.current = status;
+                setSessionStatus(status);
+                setAssistantSending(false);
+                setAssistantPendingQuestion(null);
+                setAssistantAnsweringQuestion(false);
+                closeActiveStream();
             }
-        },
-        [pushToast]
-    );
+        });
 
-    useEffect(() => {
-        if (!assistantActive) {
+        source.addEventListener("status", (event) => {
+            const data = parseSsePayload(event);
+            const status = data.status;
+            if (!status) return;
+            sessionStatusRef.current = status;
+            setSessionStatus(status);
+            if (status === "completed" || status === "error") {
+                setAssistantSending(false);
+                setAssistantPendingQuestion(null);
+                setAssistantAnsweringQuestion(false);
+                closeActiveStream();
+            }
+        });
+
+        source.addEventListener("ping", () => {
+            // Heartbeat only.
+        });
+
+        source.onerror = () => {
+            if (sessionStatusRef.current === "running") {
+                reconnectTimeoutRef.current = setTimeout(() => {
+                    connectStream(sessionId);
+                }, 3000);
+            }
+        };
+    }, [closeActiveStream]);
+
+    const loadOrConnectSession = useCallback(async (sessionId) => {
+        closeActiveStream();
+
+        if (!sessionId) {
+            setAssistantMessages([]);
+            setSessionStatus("idle");
+            sessionStatusRef.current = "idle";
+            setAssistantPendingQuestion(null);
+            setAssistantAnsweringQuestion(false);
             return;
         }
 
-        setAssistantStreamingBlocks([]);
+        setAssistantMessagesLoading(true);
+        setAssistantMessages([]);
         setAssistantError("");
-        void loadAssistantMessages(assistantCurrentSessionId);
-    }, [assistantActive, assistantCurrentSessionId, loadAssistantMessages]);
+
+        try {
+            const session = await window.API.getAssistantSession(sessionId);
+            setSessionStatus(session.status);
+            sessionStatusRef.current = session.status;
+
+            if (session.status === "running") {
+                connectStream(sessionId);
+            } else {
+                const data = await window.API.listAssistantMessages(sessionId);
+                setAssistantMessages(Array.isArray(data.messages) ? data.messages : []);
+                setAssistantPendingQuestion(null);
+                setAssistantAnsweringQuestion(false);
+            }
+        } catch (error) {
+            pushToast(`加载消息失败：${error.message}`, "error");
+        } finally {
+            setAssistantMessagesLoading(false);
+        }
+    }, [closeActiveStream, connectStream, pushToast]);
 
     useEffect(() => {
-        if (!assistantChatScrollRef.current) {
-            return;
-        }
+        if (!assistantActive) return;
+        void loadOrConnectSession(assistantCurrentSessionId);
+    }, [assistantActive, assistantCurrentSessionId, loadOrConnectSession]);
 
-        assistantChatScrollRef.current.scrollTop = assistantChatScrollRef.current.scrollHeight;
+    useEffect(() => {
+        if (assistantChatScrollRef.current) {
+            assistantChatScrollRef.current.scrollTop = assistantChatScrollRef.current.scrollHeight;
+        }
     }, [assistantComposedMessages, assistantCurrentSessionId, assistantMessagesLoading]);
 
     const ensureAssistantSession = useCallback(async () => {
-        if (assistantCurrentSessionId) {
-            return assistantCurrentSessionId;
-        }
+        if (assistantCurrentSessionId) return assistantCurrentSessionId;
 
         const projectName = currentAssistantProject || projects[0]?.name;
-        if (!projectName) {
-            throw new Error("请先创建至少一个项目");
-        }
+        if (!projectName) throw new Error("请先创建至少一个项目");
 
         const data = await window.API.createAssistantSession(projectName, "");
-        const created = data.session;
-
-        setAssistantSessions((previous) => [created, ...previous]);
-        setAssistantCurrentSessionId(created.id);
-        return created.id;
+        setAssistantSessions((prev) => [{ id: data.id, ...data }, ...prev]);
+        setAssistantCurrentSessionId(data.id);
+        return data.id;
     }, [assistantCurrentSessionId, currentAssistantProject, projects]);
 
-    const consumeAssistantStream = useCallback(
-        (streamUrl) => {
-            return new Promise((resolve, reject) => {
-                closeActiveStream();
+    const handleSendAssistantMessage = useCallback(async (event) => {
+        event.preventDefault();
 
-                const source = new EventSource(streamUrl);
-                assistantStreamRef.current = source;
-                let settled = false;
+        const content = assistantInput.trim();
+        if (!content || assistantSending || assistantPendingQuestion) return;
 
-                const finish = (error = null) => {
-                    if (settled) {
-                        return;
-                    }
+        setAssistantSending(true);
+        setAssistantError("");
+        setAssistantInput("");
 
-                    settled = true;
-                    source.close();
-                    if (assistantStreamRef.current === source) {
-                        assistantStreamRef.current = null;
-                    }
+        try {
+            const sessionId = await ensureAssistantSession();
+            await window.API.sendAssistantMessage(sessionId, content);
 
-                    if (error) {
-                        reject(error);
-                    } else {
-                        resolve();
-                    }
-                };
+            sessionStatusRef.current = "running";
+            setSessionStatus("running");
+            connectStream(sessionId);
+        } catch (error) {
+            setAssistantError(error.message || "发送失败");
+            setAssistantSending(false);
+        }
+    }, [assistantInput, assistantPendingQuestion, assistantSending, connectStream, ensureAssistantSession]);
 
-                source.addEventListener("ack", () => {
-                    // Connection established, no action needed
-                });
+    const handleAnswerAssistantQuestion = useCallback(async (questionId, answers) => {
+        if (!assistantCurrentSessionId || !questionId) return;
+        if (!answers || typeof answers !== "object" || Object.keys(answers).length === 0) {
+            setAssistantError("请选择答案后再提交");
+            return;
+        }
 
-                source.addEventListener("delta", (event) => {
-                    const data = parseStreamData(event);
-                    const chunk = typeof data.text === "string" ? data.text : "";
-                    if (!chunk) {
-                        return;
-                    }
+        setAssistantAnsweringQuestion(true);
+        setAssistantError("");
+        try {
+            await window.API.answerAssistantQuestion(assistantCurrentSessionId, questionId, answers);
+            setAssistantPendingQuestion(null);
+        } catch (error) {
+            setAssistantError(error.message || "提交答案失败");
+        } finally {
+            setAssistantAnsweringQuestion(false);
+        }
+    }, [assistantCurrentSessionId]);
 
-                    setAssistantStreamingBlocks((previous) => {
-                        // Find the last text block and append to it
-                        const lastBlock = previous[previous.length - 1];
-                        if (lastBlock && lastBlock.type === "text") {
-                            return [
-                                ...previous.slice(0, -1),
-                                { ...lastBlock, text: lastBlock.text + chunk },
-                            ];
-                        }
-                        // Create a new text block
-                        return [...previous, { type: "text", text: chunk }];
-                    });
-                });
-
-                source.addEventListener("tool_use", (event) => {
-                    const data = parseStreamData(event);
-                    setAssistantStreamingBlocks((previous) => [
-                        ...previous,
-                        {
-                            type: "tool_use",
-                            id: data.id || "",
-                            name: data.name || "",
-                            input: data.input || {},
-                        },
-                    ]);
-                });
-
-                source.addEventListener("tool_result", (event) => {
-                    const data = parseStreamData(event);
-                    setAssistantStreamingBlocks((previous) => [
-                        ...previous,
-                        {
-                            type: "tool_result",
-                            tool_use_id: data.tool_use_id || "",
-                            content: data.content || "",
-                            is_error: data.is_error || false,
-                            tool_name: data.tool_name || "",
-                        },
-                    ]);
-                });
-
-                source.addEventListener("done", () => {
-                    finish();
-                });
-
-                source.addEventListener("error", (event) => {
-                    const data = parseStreamData(event);
-                    const message = data.message || "流式连接中断";
-                    finish(new Error(message));
-                });
-            });
-        },
-        [closeActiveStream]
-    );
-
-    const handleSendAssistantMessage = useCallback(
-        async (event) => {
-            event.preventDefault();
-
-            const content = assistantInput.trim();
-            if (!content || assistantSending) {
-                return;
-            }
-
-            setAssistantSending(true);
-            setAssistantError("");
-            setAssistantInput("");
-            setAssistantStreamingBlocks([]);
-
-            try {
-                const sessionId = await ensureAssistantSession();
-                setAssistantMessages((previous) => [
-                    ...previous,
-                    { id: `tmp-${Date.now()}`, role: "user", content },
-                ]);
-
-                const start = await window.API.startAssistantMessageStream(sessionId, content);
-                await consumeAssistantStream(start.stream_url);
-                setAssistantRefreshToken((previous) => previous + 1);
-                await loadAssistantMessages(sessionId);
-                setAssistantStreamingBlocks([]);
-            } catch (error) {
-                setAssistantError(error.message || "发送失败");
-                setAssistantStreamingBlocks((previous) => [
-                    ...previous,
-                    { type: "text", text: `\n\n错误：${error.message || "发送失败"}` },
-                ]);
-            } finally {
-                setAssistantSending(false);
-            }
-        },
-        [
-            assistantInput,
-            assistantSending,
-            consumeAssistantStream,
-            ensureAssistantSession,
-            loadAssistantMessages,
-        ]
-    );
-
+    // Session dialog handlers
     const handleCreateSession = useCallback(() => {
         const projectName = currentAssistantProject || projects[0]?.name;
         if (!projectName) {
             pushToast("请先创建项目", "error");
             return;
         }
-
         setSessionDialogMode("create");
         setSessionDialogSessionId("");
         setSessionDialogTitle("");
         setSessionDialogOpen(true);
     }, [currentAssistantProject, projects, pushToast]);
 
-    const handleRenameSession = useCallback(
-        (session) => {
-            if (!session?.id) {
-                return;
-            }
-
-            setSessionDialogMode("rename");
-            setSessionDialogSessionId(session.id);
-            setSessionDialogTitle(session.title || "");
-            setSessionDialogOpen(true);
-        },
-        []
-    );
+    const handleRenameSession = useCallback((session) => {
+        if (!session?.id) return;
+        setSessionDialogMode("rename");
+        setSessionDialogSessionId(session.id);
+        setSessionDialogTitle(session.title || "");
+        setSessionDialogOpen(true);
+    }, []);
 
     const closeSessionDialog = useCallback(() => {
-        if (sessionDialogSubmitting) {
-            return;
-        }
-
+        if (sessionDialogSubmitting) return;
         setSessionDialogOpen(false);
         setSessionDialogMode("create");
         setSessionDialogTitle("");
         setSessionDialogSessionId("");
     }, [sessionDialogSubmitting]);
 
-    const submitSessionDialog = useCallback(
-        async (event) => {
-            event.preventDefault();
-            if (sessionDialogSubmitting) {
-                return;
-            }
+    const submitSessionDialog = useCallback(async (event) => {
+        event.preventDefault();
+        if (sessionDialogSubmitting) return;
 
-            setSessionDialogSubmitting(true);
-            try {
-                if (sessionDialogMode === "create") {
-                    const projectName = currentAssistantProject || projects[0]?.name;
-                    if (!projectName) {
-                        pushToast("请先创建项目", "error");
-                        return;
-                    }
-
-                    const data = await window.API.createAssistantSession(projectName, sessionDialogTitle.trim());
-                    setAssistantCurrentSessionId(data.session.id);
-                    setAssistantRefreshToken((previous) => previous + 1);
-                    pushToast("已创建新会话", "success");
-                } else {
-                    const normalized = sessionDialogTitle.trim();
-                    if (!normalized) {
-                        pushToast("标题不能为空", "error");
-                        return;
-                    }
-
-                    if (!sessionDialogSessionId) {
-                        pushToast("未找到会话", "error");
-                        return;
-                    }
-
-                    await window.API.updateAssistantSession(sessionDialogSessionId, { title: normalized });
-                    setAssistantRefreshToken((previous) => previous + 1);
-                    pushToast("会话已重命名", "success");
+        setSessionDialogSubmitting(true);
+        try {
+            if (sessionDialogMode === "create") {
+                const projectName = currentAssistantProject || projects[0]?.name;
+                if (!projectName) {
+                    pushToast("请先创建项目", "error");
+                    return;
                 }
-
-                setSessionDialogOpen(false);
-                setSessionDialogMode("create");
-                setSessionDialogTitle("");
-                setSessionDialogSessionId("");
-            } catch (error) {
-                pushToast(`保存会话失败：${error.message}`, "error");
-            } finally {
-                setSessionDialogSubmitting(false);
+                const data = await window.API.createAssistantSession(projectName, sessionDialogTitle.trim());
+                setAssistantCurrentSessionId(data.id);
+                setAssistantRefreshToken((prev) => prev + 1);
+                pushToast("已创建新会话", "success");
+            } else {
+                const normalized = sessionDialogTitle.trim();
+                if (!normalized) {
+                    pushToast("标题不能为空", "error");
+                    return;
+                }
+                if (!sessionDialogSessionId) {
+                    pushToast("未找到会话", "error");
+                    return;
+                }
+                await window.API.updateAssistantSession(sessionDialogSessionId, { title: normalized });
+                setAssistantRefreshToken((prev) => prev + 1);
+                pushToast("会话已重命名", "success");
             }
-        },
-        [
-            currentAssistantProject,
-            projects,
-            pushToast,
-            sessionDialogMode,
-            sessionDialogSessionId,
-            sessionDialogSubmitting,
-            sessionDialogTitle,
-        ]
-    );
-
-    const handleDeleteSession = useCallback((session) => {
-        if (!session?.id) {
-            return;
+            setSessionDialogOpen(false);
+            setSessionDialogMode("create");
+            setSessionDialogTitle("");
+            setSessionDialogSessionId("");
+        } catch (error) {
+            pushToast(`保存会话失败：${error.message}`, "error");
+        } finally {
+            setSessionDialogSubmitting(false);
         }
+    }, [currentAssistantProject, projects, pushToast, sessionDialogMode, sessionDialogSessionId, sessionDialogSubmitting, sessionDialogTitle]);
 
+    // Delete dialog handlers
+    const handleDeleteSession = useCallback((session) => {
+        if (!session?.id) return;
         setDeleteDialogSessionId(session.id);
         setDeleteDialogSessionTitle(session.title || "");
         setDeleteDialogOpen(true);
     }, []);
 
     const closeDeleteDialog = useCallback(() => {
-        if (deleteDialogSubmitting) {
-            return;
-        }
-
+        if (deleteDialogSubmitting) return;
         setDeleteDialogOpen(false);
         setDeleteDialogSessionId("");
         setDeleteDialogSessionTitle("");
     }, [deleteDialogSubmitting]);
 
-    const confirmDeleteSession = useCallback(
-        async (event) => {
-            event.preventDefault();
-            if (deleteDialogSubmitting) {
-                return;
-            }
+    const confirmDeleteSession = useCallback(async (event) => {
+        event.preventDefault();
+        if (deleteDialogSubmitting) return;
+        if (!deleteDialogSessionId) {
+            pushToast("未找到会话", "error");
+            return;
+        }
 
-            if (!deleteDialogSessionId) {
-                pushToast("未找到会话", "error");
-                return;
+        setDeleteDialogSubmitting(true);
+        try {
+            await window.API.deleteAssistantSession(deleteDialogSessionId);
+            if (assistantCurrentSessionId === deleteDialogSessionId) {
+                setAssistantCurrentSessionId("");
+                setAssistantMessages([]);
+                setSessionStatus("idle");
+                sessionStatusRef.current = "idle";
             }
-
-            setDeleteDialogSubmitting(true);
-            try {
-                await window.API.deleteAssistantSession(deleteDialogSessionId);
-                if (assistantCurrentSessionId === deleteDialogSessionId) {
-                    setAssistantCurrentSessionId("");
-                    setAssistantMessages([]);
-                }
-                setAssistantRefreshToken((previous) => previous + 1);
-                pushToast("会话已删除", "success");
-                setDeleteDialogOpen(false);
-                setDeleteDialogSessionId("");
-                setDeleteDialogSessionTitle("");
-            } catch (error) {
-                pushToast(`删除失败：${error.message}`, "error");
-            } finally {
-                setDeleteDialogSubmitting(false);
-            }
-        },
-        [assistantCurrentSessionId, deleteDialogSessionId, deleteDialogSubmitting, pushToast]
-    );
+            setAssistantRefreshToken((prev) => prev + 1);
+            pushToast("会话已删除", "success");
+            setDeleteDialogOpen(false);
+            setDeleteDialogSessionId("");
+            setDeleteDialogSessionTitle("");
+        } catch (error) {
+            pushToast(`删除失败：${error.message}`, "error");
+        } finally {
+            setDeleteDialogSubmitting(false);
+        }
+    }, [assistantCurrentSessionId, deleteDialogSessionId, deleteDialogSubmitting, pushToast]);
 
     const handleAssistantScopeChange = useCallback((projectName) => {
         setAssistantScopeProject(projectName);
         setAssistantCurrentSessionId("");
-        setAssistantRefreshToken((previous) => previous + 1);
+        setAssistantRefreshToken((prev) => prev + 1);
     }, []);
 
     const toggleAssistantPanel = useCallback(() => {
         if (!assistantPanelOpen && currentProjectName) {
             setAssistantScopeProject(currentProjectName);
         }
-
-        setAssistantPanelOpen((previous) => !previous);
+        setAssistantPanelOpen((prev) => !prev);
     }, [assistantPanelOpen, currentProjectName]);
 
     return {
@@ -505,7 +475,10 @@ export function useAssistantState({
         assistantSkills,
         assistantSkillsLoading,
         assistantComposedMessages,
+        assistantPendingQuestion,
+        assistantAnsweringQuestion,
         currentAssistantProject,
+        sessionStatus,
         sessionDialogOpen,
         sessionDialogMode,
         sessionDialogTitle,
@@ -523,6 +496,7 @@ export function useAssistantState({
         closeDeleteDialog,
         confirmDeleteSession,
         handleAssistantScopeChange,
+        handleAnswerAssistantQuestion,
         toggleAssistantPanel,
         assistantChatScrollRef,
     };

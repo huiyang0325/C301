@@ -5,48 +5,90 @@ import { ContentBlockRenderer } from "./ContentBlockRenderer.js";
 
 const html = htm.bind(React.createElement);
 
-function normalizeContent(content) {
-    // If content is already an array of blocks, return as-is
-    if (Array.isArray(content)) {
-        return content;
+/**
+ * ChatMessage - Renders a conversation turn.
+ *
+ * A turn represents a complete interaction unit from the backend grouper:
+ * - User turn: user's input message
+ * - Assistant turn: all assistant content blocks with tool results attached
+ * - Result turn: session completion marker
+ * - System turn: system-injected content (rare)
+ *
+ * The backend (transcript_reader.py) handles:
+ * - Merging consecutive assistant messages into one turn
+ * - Attaching tool_result to corresponding tool_use blocks
+ * - Attaching skill_content to Skill tool blocks
+ */
+
+/**
+ * Infer message type from message structure.
+ * Primary: use explicit type/role field.
+ * Fallback: infer from message structure.
+ */
+function inferMessageType(message) {
+    // Explicit type/role fields
+    if (message.type) return message.type;
+    if (message.role) return message.role;
+
+    // Fallback: infer from structure
+    if (message.subtype !== undefined && (message.duration_ms !== undefined || message.session_id !== undefined)) {
+        return "result";
+    }
+    if (message.model && Array.isArray(message.content)) {
+        return "assistant";
     }
 
-    // If content is a string, try to parse as JSON first
-    if (typeof content === "string") {
-        // Check if it looks like a JSON array
-        const trimmed = content.trim();
-        if (trimmed.startsWith("[")) {
-            try {
-                const parsed = JSON.parse(trimmed);
-                if (Array.isArray(parsed)) {
-                    return parsed;
-                }
-            } catch {
-                // Not valid JSON, fall through to text handling
-            }
-        }
-        // Plain text - wrap in TextBlock
-        return [{ type: "text", text: content }];
-    }
-
-    // Fallback: empty array
-    return [];
+    return "unknown";
 }
 
 export function ChatMessage({ message }) {
-    const role = message.role || "assistant";
-    const isUser = role === "user";
+    if (!message) return null;
 
-    const blocks = normalizeContent(message.content);
+    const messageType = inferMessageType(message);
+    const content = message.content;
+
+    // Normalize content to array
+    const blocks = normalizeContent(content);
+
+    // Skip empty messages (except result which has no content)
+    if (blocks.length === 0 && messageType !== "result") {
+        return null;
+    }
+
+    // Result message (session completion)
+    if (messageType === "result") {
+        const isSuccess = message.subtype === "success";
+        return html`
+            <article className=${cn(
+                "rounded-xl px-3 py-2 border text-center",
+                isSuccess
+                    ? "border-emerald-400/30 bg-emerald-500/10"
+                    : "border-red-400/30 bg-red-500/10"
+            )}>
+                <span className=${cn(
+                    "text-xs font-medium",
+                    isSuccess ? "text-emerald-400" : "text-red-400"
+                )}>
+                    ${isSuccess ? "会话完成" : "会话出错"}
+                </span>
+            </article>
+        `;
+    }
+
+    // Determine styling based on message type
+    const isUser = messageType === "user";
+    const isSystem = messageType === "system";
 
     const containerClass = isUser
         ? "ml-8 bg-neon-500/15 border-neon-400/25"
-        : "mr-3 bg-white/5 border-white/10";
+        : isSystem
+            ? "mr-3 bg-slate-800/30 border-slate-600/20"
+            : "mr-3 bg-white/5 border-white/10";
 
     return html`
         <article className=${cn("rounded-xl px-3 py-2 border", containerClass)}>
             <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">
-                ${getRoleLabel(role)}
+                ${getRoleLabel(messageType)}
             </div>
             <div className="text-sm text-slate-100 leading-6">
                 ${blocks.map((block, index) => html`
@@ -55,4 +97,36 @@ export function ChatMessage({ message }) {
             </div>
         </article>
     `;
+}
+
+/**
+ * Normalize content to an array of content blocks.
+ */
+function normalizeContent(content) {
+    // Already an array
+    if (Array.isArray(content)) {
+        return content;
+    }
+
+    // String content - wrap in text block
+    if (typeof content === "string") {
+        const trimmed = content.trim();
+        if (!trimmed) return [];
+
+        // Try to parse as JSON array
+        if (trimmed.startsWith("[")) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (Array.isArray(parsed)) {
+                    return parsed;
+                }
+            } catch {
+                // Not valid JSON, treat as plain text
+            }
+        }
+
+        return [{ type: "text", text: content }];
+    }
+
+    return [];
 }
