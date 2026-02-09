@@ -131,10 +131,10 @@ Gemini API 是 Google 提供的 AI 服务，用于生成图片和视频。使用
 
 ```bash
 # 克隆项目到本地
-git clone https://github.com/Pollo3470/cc-novel2video.git
+git clone https://github.com/ArcReel/ArcReel.git
 
 # 进入项目目录
-cd cc-novel2video
+cd ArcReel
 ```
 
 > :bulb: 「克隆」是指将远程仓库的代码下载到本地电脑。
@@ -179,7 +179,7 @@ GEMINI_API_KEY=your-gemini-api-key-here
 在项目目录下启动 Claude Code：
 
 ```bash
-cd cc-novel2video
+cd ArcReel
 claude
 ```
 

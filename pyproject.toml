@@ -1,5 +1,5 @@
 [project]
-name = "cc-novel2video-v2"
+name = "arcreel"
 version = "0.1.0"
 description = "AI video generation workspace"
 readme = "README.md"

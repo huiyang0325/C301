@@ -34,7 +34,7 @@ export function AppShell({
                     >
                         <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-neon-400 to-amberx-400"></span>
                         <div>
-                            <p className="app-title text-lg font-semibold tracking-wide">漫剧工厂</p>
+                            <p className="app-title text-lg font-semibold tracking-wide">ArcReel</p>
                             <p className="text-xs text-slate-400">AI 剧集生产后台</p>
                         </div>
                     </button>

@@ -57,8 +57,8 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/Pollo3470/cc-novel2video.git
-cd cc-novel2video
+git clone https://github.com/ArcReel/ArcReel.git
+cd ArcReel
 
 # 2. 安装依赖（uv 会自动创建和管理虚拟环境）
 uv sync
@@ -79,7 +79,7 @@ cp .env.example .env
 
 ```bash
 # 1. 进入项目目录
-cd cc-novel2video
+cd ArcReel
 
 # 2. 启动 Claude Code
 claude
@@ -138,7 +138,7 @@ Web UI 支持：
 ## 项目结构
 
 ```
-cc-novel2video/
+ArcReel/
 ├── .claude/
 │   ├── agents/           # Subagent（子代理）：处理复杂多步骤任务
 │   │   ├── novel-to-narration-script.md   # 小说 → 说书剧本

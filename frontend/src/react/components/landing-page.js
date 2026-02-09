@@ -13,7 +13,7 @@ export function LandingPage({ onEnter, onAssistant, onUsage }) {
                         event.preventDefault();
                     }} className="flex items-center gap-3">
                         <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-neon-400 to-amberx-400"></span>
-                        <span className="text-lg font-semibold tracking-wide">漫剧工厂</span>
+                        <span className="text-lg font-semibold tracking-wide">ArcReel</span>
                     </a>
                     <nav className="hidden md:flex items-center gap-6 text-sm text-slate-300">
                         <a href="#value" className="hover:text-white transition-colors">平台价值</a>
@@ -91,7 +91,7 @@ export function LandingPage({ onEnter, onAssistant, onUsage }) {
 
             <footer className="border-t border-white/10 py-10">
                 <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 text-sm text-slate-400">
-                    <p>© 2026 漫剧工厂 · AI 漫剧生产平台</p>
+                    <p>© 2026 ArcReel · 保留所有权利。</p>
                     <div className="flex items-center gap-5">
                         <button onClick=${onEnter} className="hover:text-white">管理后台</button>
                         <button onClick=${onAssistant} className="hover:text-white">对话管理</button>

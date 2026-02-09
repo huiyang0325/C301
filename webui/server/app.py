@@ -2,7 +2,7 @@
 视频项目管理 WebUI - FastAPI 主应用
 
 启动方式:
-    cd cc-novel2video-v2
+    cd ArcReel
     uv run uvicorn webui.server.app:app --reload --port 8080
 """
 
