@@ -60,16 +60,95 @@ class ManagedSession:
     pending_user_echoes: list[str] = field(default_factory=list)
     interrupt_requested: bool = False
 
+    # Message types that must never be silently dropped from subscriber queues.
+    _CRITICAL_MESSAGE_TYPES = {"result", "runtime_status", "user", "assistant"}
+    # Transient types that are evicted first when buffer is full.
+    _TRANSIENT_BUFFER_TYPES = {"stream_event"}
+
     def add_message(self, message: dict[str, Any]) -> None:
         """Add message to buffer and notify subscribers."""
         self.message_buffer.append(message)
         if len(self.message_buffer) > self.buffer_max_size:
-            self.message_buffer.pop(0)
+            self._evict_oldest_buffer_entry()
+        self._broadcast_to_subscribers(message)
+
+    def _evict_oldest_buffer_entry(self) -> None:
+        """Evict one entry from buffer, preferring transient stream_events."""
+        for i, m in enumerate(self.message_buffer[:-1]):
+            if m.get("type") in self._TRANSIENT_BUFFER_TYPES:
+                self.message_buffer.pop(i)
+                return
+        self.message_buffer.pop(0)
+
+    def _broadcast_to_subscribers(self, message: dict[str, Any]) -> None:
+        """Push message to all subscriber queues, evicting non-critical on overflow."""
+        is_critical = message.get("type") in self._CRITICAL_MESSAGE_TYPES
+        stale_queues: list[asyncio.Queue] = []
         for queue in self.subscribers:
+            if not self._try_enqueue(queue, message, is_critical):
+                stale_queues.append(queue)
+        for q in stale_queues:
+            # Drain the hopelessly full queue and inject a reconnect signal so
+            # the SSE consumer loop terminates instead of blocking forever.
+            self._drain_and_signal_reconnect(q)
+            self.subscribers.discard(q)
+
+    def _drain_and_signal_reconnect(self, queue: asyncio.Queue) -> None:
+        """Empty *queue* and push a reconnect signal so the SSE loop exits.
+
+        Uses a connection-level ``_queue_overflow`` type rather than
+        ``runtime_status`` so the SSE consumer can close the stream without
+        misrepresenting the session's actual status to the client.
+        """
+        while not queue.empty():
             try:
-                queue.put_nowait(message)
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        try:
+            queue.put_nowait({
+                "type": "_queue_overflow",
+                "session_id": self.session_id,
+            })
+        except asyncio.QueueFull:
+            pass  # should never happen after drain
+
+    def _try_enqueue(self, queue: asyncio.Queue, message: dict[str, Any], is_critical: bool) -> bool:
+        """Try to put *message* into *queue*. Returns False if the queue should be discarded."""
+        try:
+            queue.put_nowait(message)
+            return True
+        except asyncio.QueueFull:
+            if not is_critical:
+                return True  # non-critical drop is acceptable
+        # Critical message on a full queue — evict one non-critical to make room.
+        self._evict_non_critical(queue)
+        try:
+            queue.put_nowait(message)
+            return True
+        except asyncio.QueueFull:
+            return False
+
+    @staticmethod
+    def _evict_non_critical(queue: asyncio.Queue) -> bool:
+        """Try to remove one non-critical message from *queue* to make room."""
+        temp: list[dict[str, Any]] = []
+        evicted = False
+        while not queue.empty():
+            try:
+                msg = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if not evicted and msg.get("type") not in ManagedSession._CRITICAL_MESSAGE_TYPES:
+                evicted = True  # drop this one
+                continue
+            temp.append(msg)
+        for msg in temp:
+            try:
+                queue.put_nowait(msg)
             except asyncio.QueueFull:
-                pass
+                break
+        return evicted
 
     def clear_buffer(self) -> None:
         """Clear message buffer after session completes."""
@@ -140,6 +219,7 @@ class SessionManager:
         self.meta_store = meta_store
         self.transcript_reader = TranscriptReader(data_dir, project_root=project_root)
         self.sessions: dict[str, ManagedSession] = {}
+        self._connect_locks: dict[str, asyncio.Lock] = {}
         self._load_config()
 
     def _load_config(self) -> None:
@@ -215,33 +295,49 @@ class SessionManager:
         if session_id in self.sessions:
             return self.sessions[session_id]
 
-        meta = self.meta_store.get(session_id)
-        if meta is None:
-            raise FileNotFoundError(f"session not found: {session_id}")
+        # Per-session lock prevents concurrent connect() for the same session_id.
+        if session_id not in self._connect_locks:
+            self._connect_locks[session_id] = asyncio.Lock()
+        lock = self._connect_locks[session_id]
 
-        if not SDK_AVAILABLE or ClaudeSDKClient is None:
-            raise RuntimeError("claude_agent_sdk is not installed")
+        async with lock:
+            # Re-check after acquiring lock
+            if session_id in self.sessions:
+                return self.sessions[session_id]
 
-        options = self._build_options(
-            meta.project_name,
-            meta.sdk_session_id,
-            can_use_tool=self._build_can_use_tool_callback(session_id),
-        )
-        client = ClaudeSDKClient(options=options)
-        await client.connect()
+            meta = self.meta_store.get(session_id)
+            if meta is None:
+                raise FileNotFoundError(f"session not found: {session_id}")
 
-        managed = ManagedSession(
-            session_id=session_id,
-            client=client,
-            sdk_session_id=meta.sdk_session_id,
-            status=meta.status if meta.status != "idle" else "idle",
-        )
-        self.sessions[session_id] = managed
-        return managed
+            if not SDK_AVAILABLE or ClaudeSDKClient is None:
+                raise RuntimeError("claude_agent_sdk is not installed")
+
+            options = self._build_options(
+                meta.project_name,
+                meta.sdk_session_id,
+                can_use_tool=self._build_can_use_tool_callback(session_id),
+            )
+            client = ClaudeSDKClient(options=options)
+            await client.connect()
+
+            managed = ManagedSession(
+                session_id=session_id,
+                client=client,
+                sdk_session_id=meta.sdk_session_id,
+                status=meta.status if meta.status != "idle" else "idle",
+            )
+            self.sessions[session_id] = managed
+            return managed
 
     async def send_message(self, session_id: str, content: str) -> None:
         """Send a message and start background consumer."""
         managed = await self.get_or_connect(session_id)
+
+        if managed.status == "running":
+            raise ValueError(
+                "会话正在处理中，请等待当前回复完成后再发送新消息"
+            )
+
         self._prune_transient_buffer(managed)
 
         # Update status to running
@@ -255,8 +351,15 @@ class SessionManager:
             managed.pending_user_echoes.pop(0)
         managed.add_message(self._build_user_echo_message(content))
 
-        # Send the query
-        await managed.client.query(content)
+        # Send the query — restore status on failure so the session is not
+        # permanently stuck in "running" without an active consumer.
+        try:
+            await managed.client.query(content)
+        except Exception:
+            managed.pending_user_echoes.clear()
+            managed.status = "error"
+            self.meta_store.update_status(session_id, "error")
+            raise
 
         # Start consumer task if not running
         if managed.consumer_task is None or managed.consumer_task.done():
@@ -291,7 +394,6 @@ class SessionManager:
         """Consume messages from client and distribute to subscribers."""
         try:
             async for message in managed.client.receive_response():
-                # Serialize message to dict
                 msg_dict = self._message_to_dict(message)
                 if not isinstance(msg_dict, dict):
                     continue
@@ -300,44 +402,68 @@ class SessionManager:
                     self._maybe_update_sdk_session_id(managed, message, msg_dict)
                     continue
 
-                if msg_dict.get("type") == "result":
-                    msg_dict["session_status"] = self._resolve_result_status(
-                        msg_dict,
-                        interrupt_requested=managed.interrupt_requested,
-                    )
+                self._handle_special_message(managed, msg_dict)
                 managed.add_message(msg_dict)
                 self._maybe_update_sdk_session_id(managed, message, msg_dict)
 
                 if msg_dict.get("type") != "result":
                     continue
 
-                managed.pending_user_echoes.clear()
-                managed.cancel_pending_questions("session completed")
-                final_status = str(msg_dict.get("session_status") or "").strip() or self._resolve_result_status(
-                    msg_dict,
-                    interrupt_requested=managed.interrupt_requested,
-                )
-                managed.status = final_status
-                self.meta_store.update_status(managed.session_id, final_status)
-                managed.interrupt_requested = False
-                self._prune_transient_buffer(managed)
+                self._finalize_turn(managed, msg_dict)
 
         except asyncio.CancelledError:
-            managed.pending_user_echoes.clear()
-            managed.cancel_pending_questions("session interrupted")
-            managed.status = "interrupted"
-            self.meta_store.update_status(managed.session_id, "interrupted")
-            managed.interrupt_requested = False
-            self._prune_transient_buffer(managed)
+            self._mark_session_terminal(managed, "interrupted", "session interrupted")
             raise
         except Exception:
-            managed.pending_user_echoes.clear()
-            managed.cancel_pending_questions("session error")
-            managed.status = "error"
-            self.meta_store.update_status(managed.session_id, "error")
-            managed.interrupt_requested = False
-            self._prune_transient_buffer(managed)
+            self._mark_session_terminal(managed, "error", "session error")
             raise
+
+    def _handle_special_message(
+        self, managed: ManagedSession, msg_dict: dict[str, Any]
+    ) -> None:
+        """Handle compact_boundary and result messages before broadcast."""
+        if (
+            msg_dict.get("type") == "system"
+            and msg_dict.get("subtype") == "compact_boundary"
+        ):
+            self._prune_transient_buffer(managed)
+
+        if msg_dict.get("type") == "result":
+            msg_dict["session_status"] = self._resolve_result_status(
+                msg_dict,
+                interrupt_requested=managed.interrupt_requested,
+            )
+
+    def _finalize_turn(
+        self, managed: ManagedSession, result_msg: dict[str, Any]
+    ) -> None:
+        """Settle session state after a result message completes a turn."""
+        managed.pending_user_echoes.clear()
+        managed.cancel_pending_questions("session completed")
+        explicit = str(result_msg.get("session_status") or "").strip()
+        final_status: SessionStatus = (
+            explicit  # type: ignore[assignment]
+            if explicit in {"idle", "running", "completed", "error", "interrupted"}
+            else self._resolve_result_status(
+                result_msg,
+                interrupt_requested=managed.interrupt_requested,
+            )
+        )
+        managed.status = final_status
+        self.meta_store.update_status(managed.session_id, final_status)
+        managed.interrupt_requested = False
+        self._prune_transient_buffer(managed)
+
+    def _mark_session_terminal(
+        self, managed: ManagedSession, status: SessionStatus, reason: str
+    ) -> None:
+        """Set terminal status on abnormal consumer exit."""
+        managed.pending_user_echoes.clear()
+        managed.cancel_pending_questions(reason)
+        managed.status = status
+        self.meta_store.update_status(managed.session_id, status)
+        managed.interrupt_requested = False
+        self._prune_transient_buffer(managed)
 
     @staticmethod
     def _resolve_result_status(
@@ -427,13 +553,24 @@ class SessionManager:
 
     @staticmethod
     def _prune_transient_buffer(managed: ManagedSession) -> None:
-        """Drop transient runtime events that should not leak into next round snapshots."""
+        """Drop stale messages that should not leak into next round snapshots.
+
+        Removes:
+        - stream_event / runtime_status: transient streaming artifacts
+        - user / assistant / result: already persisted in SDK transcript;
+          keeping them causes duplicate turns because buffer messages lack
+          the uuid that transcript messages carry, so _merge_raw_messages
+          cannot deduplicate them.
+        """
         if not managed.message_buffer:
             return
         managed.message_buffer = [
             message
             for message in managed.message_buffer
-            if message.get("type") not in {"stream_event", "runtime_status"}
+            if message.get("type") not in {
+                "stream_event", "runtime_status",
+                "user", "assistant", "result",
+            }
         ]
 
     @staticmethod

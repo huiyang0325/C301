@@ -102,10 +102,13 @@ class AssistantService:
             raise FileNotFoundError(f"session not found: {session_id}")
 
         status = self.session_manager.get_status(session_id) or meta.status
-        raw_messages = self._build_initial_raw_messages(meta, session_id)
+        # Read buffer once to avoid inconsistency from concurrent mutations.
+        buffered_messages = self.session_manager.get_buffered_messages(session_id)
+        raw_messages = self._build_initial_raw_messages(
+            meta, session_id, buffered_messages=buffered_messages
+        )
         projector = AssistantStreamProjector(initial_messages=raw_messages)
 
-        buffered_messages = self.session_manager.get_buffered_messages(session_id)
         for message in buffered_messages:
             if self._is_groupable_message(message):
                 continue
@@ -170,133 +173,217 @@ class AssistantService:
 
         initial_status = self.session_manager.get_status(session_id) or meta.status
         if initial_status != "running":
-            projector = self._build_projector(meta, session_id)
-            yield self._sse_event(
+            for event in self._emit_completed_snapshot(meta, session_id, initial_status):
+                yield event
+            return
+
+        queue = await self.session_manager.subscribe(session_id, replay_buffer=True)
+        try:
+            async for event in self._stream_running_session(
+                meta, session_id, initial_status, queue
+            ):
+                yield event
+        finally:
+            await self.session_manager.unsubscribe(session_id, queue)
+
+    async def _stream_running_session(
+        self,
+        meta: SessionMeta,
+        session_id: str,
+        initial_status: SessionStatus,
+        queue: asyncio.Queue,
+    ) -> AsyncIterator[str]:
+        """Inner generator for a running session's SSE stream."""
+        replayed_messages, replay_overflowed = self._drain_replay(queue)
+        if replay_overflowed:
+            return
+
+        status = self.session_manager.get_status(session_id) or initial_status
+        projector = self._build_projector(meta, session_id, replayed_messages)
+        snapshot_events = await self._emit_running_snapshot(
+            session_id, status, projector
+        )
+        for event in snapshot_events:
+            yield event
+        if status != "running":
+            return
+
+        while True:
+            try:
+                message = await asyncio.wait_for(
+                    queue.get(), timeout=self.stream_heartbeat_seconds
+                )
+                events, should_break = self._dispatch_live_message(
+                    message, projector, session_id
+                )
+                for event in events:
+                    yield event
+                if should_break:
+                    break
+            except asyncio.TimeoutError:
+                event = self._handle_heartbeat_timeout(session_id, status, projector)
+                if event is not None:
+                    yield event
+                    break
+                yield self._sse_keepalive_comment()
+
+    def _emit_completed_snapshot(
+        self, meta: SessionMeta, session_id: str, status: SessionStatus
+    ) -> list[str]:
+        """Build snapshot + status events for a non-running session."""
+        projector = self._build_projector(meta, session_id)
+        return [
+            self._sse_event(
                 "snapshot",
                 projector.build_snapshot(
                     session_id=session_id,
-                    status=initial_status,
+                    status=status,
                     pending_questions=[],
                 ),
-            )
-            yield self._sse_event(
+            ),
+            self._sse_event(
                 "status",
                 self._build_status_event_payload(
-                    status=initial_status,
+                    status=status,
                     session_id=session_id,
                     result_message=projector.last_result,
                 ),
+            ),
+        ]
+
+    async def _emit_running_snapshot(
+        self,
+        session_id: str,
+        status: SessionStatus,
+        projector: AssistantStreamProjector,
+    ) -> list[str]:
+        """Build snapshot (+ optional terminal status) for a possibly-running session."""
+        pending_questions: list[dict[str, Any]] = []
+        if status == "running":
+            pending_questions = await self.session_manager.get_pending_questions_snapshot(
+                session_id
             )
-            return
-
-        # Subscribe first to avoid missing messages between snapshot generation and queue attach.
-        queue = await self.session_manager.subscribe(session_id, replay_buffer=True)
-        try:
-            replayed_messages: list[dict[str, Any]] = []
-            while True:
-                try:
-                    replayed = queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-                if isinstance(replayed, dict):
-                    replayed_messages.append(replayed)
-
-            status = self.session_manager.get_status(session_id) or initial_status
-            projector = self._build_projector(meta, session_id, replayed_messages)
-            pending_questions = []
-            if status == "running":
-                pending_questions = await self.session_manager.get_pending_questions_snapshot(
-                    session_id
-                )
-
-            yield self._sse_event(
+        events = [
+            self._sse_event(
                 "snapshot",
                 projector.build_snapshot(
                     session_id=session_id,
                     status=status,
                     pending_questions=pending_questions,
                 ),
+            ),
+        ]
+        if status != "running":
+            events.append(self._sse_event(
+                "status",
+                self._build_status_event_payload(
+                    status=status,
+                    session_id=session_id,
+                    result_message=projector.last_result,
+                ),
+            ))
+        return events
+
+    @staticmethod
+    def _drain_replay(
+        queue: asyncio.Queue,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Drain replayed messages from *queue*, detecting overflow sentinel."""
+        replayed: list[dict[str, Any]] = []
+        while True:
+            try:
+                msg = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if isinstance(msg, dict):
+                if msg.get("type") == "_queue_overflow":
+                    return replayed, True
+                replayed.append(msg)
+        return replayed, False
+
+    def _dispatch_live_message(
+        self,
+        message: dict[str, Any],
+        projector: AssistantStreamProjector,
+        session_id: str,
+    ) -> tuple[list[str], bool]:
+        """Process one live message. Returns (sse_events, should_break)."""
+        events: list[str] = []
+
+        update = projector.apply_message(message)
+        if isinstance(update.get("patch"), dict):
+            events.append(self._sse_event("patch", update["patch"]))
+        if isinstance(update.get("delta"), dict):
+            events.append(self._sse_event("delta", update["delta"]))
+        if isinstance(update.get("question"), dict):
+            events.append(self._sse_event("question", update["question"]))
+
+        msg_type = message.get("type", "")
+
+        if msg_type == "_queue_overflow":
+            return events, True
+
+        if msg_type == "system" and message.get("subtype") == "compact_boundary":
+            events.append(self._sse_event("compact", {
+                "session_id": session_id,
+                "subtype": "compact_boundary",
+            }))
+
+        if msg_type == "runtime_status":
+            terminal = self._check_runtime_status_terminal(message, session_id)
+            if terminal is not None:
+                events.append(terminal)
+                return events, True
+
+        if msg_type == "result":
+            events.append(self._sse_event(
+                "status",
+                self._build_status_event_payload(
+                    status=self._resolve_result_status(message),
+                    session_id=session_id,
+                    result_message=message,
+                ),
+            ))
+            return events, True
+
+        return events, False
+
+    _TERMINAL_STATUSES = {"idle", "running", "completed", "error", "interrupted"}
+
+    def _check_runtime_status_terminal(
+        self, message: dict[str, Any], session_id: str
+    ) -> Optional[str]:
+        """Return a status SSE event if *message* carries a terminal runtime status."""
+        runtime_status = str(message.get("status") or "").strip()
+        if runtime_status in self._TERMINAL_STATUSES:
+            return self._sse_event(
+                "status",
+                self._build_status_event_payload(
+                    status=runtime_status,  # type: ignore[arg-type]
+                    session_id=session_id,
+                    result_message=message,
+                ),
             )
+        return None
 
-            if status != "running":
-                yield self._sse_event(
-                    "status",
-                    self._build_status_event_payload(
-                        status=status,
-                        session_id=session_id,
-                        result_message=projector.last_result,
-                    ),
-                )
-                return
-
-            while True:
-                try:
-                    message = await asyncio.wait_for(
-                        queue.get(),
-                        timeout=self.stream_heartbeat_seconds
-                    )
-
-                    update = projector.apply_message(message)
-                    patch_payload = update.get("patch")
-                    if isinstance(patch_payload, dict):
-                        yield self._sse_event("patch", patch_payload)
-
-                    delta_payload = update.get("delta")
-                    if isinstance(delta_payload, dict):
-                        yield self._sse_event("delta", delta_payload)
-
-                    question_payload = update.get("question")
-                    if isinstance(question_payload, dict):
-                        yield self._sse_event("question", question_payload)
-
-                    msg_type = message.get("type", "")
-                    if msg_type == "runtime_status":
-                        runtime_status = str(message.get("status") or "").strip()
-                        if runtime_status in {
-                            "idle",
-                            "running",
-                            "completed",
-                            "error",
-                            "interrupted",
-                        }:
-                            yield self._sse_event(
-                                "status",
-                                self._build_status_event_payload(
-                                    status=runtime_status,
-                                    session_id=session_id,
-                                    result_message=message,
-                                ),
-                            )
-                            break
-
-                    if msg_type == "result":
-                        final_status = self._resolve_result_status(message)
-                        yield self._sse_event(
-                            "status",
-                            self._build_status_event_payload(
-                                status=final_status,
-                                session_id=session_id,
-                                result_message=message,
-                            ),
-                        )
-                        break
-                except asyncio.TimeoutError:
-                    live_status = self.session_manager.get_status(session_id) or status
-                    if live_status != "running":
-                        yield self._sse_event(
-                            "status",
-                            self._build_status_event_payload(
-                                status=live_status,
-                                session_id=session_id,
-                                result_message=projector.last_result,
-                            ),
-                        )
-                        break
-                    yield self._sse_keepalive_comment()
-        except asyncio.CancelledError:
-            raise
-        finally:
-            await self.session_manager.unsubscribe(session_id, queue)
+    def _handle_heartbeat_timeout(
+        self,
+        session_id: str,
+        status: SessionStatus,
+        projector: AssistantStreamProjector,
+    ) -> Optional[str]:
+        """Check session liveness on heartbeat timeout. Returns status event or None."""
+        live_status = self.session_manager.get_status(session_id) or status
+        if live_status != "running":
+            return self._sse_event(
+                "status",
+                self._build_status_event_payload(
+                    status=live_status,
+                    session_id=session_id,
+                    result_message=projector.last_result,
+                ),
+            )
+        return None
 
     @staticmethod
     def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -348,6 +435,14 @@ class AssistantService:
             message
             for message in (runtime_buffer or [])
             if self._is_groupable_message(message)
+            # Skip buffer assistant/result messages that lack uuid — these are
+            # SDK-serialized duplicates of transcript entries.  The CLI writes
+            # messages to the JSONL transcript with a uuid wrapper; SDK objects
+            # (AssistantMessage, ResultMessage) don't carry uuid, so they can
+            # never be reliably deduplicated against transcript entries.
+            # Only user messages (local_echo with uuid) may be the sole source
+            # for a round that the CLI hasn't persisted yet.
+            and (message.get("type") == "user" or message.get("uuid"))
         ]
         return self._merge_raw_messages(history_messages, groupable_runtime)
 
@@ -404,6 +499,48 @@ class AssistantService:
             return f"uuid:{uuid}"
         return json.dumps(message, sort_keys=True, ensure_ascii=False)
 
+    @staticmethod
+    def _content_key(message: dict[str, Any]) -> Optional[str]:
+        """Build a content-based key for cross-source dedup.
+
+        Transcript messages carry a uuid assigned by the CLI wrapper while
+        buffer messages converted from SDK objects often lack one.  When the
+        same logical message appears in both sources, _message_key produces
+        different keys (uuid vs json.dumps) and dedup fails.
+
+        This helper normalises on (type, content) so that a buffer message
+        without uuid can still be recognised as a duplicate of a transcript
+        entry that has one.
+
+        Returns None for message types where content-based matching is unsafe
+        (e.g. user messages – the user may legitimately send the same text
+        twice).
+        """
+        msg_type = message.get("type")
+        if msg_type == "assistant":
+            content = message.get("content", [])
+            # Normalise content blocks: SDK dataclass serialization omits
+            # the ``type`` field that the CLI transcript includes.  Extract
+            # only the fields both sources share so the key matches.
+            parts: list[str] = []
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict):
+                    continue
+                text = block.get("text")
+                tool_id = block.get("id")
+                if text is not None:
+                    parts.append(f"t:{text}")
+                elif tool_id is not None:
+                    parts.append(f"u:{tool_id}")
+            return f"content:assistant:{'/'.join(parts)}" if parts else None
+        if msg_type == "result":
+            # Include session_id and timestamp to avoid cross-round collisions
+            # when multiple results share the same subtype/is_error.
+            sid = message.get("session_id", "")
+            ts = message.get("timestamp", "")
+            return f"content:result:{message.get('subtype', '')}:{message.get('is_error', False)}:{sid}:{ts}"
+        return None
+
     def _merge_raw_messages(
         self,
         history_raw: list[dict[str, Any]],
@@ -411,18 +548,50 @@ class AssistantService:
     ) -> list[dict[str, Any]]:
         """Merge transcript raw messages with in-memory buffer, preserving order."""
         merged = list(history_raw or [])
-        seen_keys = {self._message_key(msg) for msg in merged if isinstance(msg, dict)}
+        seen_keys, seen_content_keys = self._build_seen_sets(merged)
+
         for msg in buffered_raw or []:
             if not isinstance(msg, dict):
                 continue
             if self._should_skip_local_echo(msg, merged):
                 continue
-            key = self._message_key(msg)
-            if key in seen_keys:
+            if self._is_duplicate(msg, seen_keys, seen_content_keys):
                 continue
-            seen_keys.add(key)
+            seen_keys.add(self._message_key(msg))
             merged.append(msg)
         return merged
+
+    def _build_seen_sets(
+        self, messages: list[dict[str, Any]]
+    ) -> tuple[set[str], set[str]]:
+        """Build uuid-based and content-based seen sets from existing messages."""
+        seen_keys: set[str] = set()
+        seen_content_keys: set[str] = set()
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            seen_keys.add(self._message_key(msg))
+            ck = self._content_key(msg)
+            if ck:
+                seen_content_keys.add(ck)
+        return seen_keys, seen_content_keys
+
+    def _is_duplicate(
+        self,
+        msg: dict[str, Any],
+        seen_keys: set[str],
+        seen_content_keys: set[str],
+    ) -> bool:
+        """Check whether *msg* duplicates an already-seen message."""
+        key = self._message_key(msg)
+        if key in seen_keys:
+            return True
+        # For messages without uuid, fall back to content-based dedup
+        if not msg.get("uuid"):
+            ck = self._content_key(msg)
+            if ck and ck in seen_content_keys:
+                return True
+        return False
 
     @staticmethod
     def _extract_plain_user_content(message: dict[str, Any]) -> Optional[str]:
