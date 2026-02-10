@@ -4,6 +4,14 @@ import htm from "htm";
 import { cn } from "../utils.js";
 import { ChatMessage } from "../components/chat/index.js";
 import { Badge, Button, Card } from "../components/primitives.js";
+import {
+    buildAnswersPayload,
+    buildQuestionOptions,
+    getNextVisitedSteps,
+    getQuestionKey,
+    isOtherSelected,
+    isQuestionAnswerReady,
+} from "./assistant-question-wizard.js";
 
 const html = htm.bind(React.createElement);
 
@@ -81,6 +89,15 @@ export function AssistantMessageArea({
     const [activeSkillIndex, setActiveSkillIndex] = useState(0);
     const [questionAnswers, setQuestionAnswers] = useState({});
     const [questionCustomAnswers, setQuestionCustomAnswers] = useState({});
+    const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+    const [visitedQuestionIndexes, setVisitedQuestionIndexes] = useState([]);
+
+    const pendingQuestions = useMemo(() => {
+        const rawQuestions = Array.isArray(assistantPendingQuestion?.questions)
+            ? assistantPendingQuestion.questions
+            : [];
+        return rawQuestions.filter((question) => question && typeof question === "object");
+    }, [assistantPendingQuestion]);
 
     const slashQuery = useMemo(() => {
         const raw = assistantInput || "";
@@ -119,25 +136,56 @@ export function AssistantMessageArea({
     }, [slashQuery, filteredSkills.length, assistantSkillsLoading]);
 
     useEffect(() => {
-        if (!assistantPendingQuestion || !Array.isArray(assistantPendingQuestion.questions)) {
+        if (pendingQuestions.length === 0) {
             setQuestionAnswers({});
             setQuestionCustomAnswers({});
+            setCurrentQuestionIndex(0);
+            setVisitedQuestionIndexes([]);
             return;
         }
         const initial = {};
         const initialCustom = {};
-        assistantPendingQuestion.questions.forEach((question, index) => {
+        pendingQuestions.forEach((question, index) => {
             const key = getQuestionKey(question, index);
             initial[key] = question?.multiSelect ? [] : "";
             initialCustom[key] = "";
         });
         setQuestionAnswers(initial);
         setQuestionCustomAnswers(initialCustom);
-    }, [assistantPendingQuestion]);
+        setCurrentQuestionIndex(0);
+        setVisitedQuestionIndexes([0]);
+    }, [pendingQuestions]);
 
     const showSkillPanel = slashQuery !== null;
-    const hasPendingQuestion = !!assistantPendingQuestion;
+    const totalPendingQuestions = pendingQuestions.length;
+    const hasPendingQuestion = totalPendingQuestions > 0;
     const isSessionRunning = sessionStatus === "running";
+    const normalizedQuestionIndex = hasPendingQuestion
+        ? Math.min(currentQuestionIndex, totalPendingQuestions - 1)
+        : 0;
+    const currentQuestion = hasPendingQuestion ? pendingQuestions[normalizedQuestionIndex] : null;
+    const currentQuestionKey = currentQuestion
+        ? getQuestionKey(currentQuestion, normalizedQuestionIndex)
+        : "";
+    const currentQuestionAnswer = currentQuestionKey ? questionAnswers[currentQuestionKey] : "";
+    const currentQuestionCustomAnswer = currentQuestionKey
+        ? (questionCustomAnswers[currentQuestionKey] || "")
+        : "";
+    const currentQuestionOptions = currentQuestion
+        ? buildQuestionOptions(currentQuestion?.options || [])
+        : [];
+    const isFirstQuestion = normalizedQuestionIndex <= 0;
+    const isLastQuestion = hasPendingQuestion && normalizedQuestionIndex === totalPendingQuestions - 1;
+
+    useEffect(() => {
+        if (!hasPendingQuestion) {
+            return;
+        }
+        if (currentQuestionIndex <= totalPendingQuestions - 1) {
+            return;
+        }
+        setCurrentQuestionIndex(totalPendingQuestions - 1);
+    }, [currentQuestionIndex, hasPendingQuestion, totalPendingQuestions]);
 
     const applySkill = (skillName) => {
         setAssistantInput(`/${skillName} `);
@@ -197,67 +245,69 @@ export function AssistantMessageArea({
         }));
     };
 
-    const questionAnswersReady = useMemo(() => {
-        if (!assistantPendingQuestion || !Array.isArray(assistantPendingQuestion.questions)) {
+    const currentQuestionReady = useMemo(() => {
+        if (!currentQuestion) {
             return false;
         }
-        return assistantPendingQuestion.questions.every((question, index) => {
+        return isQuestionAnswerReady(
+            currentQuestion,
+            currentQuestionAnswer,
+            currentQuestionCustomAnswer
+        );
+    }, [currentQuestion, currentQuestionAnswer, currentQuestionCustomAnswer]);
+
+    const allQuestionsReady = useMemo(() => {
+        if (!hasPendingQuestion) {
+            return false;
+        }
+        return pendingQuestions.every((question, index) => {
             const key = getQuestionKey(question, index);
             const value = questionAnswers[key];
-            if (question?.multiSelect) {
-                if (!Array.isArray(value) || value.length === 0) {
-                    return false;
-                }
-                if (!isOtherSelected(question, value)) {
-                    return true;
-                }
-                return typeof questionCustomAnswers[key] === "string" && questionCustomAnswers[key].trim().length > 0;
-            }
-            if (!(typeof value === "string" && value.trim().length > 0)) {
-                return false;
-            }
-            if (!isOtherSelected(question, value)) {
-                return true;
-            }
-            return typeof questionCustomAnswers[key] === "string" && questionCustomAnswers[key].trim().length > 0;
+            return isQuestionAnswerReady(question, value, questionCustomAnswers[key] || "");
         });
-    }, [assistantPendingQuestion, questionAnswers, questionCustomAnswers]);
+    }, [hasPendingQuestion, pendingQuestions, questionAnswers, questionCustomAnswers]);
+
+    const handlePreviousQuestion = () => {
+        if (assistantAnsweringQuestion) {
+            return;
+        }
+        setCurrentQuestionIndex((previous) => Math.max(0, previous - 1));
+    };
+
+    const handleNextQuestion = () => {
+        if (assistantAnsweringQuestion || !currentQuestionReady || !hasPendingQuestion) {
+            return;
+        }
+        setCurrentQuestionIndex((previous) => {
+            const next = Math.min(totalPendingQuestions - 1, previous + 1);
+            setVisitedQuestionIndexes((currentVisited) => getNextVisitedSteps(currentVisited, next));
+            return next;
+        });
+    };
+
+    const handleSelectQuestionStep = (index) => {
+        if (assistantAnsweringQuestion || !hasPendingQuestion) {
+            return;
+        }
+        if (index < 0 || index >= totalPendingQuestions) {
+            return;
+        }
+        if (!visitedQuestionIndexes.includes(index) && index !== normalizedQuestionIndex) {
+            return;
+        }
+        setCurrentQuestionIndex(index);
+    };
 
     const handleAnswerSubmit = (event) => {
         event.preventDefault();
-        if (!assistantPendingQuestion) {
+        if (!assistantPendingQuestion || !hasPendingQuestion || !allQuestionsReady) {
             return;
         }
-        const answers = {};
-        assistantPendingQuestion.questions.forEach((question, index) => {
-            const questionKey = getQuestionKey(question, index);
-            const answerKey = question?.question || questionKey;
-            const value = questionAnswers[questionKey];
-            if (question?.multiSelect) {
-                if (Array.isArray(value) && value.length > 0) {
-                    const normalizedValues = value
-                        .map((item) => {
-                            if (isOtherOptionValue(item)) {
-                                return (questionCustomAnswers[questionKey] || "").trim();
-                            }
-                            return String(item || "").trim();
-                        })
-                        .filter(Boolean);
-                    if (normalizedValues.length > 0) {
-                        answers[answerKey] = normalizedValues.join(", ");
-                    }
-                }
-                return;
-            }
-            if (typeof value === "string" && value.trim().length > 0) {
-                const answerValue = isOtherOptionValue(value)
-                    ? (questionCustomAnswers[questionKey] || "").trim()
-                    : value.trim();
-                if (answerValue) {
-                    answers[answerKey] = answerValue;
-                }
-            }
-        });
+        const answers = buildAnswersPayload(
+            pendingQuestions,
+            questionAnswers,
+            questionCustomAnswers
+        );
         onAnswerAssistantQuestion?.(assistantPendingQuestion.id, answers);
     };
 
@@ -292,7 +342,7 @@ export function AssistantMessageArea({
                       `
                     : null}
             </div>
-            <div ref=${assistantChatScrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+            <div ref=${assistantChatScrollRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
                 ${assistantMessagesLoading
                     ? html`<p className="text-sm text-slate-400">消息加载中...</p>`
                     : assistantComposedMessages.length === 0
@@ -303,78 +353,134 @@ export function AssistantMessageArea({
             </div>
             ${hasPendingQuestion
                 ? html`
-                      <form className="px-3 py-3 border-t border-amber-300/20 bg-amber-500/5 space-y-3" onSubmit=${handleAnswerSubmit}>
-                          <div className="text-xs uppercase tracking-wide text-amber-300">
-                              需要你的选择
-                          </div>
-                          ${(assistantPendingQuestion.questions || []).map((question, questionIndex) => {
-                              const key = getQuestionKey(question, questionIndex);
-                              const options = Array.isArray(question?.options) ? question.options : [];
-                              const normalizedOptions = buildQuestionOptions(options);
-                              const selected = questionAnswers[key];
-                              return html`
-                                  <section key=${`${assistantPendingQuestion.id}-${key}`} className="rounded-lg border border-amber-300/20 bg-ink-900/40 p-3">
-                                      <div className="flex items-center gap-2 mb-2">
-                                          ${question?.header
-                                              ? html`<${Badge} className="bg-amber-300/15 text-amber-200">${question.header}<//>`
-                                              : null}
-                                          <span className="text-xs text-slate-400">
-                                              ${question?.multiSelect ? "可多选" : "单选"}
-                                          </span>
-                                      </div>
-                                      <p className="text-sm text-slate-100 mb-2">${question?.question || "请选择一个选项"}</p>
-                                      <div className="space-y-2">
-                                          ${normalizedOptions.map((option, optionIndex) => {
-                                              const checked = question?.multiSelect
-                                                  ? Array.isArray(selected) && selected.includes(option.value)
-                                                  : selected === option.value;
-                                              return html`
-                                                  <label key=${`${key}-${optionIndex}`} className="block rounded-md border border-white/10 bg-white/5 px-3 py-2 cursor-pointer hover:bg-white/10">
-                                                      <div className="flex items-start gap-2">
+                      <form className="px-2.5 py-2 border-t border-amber-300/20 bg-amber-500/5 max-h-[38%] min-h-0 flex flex-col gap-2 overflow-hidden" onSubmit=${handleAnswerSubmit}>
+                          <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
+                              <div className="text-[11px] uppercase tracking-wide text-amber-300">
+                                  需要你的选择
+                              </div>
+                              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                                  ${pendingQuestions.map((question, questionIndex) => {
+                                      const isActiveStep = questionIndex === normalizedQuestionIndex;
+                                      const isVisitedStep =
+                                          isActiveStep || visitedQuestionIndexes.includes(questionIndex);
+                                      return html`
+                                          <button
+                                              key=${`${assistantPendingQuestion.id}-step-${questionIndex}`}
+                                              type="button"
+                                              onClick=${() => handleSelectQuestionStep(questionIndex)}
+                                              disabled=${assistantAnsweringQuestion || !isVisitedStep}
+                                              className=${cn(
+                                                  "shrink-0 rounded-full px-2.5 py-0.5 text-[11px] border transition-colors",
+                                                  isActiveStep
+                                                      ? "border-amber-300/60 bg-amber-300/20 text-amber-100"
+                                                      : isVisitedStep
+                                                          ? "border-white/20 bg-white/5 text-slate-200 hover:bg-white/10"
+                                                          : "border-white/10 bg-white/5 text-slate-500 cursor-not-allowed"
+                                              )}
+                                          >
+                                              ${`${questionIndex + 1}. ${question?.header || `问题 ${questionIndex + 1}`}`}
+                                          </button>
+                                      `;
+                                  })}
+                              </div>
+                              <p className="text-[11px] text-slate-400">
+                                  ${`问题 ${normalizedQuestionIndex + 1}/${totalPendingQuestions}`}
+                              </p>
+                              ${currentQuestion
+                                  ? html`
+                                        <section className="rounded-lg border border-amber-300/20 bg-ink-900/40 p-2.5">
+                                            <div className="flex items-center gap-1.5 mb-1.5">
+                                                ${currentQuestion?.header
+                                                    ? html`<${Badge} className="bg-amber-300/15 text-amber-200">${currentQuestion.header}<//>`
+                                                    : null}
+                                                <span className="text-[11px] text-slate-400">
+                                                    ${currentQuestion?.multiSelect ? "可多选" : "单选"}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-100 mb-1.5">
+                                                ${currentQuestion?.question || "请选择一个选项"}
+                                            </p>
+                                            <div className="space-y-1.5">
+                                                ${currentQuestionOptions.map((option, optionIndex) => {
+                                                    const checked = currentQuestion?.multiSelect
+                                                        ? Array.isArray(currentQuestionAnswer) && currentQuestionAnswer.includes(option.value)
+                                                        : currentQuestionAnswer === option.value;
+                                                    return html`
+                                                        <label key=${`${currentQuestionKey}-${optionIndex}`} className="block rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 cursor-pointer hover:bg-white/10">
+                                                            <div className="flex items-start gap-2">
+                                                                <input
+                                                                    type=${currentQuestion?.multiSelect ? "checkbox" : "radio"}
+                                                                    name=${`assistant-question-${assistantPendingQuestion.id}-${currentQuestionKey}`}
+                                                                    checked=${checked}
+                                                                    disabled=${assistantAnsweringQuestion}
+                                                                    onChange=${(event) => {
+                                                                        if (currentQuestion?.multiSelect) {
+                                                                            toggleMultiQuestionAnswer(currentQuestionKey, option.value, event.target.checked);
+                                                                        } else {
+                                                                            setSingleQuestionAnswer(currentQuestionKey, option.value);
+                                                                        }
+                                                                    }}
+                                                                    className="mt-1"
+                                                                />
+                                                                <div>
+                                                                    <div className="text-xs text-slate-100">${option.label}</div>
+                                                                    ${option?.description
+                                                                        ? html`<div className="text-[11px] text-slate-400 mt-0.5">${option.description}</div>`
+                                                                        : null}
+                                                                </div>
+                                                            </div>
+                                                        </label>
+                                                    `;
+                                                })}
+                                            </div>
+                                            ${isOtherSelected(currentQuestion, currentQuestionAnswer)
+                                                ? html`
+                                                      <div className="mt-1.5">
                                                           <input
-                                                              type=${question?.multiSelect ? "checkbox" : "radio"}
-                                                              name=${`assistant-question-${assistantPendingQuestion.id}-${key}`}
-                                                              checked=${checked}
-                                                              onChange=${(event) => {
-                                                                  if (question?.multiSelect) {
-                                                                      toggleMultiQuestionAnswer(key, option.value, event.target.checked);
-                                                                  } else {
-                                                                      setSingleQuestionAnswer(key, option.value);
-                                                                  }
-                                                              }}
-                                                              className="mt-1"
+                                                              type="text"
+                                                              value=${currentQuestionCustomAnswer}
+                                                              onChange=${(event) => setCustomQuestionAnswer(currentQuestionKey, event.target.value)}
+                                                              placeholder="请输入其他内容"
+                                                              disabled=${assistantAnsweringQuestion}
+                                                              className="w-full rounded-md border border-amber-300/30 bg-white/5 px-2.5 py-1.5 text-xs text-slate-100 placeholder:text-slate-500"
                                                           />
-                                                          <div>
-                                                              <div className="text-sm text-slate-100">${option.label}</div>
-                                                              ${option?.description
-                                                                  ? html`<div className="text-xs text-slate-400 mt-1">${option.description}</div>`
-                                                                  : null}
-                                                          </div>
                                                       </div>
-                                                  </label>
-                                              `;
-                                          })}
-                                      </div>
-                                      ${isOtherSelected(question, selected)
-                                          ? html`
-                                                <div className="mt-2">
-                                                    <input
-                                                        type="text"
-                                                        value=${questionCustomAnswers[key] || ""}
-                                                        onChange=${(event) => setCustomQuestionAnswer(key, event.target.value)}
-                                                        placeholder="请输入其他内容"
-                                                        className="w-full rounded-md border border-amber-300/30 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500"
-                                                    />
-                                                </div>
-                                            `
-                                          : null}
-                                  </section>
-                              `;
-                          })}
-                          <div className="flex justify-end">
-                              <${Button} type="submit" disabled=${assistantAnsweringQuestion || !questionAnswersReady}>
-                                  ${assistantAnsweringQuestion ? "提交中..." : "提交答案"}
+                                                  `
+                                                : null}
+                                        </section>
+                                    `
+                                  : null}
+                          </div>
+                          <div className="flex items-center justify-between gap-2 pt-0.5 border-t border-white/10">
+                              <${Button}
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick=${handlePreviousQuestion}
+                                  disabled=${assistantAnsweringQuestion || isFirstQuestion}
+                              >
+                                  上一步
                               <//>
+                              ${isLastQuestion
+                                  ? html`
+                                        <${Button}
+                                            type="submit"
+                                            size="sm"
+                                            disabled=${assistantAnsweringQuestion || !allQuestionsReady}
+                                        >
+                                            ${assistantAnsweringQuestion ? "提交中..." : "完成并提交"}
+                                        <//>
+                                    `
+                                  : html`
+                                        <${Button}
+                                            type="button"
+                                            size="sm"
+                                            onClick=${handleNextQuestion}
+                                            disabled=${assistantAnsweringQuestion || !currentQuestionReady}
+                                        >
+                                            下一题
+                                        <//>
+                                    `}
                           </div>
                       </form>
                   `
@@ -451,58 +557,6 @@ export function AssistantMessageArea({
             </form>
         </div>
     `;
-}
-
-function getQuestionKey(question, index) {
-    const rawQuestion = typeof question?.question === "string" ? question.question.trim() : "";
-    if (rawQuestion) {
-        return rawQuestion;
-    }
-    return `question_${index + 1}`;
-}
-
-const ASSISTANT_OTHER_OPTION_VALUE = "__assistant_option_other__";
-const ASSISTANT_OTHER_OPTION_LABEL = "其他";
-
-function isOtherOptionLabel(label) {
-    const normalized = String(label || "").trim().toLowerCase();
-    return normalized === "其他" || normalized === "other";
-}
-
-function isOtherOptionValue(value) {
-    return value === ASSISTANT_OTHER_OPTION_VALUE;
-}
-
-function isOtherSelected(question, selected) {
-    if (question?.multiSelect) {
-        return Array.isArray(selected) && selected.includes(ASSISTANT_OTHER_OPTION_VALUE);
-    }
-    return selected === ASSISTANT_OTHER_OPTION_VALUE;
-}
-
-function buildQuestionOptions(options) {
-    const normalized = options.map((option, index) => {
-        const label = option?.label || `选项 ${index + 1}`;
-        const isOther = isOtherOptionLabel(label);
-        return {
-            ...option,
-            label,
-            value: isOther ? ASSISTANT_OTHER_OPTION_VALUE : label,
-            isOther,
-        };
-    });
-
-    const hasOtherOption = normalized.some((option) => option.isOther);
-    if (!hasOtherOption) {
-        normalized.push({
-            label: ASSISTANT_OTHER_OPTION_LABEL,
-            description: "若以上选项都不符合，可自行输入",
-            value: ASSISTANT_OTHER_OPTION_VALUE,
-            isOther: true,
-        });
-    }
-
-    return normalized;
 }
 
 export function AssistantPage({
