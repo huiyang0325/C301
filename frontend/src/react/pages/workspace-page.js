@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import htm from "htm";
 
 import { PROJECT_TABS } from "../constants.js";
@@ -201,6 +201,109 @@ function getDraftSteps(contentMode) {
         { step: 2, label: "镜头预算" },
         { step: 3, label: "角色线索表" },
     ];
+}
+
+export function buildReviewTargetFromSelection(currentScripts, selectedReview, uploadedStoryboardMap = {}) {
+    if (!selectedReview?.scriptFile || !selectedReview?.itemId) {
+        return null;
+    }
+
+    const script = currentScripts?.[selectedReview.scriptFile];
+    if (!script) {
+        return null;
+    }
+
+    const isNarration = script.content_mode === "narration" && Array.isArray(script.segments);
+    const items = isNarration ? script.segments || [] : script.scenes || [];
+    const idField = isNarration ? "segment_id" : "scene_id";
+    const item = items.find((entry) => entry[idField] === selectedReview.itemId);
+    if (!item) {
+        return null;
+    }
+
+    const assets = item.generated_assets || {};
+    const key = itemKey(selectedReview.scriptFile, selectedReview.itemId);
+
+    return {
+        scriptFile: selectedReview.scriptFile,
+        itemId: selectedReview.itemId,
+        item,
+        isNarration,
+        videoPath: assets.video_clip || "",
+        storyboardPath: assets.storyboard_image || uploadedStoryboardMap[key] || "",
+        status: assets.status || "pending",
+        duration: item.duration_seconds || 4,
+    };
+}
+
+export function getSafeReviewSelection(currentScripts, selectedReview, uploadedStoryboardMap = {}) {
+    const target = buildReviewTargetFromSelection(currentScripts, selectedReview, uploadedStoryboardMap);
+    if (!target?.videoPath) {
+        return null;
+    }
+    return selectedReview;
+}
+
+export function getReviewSelectionResult(currentScripts, selectedReview, uploadedStoryboardMap = {}) {
+    const target = buildReviewTargetFromSelection(currentScripts, selectedReview, uploadedStoryboardMap);
+    if (!target) {
+        return { ok: false, error: "找不到对应片段/场景", target: null };
+    }
+    if (!target.videoPath) {
+        return { ok: false, error: "该场景暂无可播放视频", target };
+    }
+    return { ok: true, error: "", target };
+}
+
+export function normalizeReviewMediaError(message) {
+    if (message === null || message === undefined) {
+        return "视频加载失败";
+    }
+    return String(message).trim();
+}
+
+export function buildReviewVideoUrl(videoUrl, mediaVersion = 0) {
+    if (!videoUrl) {
+        return "";
+    }
+    if (!mediaVersion || mediaVersion <= 0) {
+        return videoUrl;
+    }
+    const separator = String(videoUrl).includes("?") ? "&" : "?";
+    return `${videoUrl}${separator}rev=${mediaVersion}`;
+}
+
+export function isReviewItemSelected(selectedReview, scriptFile, itemId) {
+    if (!selectedReview) {
+        return false;
+    }
+    return selectedReview.scriptFile === scriptFile && selectedReview.itemId === itemId;
+}
+
+export function getReviewMediaVersionForSelection(reviewMediaVersions, selectedReview) {
+    if (!selectedReview?.scriptFile || !selectedReview?.itemId) {
+        return 0;
+    }
+    const key = itemKey(selectedReview.scriptFile, selectedReview.itemId);
+    const value = Number(reviewMediaVersions?.[key] || 0);
+    if (!Number.isFinite(value) || value <= 0) {
+        return 0;
+    }
+    return value;
+}
+
+export function bumpReviewMediaVersionForItem(reviewMediaVersions, scriptFile, itemId) {
+    if (!scriptFile || !itemId) {
+        return reviewMediaVersions || {};
+    }
+    const key = itemKey(scriptFile, itemId);
+    const base = reviewMediaVersions || {};
+    const current = Number(base[key] || 0);
+    const nextValue = Number.isFinite(current) && current > 0 ? current + 1 : 1;
+    return {
+        ...base,
+        [key]: nextValue,
+    };
 }
 
 function ProjectOverview({
@@ -455,7 +558,7 @@ function ProjectOverview({
     `;
 }
 
-function ProjectTasks({
+export function ProjectTasks({
     currentProjectData,
     currentProjectName,
     characterDrafts,
@@ -516,7 +619,7 @@ function ProjectTasks({
                 ${characters.length === 0
                     ? html`<p className="text-sm text-slate-400">暂无人物，可在上方新增并上传/生成人物图。</p>`
                     : html`
-                          <div className="grid lg:grid-cols-2 gap-4">
+                          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
                               ${characters.map(([name, character]) => {
                                   const draft = characterDrafts[name] || {
                                       description: "",
@@ -524,55 +627,36 @@ function ProjectTasks({
                                   };
                                   const imageUrl = resolveFileUrl(currentProjectName, character.character_sheet);
                                   const refImageUrl = resolveFileUrl(currentProjectName, character.reference_image);
+                                  const primaryImageUrl = imageUrl || refImageUrl;
+                                  const imageState = imageUrl ? "已上传" : "无";
+                                  const refState = refImageUrl ? "已上传" : "无";
+                                  const descriptionText = draft.description || character.description || "暂无人物描述";
 
                                   return html`
-                                      <article key=${name} className="rounded-xl border border-white/10 bg-ink-900/50 p-3 space-y-3">
-                                          <div className="flex items-center justify-between gap-3">
-                                              <h4 className="font-semibold truncate">${name}</h4>
-                                              <${Badge} className="bg-white/10 border border-white/10 text-slate-200">人物<//>
-                                          </div>
-                                          <div className="flex items-start gap-3">
-                                              <div className="w-16 shrink-0 space-y-2">
-                                                  <button
-                                                      type="button"
-                                                      onClick=${() => imageUrl && onOpenPreview(imageUrl, "image", `${name} 人物图`)}
-                                                      className="h-20 w-full rounded-lg border border-white/10 bg-ink-900/80 overflow-hidden"
-                                                  >
-                                                      ${imageUrl
-                                                          ? html`<img src=${imageUrl} alt=${name} className="w-full h-full object-cover" />`
-                                                          : html`<div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500">人物图</div>`}
-                                                  </button>
-                                                  <button
-                                                      type="button"
-                                                      onClick=${() => refImageUrl && onOpenPreview(refImageUrl, "image", `${name} 参考图`)}
-                                                      className="h-20 w-full rounded-lg border border-white/10 bg-ink-900/80 overflow-hidden"
-                                                  >
-                                                      ${refImageUrl
-                                                          ? html`<img src=${refImageUrl} alt=${`${name} reference`} className="w-full h-full object-cover" />`
-                                                          : html`<div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500">参考图</div>`}
-                                                  </button>
-                                              </div>
-                                              <div className="flex-1 min-w-0 space-y-2">
-                                                  <textarea
-                                                      value=${draft.description}
-                                                      onChange=${(event) => onCharacterDraftChange(name, "description", event.target.value)}
-                                                      className="w-full min-h-16 rounded-xl border border-white/15 bg-ink-900/70 px-3 py-2 text-xs"
-                                                      placeholder="人物描述"
-                                                  ></textarea>
-                                                  <input
-                                                      value=${draft.voiceStyle}
-                                                      onChange=${(event) => onCharacterDraftChange(name, "voiceStyle", event.target.value)}
-                                                      className="w-full h-9 rounded-xl border border-white/15 bg-ink-900/70 px-3 text-xs"
-                                                      placeholder="声音风格"
-                                                  />
-                                              </div>
+                                      <article key=${name} className="rounded-xl border border-white/10 bg-ink-900/50 p-2 space-y-2">
+                                          <button
+                                              type="button"
+                                              onClick=${() => primaryImageUrl && onOpenPreview(primaryImageUrl, "image", `${name} 人物图`)}
+                                              className="w-full rounded-lg border border-white/10 bg-ink-950/60 overflow-hidden"
+                                          >
+                                              ${primaryImageUrl
+                                                  ? html`<img src=${primaryImageUrl} alt=${name} className="w-full aspect-video object-cover" />`
+                                                  : html`<div className="w-full aspect-video flex items-center justify-center text-[11px] text-slate-500">暂无人物图</div>`}
+                                          </button>
+
+                                          <div className="flex items-center justify-between gap-2">
+                                              <h4 className="font-semibold text-xs truncate">${name}</h4>
+                                              <${Badge} className="bg-white/10 border border-white/10 text-slate-200 text-[10px]">人物<//>
                                           </div>
 
-                                          <div className="flex flex-wrap gap-2">
+                                          <p className="text-[11px] text-slate-400">人物图 ${imageState} · 参考图 ${refState}</p>
+                                          <p className="text-[11px] text-slate-300 leading-5 line-clamp-2">${descriptionText}</p>
+
+                                          <div className="flex flex-wrap gap-1">
                                               <${Button} size="sm" variant="outline" onClick=${() => onSaveCharacter(name)} disabled=${busy}>保存<//>
                                               <${Button} size="sm" onClick=${() => onGenerateCharacter(name)} disabled=${busy}>生成<//>
                                               <${Button} size="sm" variant="danger" onClick=${() => onDeleteCharacter(name)} disabled=${busy}>删除<//>
-                                              <label className="inline-flex h-8 items-center px-3 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-neon-400/60 hover:text-neon-300 cursor-pointer">
+                                              <label className="inline-flex h-8 items-center px-2 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-neon-400/60 hover:text-neon-300 cursor-pointer">
                                                   人物图
                                                   <input
                                                       type="file"
@@ -587,7 +671,7 @@ function ProjectTasks({
                                                       }}
                                                   />
                                               </label>
-                                              <label className="inline-flex h-8 items-center px-3 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-neon-400/60 hover:text-neon-300 cursor-pointer">
+                                              <label className="inline-flex h-8 items-center px-2 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-neon-400/60 hover:text-neon-300 cursor-pointer">
                                                   参考图
                                                   <input
                                                       type="file"
@@ -602,7 +686,46 @@ function ProjectTasks({
                                                       }}
                                                   />
                                               </label>
+                                              <button
+                                                  type="button"
+                                                  onClick=${() => primaryImageUrl && onOpenPreview(primaryImageUrl, "image", `${name} 人物图`)}
+                                                  className="h-8 px-2 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-white/35"
+                                              >
+                                                  看图
+                                              </button>
+                                              <button
+                                                  type="button"
+                                                  disabled=${!refImageUrl}
+                                                  onClick=${() => refImageUrl && onOpenPreview(refImageUrl, "image", `${name} 参考图`)}
+                                                  className="h-8 px-2 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-white/35 disabled:opacity-50 disabled:cursor-not-allowed"
+                                              >
+                                                  看参考
+                                              </button>
                                           </div>
+
+                                          <details className="rounded-lg border border-white/10 bg-ink-900/50 p-2">
+                                              <summary className="cursor-pointer text-xs text-slate-300">展开编辑</summary>
+                                              <div className="mt-2 space-y-2">
+                                                  <label className="text-xs text-slate-300 space-y-1 block">
+                                                      <span>人物描述</span>
+                                                      <textarea
+                                                          value=${draft.description}
+                                                          onChange=${(event) => onCharacterDraftChange(name, "description", event.target.value)}
+                                                          className="w-full min-h-16 rounded-xl border border-white/15 bg-ink-900/70 px-2 py-2 text-xs"
+                                                          placeholder="人物描述"
+                                                      ></textarea>
+                                                  </label>
+                                                  <label className="text-xs text-slate-300 space-y-1 block">
+                                                      <span>声音风格</span>
+                                                      <input
+                                                          value=${draft.voiceStyle}
+                                                          onChange=${(event) => onCharacterDraftChange(name, "voiceStyle", event.target.value)}
+                                                          className="w-full h-8 rounded-lg border border-white/15 bg-ink-900/70 px-2 text-xs"
+                                                          placeholder="声音风格"
+                                                      />
+                                                  </label>
+                                              </div>
+                                          </details>
                                       </article>
                                   `;
                               })}
@@ -613,7 +736,7 @@ function ProjectTasks({
     `;
 }
 
-function ProjectClues({
+export function ProjectClues({
     currentProjectData,
     currentProjectName,
     clueDrafts,
@@ -686,7 +809,7 @@ function ProjectClues({
                       />
                   `
                 : html`
-                      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
                           ${clues.map(([name, clue]) => {
                               const draft = clueDrafts[name] || {
                                   clueType: "prop",
@@ -695,57 +818,34 @@ function ProjectClues({
                               };
                               const imageUrl = resolveFileUrl(currentProjectName, clue.clue_sheet);
                               const clueTypeLabel = draft.clueType === "location" ? "地点" : "道具";
+                              const importanceLabel = draft.importance === "minor" ? "次要" : "主要";
+                              const descriptionText = draft.description || clue.description || "暂无线索描述";
 
                               return html`
-                                  <article key=${name} className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
+                                  <article key=${name} className="rounded-xl border border-white/10 bg-white/5 p-2 space-y-2">
+                                      <button
+                                          type="button"
+                                          onClick=${() => imageUrl && onOpenPreview(imageUrl, "image", `${name} 线索图`)}
+                                          className="w-full rounded-lg border border-white/10 bg-ink-900/70 overflow-hidden"
+                                      >
+                                          ${imageUrl
+                                              ? html`<img src=${imageUrl} alt=${name} className="w-full aspect-video object-cover" />`
+                                              : html`<div className="w-full aspect-video flex items-center justify-center text-[11px] text-slate-500">暂无线索图</div>`}
+                                      </button>
+
                                       <div className="flex items-center justify-between gap-2">
-                                          <h4 className="font-semibold truncate">${name}</h4>
-                                          <${Badge} className="bg-cyan-500/15 text-cyan-300 border border-cyan-400/30">${clueTypeLabel}<//>
+                                          <h4 className="font-semibold text-xs truncate">${name}</h4>
+                                          <${Badge} className="bg-cyan-500/15 text-cyan-300 border border-cyan-400/30 text-[10px]">${clueTypeLabel}<//>
                                       </div>
 
-                                      <div className="flex items-start gap-3">
-                                          <button
-                                              type="button"
-                                              onClick=${() => imageUrl && onOpenPreview(imageUrl, "image", `${name} 线索图`)}
-                                              className="w-24 h-16 rounded-lg border border-white/10 bg-ink-900/70 overflow-hidden shrink-0"
-                                          >
-                                              ${imageUrl
-                                                  ? html`<img src=${imageUrl} alt=${name} className="w-full h-full object-cover" />`
-                                                  : html`<div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500">线索图</div>`}
-                                          </button>
-                                          <div className="flex-1 min-w-0 space-y-2">
-                                              <div className="grid grid-cols-2 gap-2">
-                                                  <select
-                                                      value=${draft.clueType}
-                                                      onChange=${(event) => onClueDraftChange(name, "clueType", event.target.value)}
-                                                      className="h-8 rounded-lg border border-white/15 bg-ink-900/70 px-2 text-xs"
-                                                  >
-                                                      <option value="prop">道具</option>
-                                                      <option value="location">地点</option>
-                                                  </select>
-                                                  <select
-                                                      value=${draft.importance}
-                                                      onChange=${(event) => onClueDraftChange(name, "importance", event.target.value)}
-                                                      className="h-8 rounded-lg border border-white/15 bg-ink-900/70 px-2 text-xs"
-                                                  >
-                                                      <option value="major">主要</option>
-                                                      <option value="minor">次要</option>
-                                                  </select>
-                                              </div>
-                                              <textarea
-                                                  value=${draft.description}
-                                                  onChange=${(event) => onClueDraftChange(name, "description", event.target.value)}
-                                                  className="w-full min-h-16 rounded-xl border border-white/15 bg-ink-900/70 px-2 py-2 text-xs"
-                                                  placeholder="线索描述"
-                                              ></textarea>
-                                          </div>
-                                      </div>
+                                      <p className="text-[11px] text-slate-400">重要度：${importanceLabel}</p>
+                                      <p className="text-[11px] text-slate-300 leading-5 line-clamp-2">${descriptionText}</p>
 
-                                      <div className="flex flex-wrap gap-2">
+                                      <div className="flex flex-wrap gap-1">
                                           <${Button} size="sm" variant="outline" onClick=${() => onSaveClue(name)} disabled=${busy}>保存<//>
                                           <${Button} size="sm" onClick=${() => onGenerateClue(name)} disabled=${busy}>生成<//>
                                           <${Button} size="sm" variant="danger" onClick=${() => onDeleteClue(name)} disabled=${busy}>删除<//>
-                                          <label className="inline-flex h-8 items-center px-3 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-neon-400/60 hover:text-neon-300 cursor-pointer">
+                                          <label className="inline-flex h-8 items-center px-2 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-neon-400/60 hover:text-neon-300 cursor-pointer">
                                               上传
                                               <input
                                                   type="file"
@@ -760,7 +860,53 @@ function ProjectClues({
                                                   }}
                                               />
                                           </label>
+                                          <button
+                                              type="button"
+                                              onClick=${() => imageUrl && onOpenPreview(imageUrl, "image", `${name} 线索图`)}
+                                              className="h-8 px-2 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-white/35"
+                                          >
+                                              看图
+                                          </button>
                                       </div>
+
+                                      <details className="rounded-lg border border-white/10 bg-ink-900/50 p-2">
+                                          <summary className="cursor-pointer text-xs text-slate-300">展开编辑</summary>
+                                          <div className="mt-2 space-y-2">
+                                              <div className="grid grid-cols-2 gap-2">
+                                                  <label className="text-xs text-slate-300 space-y-1 block">
+                                                      <span>线索类型</span>
+                                                      <select
+                                                          value=${draft.clueType}
+                                                          onChange=${(event) => onClueDraftChange(name, "clueType", event.target.value)}
+                                                          className="w-full h-8 rounded-lg border border-white/15 bg-ink-900/70 px-2 text-xs"
+                                                      >
+                                                          <option value="prop">道具</option>
+                                                          <option value="location">地点</option>
+                                                      </select>
+                                                  </label>
+                                                  <label className="text-xs text-slate-300 space-y-1 block">
+                                                      <span>重要度</span>
+                                                      <select
+                                                          value=${draft.importance}
+                                                          onChange=${(event) => onClueDraftChange(name, "importance", event.target.value)}
+                                                          className="w-full h-8 rounded-lg border border-white/15 bg-ink-900/70 px-2 text-xs"
+                                                      >
+                                                          <option value="major">主要</option>
+                                                          <option value="minor">次要</option>
+                                                      </select>
+                                                  </label>
+                                              </div>
+                                              <label className="text-xs text-slate-300 space-y-1 block">
+                                                  <span>线索描述</span>
+                                                  <textarea
+                                                      value=${draft.description}
+                                                      onChange=${(event) => onClueDraftChange(name, "description", event.target.value)}
+                                                      className="w-full min-h-16 rounded-xl border border-white/15 bg-ink-900/70 px-2 py-2 text-xs"
+                                                      placeholder="线索描述"
+                                                  ></textarea>
+                                              </label>
+                                          </div>
+                                      </details>
                                   </article>
                               `;
                           })}
@@ -770,13 +916,84 @@ function ProjectClues({
     `;
 }
 
-function ProjectEpisodes({
+function EpisodeReviewPanel({
+    reviewTarget,
+    reviewMediaError,
+    currentProjectName,
+    onReviewMediaError,
+    onGenerateVideo,
+    reviewMediaVersion,
+    busy,
+}) {
+    if (!reviewTarget) {
+        return html`
+            <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-sm text-slate-300">点击任意场景的视频缩略图开始审片</p>
+            </article>
+        `;
+    }
+
+    const videoUrl = resolveFileUrl(currentProjectName, reviewTarget.videoPath);
+    const videoSrc = buildReviewVideoUrl(videoUrl, reviewMediaVersion);
+    const storyboardUrl = resolveFileUrl(currentProjectName, reviewTarget.storyboardPath);
+
+    return html`
+        <article className="rounded-2xl border border-neon-400/25 bg-white/5 p-3 space-y-3">
+            <div className="grid xl:grid-cols-[2fr_1fr] gap-3">
+                <div className="rounded-xl border border-white/10 bg-black/50 p-2">
+                    <video
+                        key=${`${reviewTarget.itemId}-${reviewMediaVersion || 0}`}
+                        src=${videoSrc}
+                        controls
+                        className="w-full aspect-video rounded-lg bg-black object-contain"
+                        onError=${() => onReviewMediaError("视频加载失败，可重试生成")}
+                    ></video>
+                </div>
+                <div className="space-y-2">
+                    <div className="rounded-xl border border-white/10 bg-ink-900/60 p-2">
+                        ${storyboardUrl
+                            ? html`<img src=${storyboardUrl} alt=${`${reviewTarget.itemId} storyboard`} className="w-full aspect-video rounded-lg object-cover" />`
+                            : html`<div className="w-full aspect-video rounded-lg bg-ink-950/70 flex items-center justify-center text-xs text-slate-500">暂无分镜</div>`}
+                    </div>
+                    <div className="text-xs text-slate-300">
+                        ${reviewTarget.itemId} · ${reviewTarget.duration}s · ${reviewTarget.status}
+                    </div>
+                    ${reviewMediaError
+                        ? html`
+                              <div className="rounded-lg border border-red-400/20 bg-red-500/10 p-2 space-y-2">
+                                  <p className="text-xs text-red-200">${reviewMediaError}</p>
+                                  <${Button}
+                                      size="sm"
+                                      variant="outline"
+                                      disabled=${busy}
+                                      onClick=${() => {
+                                          onReviewMediaError("");
+                                          onGenerateVideo(reviewTarget.scriptFile, reviewTarget.itemId);
+                                      }}
+                                  >
+                                      重试生成视频
+                                  <//>
+                              </div>
+                          `
+                        : null}
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+export function ProjectEpisodes({
     currentProjectData,
     currentProjectName,
     currentScripts,
     draftsByEpisode,
     itemDrafts,
     uploadedStoryboardMap,
+    selectedReview,
+    reviewMediaError,
+    reviewMediaVersion,
+    onSelectReview,
+    onReviewMediaError,
     onItemDraftChange,
     onOpenDraftEditor,
     onSaveItem,
@@ -806,8 +1023,19 @@ function ProjectEpisodes({
         `;
     }
 
+    const reviewTarget = buildReviewTargetFromSelection(currentScripts, selectedReview, uploadedStoryboardMap);
+
     return html`
         <div className="space-y-4">
+            <${EpisodeReviewPanel}
+                reviewTarget=${reviewTarget}
+                reviewMediaError=${reviewMediaError}
+                reviewMediaVersion=${reviewMediaVersion}
+                currentProjectName=${currentProjectName}
+                onReviewMediaError=${onReviewMediaError}
+                onGenerateVideo=${onGenerateVideo}
+                busy=${busy}
+            />
             ${episodes.map((episode) => {
                 const scriptFile = episode.script_file?.replace("scripts/", "") || "";
                 const script = currentScripts[scriptFile] || {};
@@ -851,7 +1079,7 @@ function ProjectEpisodes({
                         ${items.length === 0
                             ? html`<p className="text-sm text-slate-400">当前剧本无${itemTypeLabel}数据。</p>`
                             : html`
-                                  <div className="space-y-2">
+                                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
                                       ${items.map((item) => {
                                           const itemId = item.segment_id || item.scene_id;
                                           if (!itemId) {
@@ -864,13 +1092,11 @@ function ProjectEpisodes({
                                               imageScene: readImageScene(item.image_prompt),
                                               videoAction: readVideoAction(item.video_prompt),
                                           };
-
                                           const assets = item.generated_assets || {};
                                           const storyboardPath = assets.storyboard_image || uploadedStoryboardMap[draftKey] || "";
                                           const videoPath = assets.video_clip || "";
                                           const storyboardUrl = resolveFileUrl(currentProjectName, storyboardPath);
                                           const videoUrl = resolveFileUrl(currentProjectName, videoPath);
-
                                           const characterRefs = isNarration
                                               ? item.characters_in_segment || []
                                               : item.characters_in_scene || [];
@@ -881,44 +1107,47 @@ function ProjectEpisodes({
                                               || item.dialogue?.text
                                               || item.visual?.description
                                               || "暂无文本描述";
+                                          const isSelected = selectedReview?.scriptFile === scriptFile && selectedReview?.itemId === itemId;
 
                                           return html`
-                                              <div key=${itemId} className="rounded-xl border border-white/10 bg-ink-900/50 p-3 space-y-2">
+                                              <article
+                                                  key=${itemId}
+                                                  className=${cn(
+                                                      "rounded-xl border bg-ink-900/50 p-2 space-y-2",
+                                                      isSelected
+                                                          ? "border-neon-400/60 ring-1 ring-neon-400/50"
+                                                          : "border-white/10"
+                                                  )}
+                                              >
+                                                  <button
+                                                      type="button"
+                                                      onClick=${() => onSelectReview(scriptFile, itemId)}
+                                                      className="w-full rounded-lg border border-white/10 bg-ink-950/60 overflow-hidden"
+                                                  >
+                                                      ${videoUrl
+                                                          ? storyboardUrl
+                                                              ? html`<img src=${storyboardUrl} alt=${`${itemId} preview`} className="w-full aspect-video object-cover" />`
+                                                              : html`<video src=${videoUrl} muted playsInline preload="metadata" className="w-full aspect-video object-cover"></video>`
+                                                          : html`<div className="w-full aspect-video flex items-center justify-center text-[11px] text-slate-500">暂无视频</div>`}
+                                                  </button>
+
                                                   <div className="flex items-center justify-between gap-2">
-                                                      <div className="flex items-center gap-2 min-w-0">
-                                                          <h4 className="font-semibold text-sm">${itemId}</h4>
-                                                          <span className="text-[11px] text-slate-400">${draft.duration || item.duration_seconds || 4}s</span>
-                                                          <${Badge} className="bg-slate-500/15 border border-slate-400/30 text-slate-200">${assets.status || "pending"}<//>
+                                                      <div className="min-w-0">
+                                                          <h4 className="font-semibold text-xs truncate">${itemId}</h4>
+                                                          <p className="text-[11px] text-slate-400">${draft.duration || item.duration_seconds || 4}s</p>
                                                       </div>
-                                                      <div className="flex items-center gap-2 shrink-0">
-                                                          <button
-                                                              type="button"
-                                                              onClick=${() => storyboardUrl && onOpenPreview(storyboardUrl, "image", `${itemId} 分镜`)}
-                                                              className="w-20 h-12 rounded border border-white/10 bg-ink-900/80 overflow-hidden"
-                                                          >
-                                                              ${storyboardUrl
-                                                                  ? html`<img src=${storyboardUrl} alt=${`${itemId} storyboard`} className="w-full h-full object-cover" />`
-                                                                  : html`<div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500">分镜</div>`}
-                                                          </button>
-                                                          <button
-                                                              type="button"
-                                                              onClick=${() => videoUrl && onOpenPreview(videoUrl, "video", `${itemId} 视频`)}
-                                                              className="w-20 h-12 rounded border border-white/10 bg-ink-900/80 overflow-hidden"
-                                                          >
-                                                              ${videoUrl
-                                                                  ? html`<video src=${videoUrl} controls className="w-full h-full object-cover"></video>`
-                                                                  : html`<div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500">视频</div>`}
-                                                          </button>
-                                                      </div>
+                                                      <${Badge} className="bg-slate-500/15 border border-slate-400/30 text-slate-200 text-[10px]">
+                                                          ${assets.status || "pending"}
+                                                      <//>
                                                   </div>
 
-                                                  <p className="text-xs text-slate-300 leading-5 line-clamp-2">${descriptionText}</p>
+                                                  <p className="text-[11px] text-slate-300 leading-5 line-clamp-2">${descriptionText}</p>
 
-                                                  <div className="flex flex-wrap gap-2">
+                                                  <div className="flex flex-wrap gap-1">
                                                       <${Button} size="sm" variant="outline" onClick=${() => onSaveItem(scriptFile, itemId, isNarration)} disabled=${busy}>保存<//>
                                                       <${Button} size="sm" onClick=${() => onGenerateStoryboard(scriptFile, itemId)} disabled=${busy}>分镜<//>
                                                       <${Button} size="sm" onClick=${() => onGenerateVideo(scriptFile, itemId)} disabled=${busy}>视频<//>
-                                                      <label className="inline-flex h-8 items-center px-3 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-neon-400/60 hover:text-neon-300 cursor-pointer">
+                                                      <label className="inline-flex h-8 items-center px-2 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-neon-400/60 hover:text-neon-300 cursor-pointer">
                                                           上传
                                                           <input
                                                               type="file"
@@ -933,12 +1162,19 @@ function ProjectEpisodes({
                                                               }}
                                                           />
                                                       </label>
+                                                      <button
+                                                          type="button"
+                                                          onClick=${() => storyboardUrl && onOpenPreview(storyboardUrl, "image", `${itemId} 分镜`)}
+                                                          className="h-8 px-2 text-xs rounded-lg border border-white/20 text-slate-200 hover:border-white/35"
+                                                      >
+                                                          看图
+                                                      </button>
                                                   </div>
 
                                                   <details className="rounded-lg border border-white/10 bg-ink-900/50 p-2">
                                                       <summary className="cursor-pointer text-xs text-slate-300">展开编辑</summary>
                                                       <div className="mt-2 space-y-2">
-                                                          <div className="grid grid-cols-2 gap-3">
+                                                          <div className="grid grid-cols-2 gap-2">
                                                               <label className="text-xs text-slate-300 space-y-1">
                                                                   <span>时长（秒）</span>
                                                                   <input
@@ -983,7 +1219,7 @@ function ProjectEpisodes({
                                                           </div>
                                                       </div>
                                                   </details>
-                                              </div>
+                                              </article>
                                           `;
                                       })}
                                   </div>
@@ -1012,6 +1248,9 @@ function WorkspaceTabContent({
     clueDrafts,
     itemDrafts,
     uploadedStoryboardMap,
+    selectedReview,
+    reviewMediaError,
+    reviewMediaVersion,
     newCharacter,
     newClue,
     handlers,
@@ -1101,6 +1340,11 @@ function WorkspaceTabContent({
             draftsByEpisode=${draftsByEpisode}
             itemDrafts=${itemDrafts}
             uploadedStoryboardMap=${uploadedStoryboardMap}
+            selectedReview=${selectedReview}
+            reviewMediaError=${reviewMediaError}
+            reviewMediaVersion=${reviewMediaVersion}
+            onSelectReview=${handlers.onSelectReview}
+            onReviewMediaError=${handlers.onReviewMediaError}
             onItemDraftChange=${handlers.onItemDraftChange}
             onOpenDraftEditor=${handlers.onOpenDraftEditor}
             onSaveItem=${handlers.onSaveItem}
@@ -1139,6 +1383,15 @@ export function WorkspacePage({
     const [clueDrafts, setClueDrafts] = useState({});
     const [itemDrafts, setItemDrafts] = useState({});
     const [uploadedStoryboardMap, setUploadedStoryboardMap] = useState({});
+    const [selectedReview, setSelectedReview] = useState(null);
+    const [reviewMediaError, setReviewMediaError] = useState("");
+    const [reviewMediaVersions, setReviewMediaVersions] = useState({});
+    const selectedReviewRef = useRef(selectedReview);
+    selectedReviewRef.current = selectedReview;
+    const reviewMediaVersion = useMemo(
+        () => getReviewMediaVersionForSelection(reviewMediaVersions, selectedReview),
+        [reviewMediaVersions, selectedReview]
+    );
 
     useEffect(() => {
         setProjectForm(createProjectForm(currentProjectData));
@@ -1159,10 +1412,17 @@ export function WorkspacePage({
     }, [currentScripts]);
 
     useEffect(() => {
+        setSelectedReview((prev) => getSafeReviewSelection(currentScripts, prev, uploadedStoryboardMap));
+    }, [currentScripts, uploadedStoryboardMap]);
+
+    useEffect(() => {
         setUploadedStoryboardMap({});
         setSourceEditor(DEFAULT_SOURCE_EDITOR);
         setDraftEditor(DEFAULT_DRAFT_EDITOR);
         setPreviewMedia(DEFAULT_PREVIEW_MEDIA);
+        setSelectedReview(null);
+        setReviewMediaError("");
+        setReviewMediaVersions({});
     }, [currentProjectName]);
 
     const notify = useCallback(
@@ -1948,6 +2208,13 @@ export function WorkspacePage({
                 {
                     successText: `${itemId} 视频生成完成`,
                     errorPrefix: "生成视频失败",
+                    onSuccess: () => {
+                        setReviewMediaVersions((prev) => bumpReviewMediaVersionForItem(prev, scriptFile, itemId));
+                        const activeReview = selectedReviewRef.current;
+                        if (isReviewItemSelected(activeReview, scriptFile, itemId)) {
+                            setReviewMediaError("");
+                        }
+                    },
                 }
             );
         },
@@ -1976,6 +2243,23 @@ export function WorkspacePage({
         },
         [currentProjectName, runAction]
     );
+
+    const onSelectReview = useCallback(
+        (scriptFile, itemId) => {
+            const result = getReviewSelectionResult(currentScripts, { scriptFile, itemId }, uploadedStoryboardMap);
+            if (!result.ok) {
+                notify(result.error, "error");
+                return;
+            }
+            setSelectedReview({ scriptFile, itemId });
+            setReviewMediaError("");
+        },
+        [currentScripts, notify, uploadedStoryboardMap]
+    );
+
+    const onReviewMediaError = useCallback((message) => {
+        setReviewMediaError(normalizeReviewMediaError(message));
+    }, []);
 
     const handlers = useMemo(
         () => ({
@@ -2019,6 +2303,8 @@ export function WorkspacePage({
             onGenerateStoryboard,
             onGenerateVideo,
             onUploadStoryboard,
+            onSelectReview,
+            onReviewMediaError,
         }),
         [
             onProjectFormChange,
@@ -2061,6 +2347,8 @@ export function WorkspacePage({
             onGenerateStoryboard,
             onGenerateVideo,
             onUploadStoryboard,
+            onSelectReview,
+            onReviewMediaError,
         ]
     );
 
@@ -2112,6 +2400,9 @@ export function WorkspacePage({
                         clueDrafts=${clueDrafts}
                         itemDrafts=${itemDrafts}
                         uploadedStoryboardMap=${uploadedStoryboardMap}
+                        selectedReview=${selectedReview}
+                        reviewMediaError=${reviewMediaError}
+                        reviewMediaVersion=${reviewMediaVersion}
                         newCharacter=${newCharacter}
                         newClue=${newClue}
                         handlers=${handlers}

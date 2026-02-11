@@ -27,7 +27,7 @@ export function AppShell({
 
     return html`
         <div className="app-frame flex">
-            <aside className="app-sidebar hidden md:flex md:w-72 h-screen overflow-y-auto p-5 flex-col gap-6">
+            <aside className="app-sidebar hidden md:flex md:w-64 h-screen overflow-y-auto p-5 flex-col gap-6">
                 <div>
                     <button
                         onClick=${() => onNavigate({ kind: ROUTE_KIND.LANDING })}
@@ -104,45 +104,47 @@ export function AppShell({
                 </div>
             </aside>
 
-            <main className="flex-1 h-screen min-h-0 p-3 md:p-4 flex flex-col gap-2 overflow-hidden">
-                <header className="app-panel rounded-xl px-3 py-2 md:px-4 md:py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2 shrink-0">
-                    <div className="min-w-0">
-                        ${route.kind === ROUTE_KIND.WORKSPACE
-                            ? html`
-                                  <nav className="flex items-center gap-1.5 text-[11px] text-slate-400 overflow-hidden whitespace-nowrap">
-                                      <span className="shrink-0">漫剧项目</span>
-                                      <span className="text-slate-600">/</span>
-                                      <span className="truncate text-slate-200">${workspaceTitle}</span>
-                                      <span className="text-slate-600">/</span>
-                                      <span className="shrink-0 text-neon-300">${currentWorkspaceTabLabel}</span>
-                                  </nav>
-                              `
-                            : html`
-                                  <p className="text-sm font-semibold app-title text-slate-100">${VIEW_META[dashboardKind].label}</p>
-                              `}
-                    </div>
+            <main className="flex-1 h-screen min-h-0 p-3 md:p-4 overflow-hidden">
+                <div className="mx-auto w-full max-w-[1560px] h-full min-h-0 flex flex-col gap-2">
+                    <header className="app-panel rounded-xl px-3 py-2 md:px-4 md:py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2 shrink-0">
+                        <div className="min-w-0">
+                            ${route.kind === ROUTE_KIND.WORKSPACE
+                                ? html`
+                                      <nav className="flex items-center gap-1.5 text-[11px] text-slate-400 overflow-hidden whitespace-nowrap">
+                                          <span className="shrink-0">漫剧项目</span>
+                                          <span className="text-slate-600">/</span>
+                                          <span className="truncate text-slate-200">${workspaceTitle}</span>
+                                          <span className="text-slate-600">/</span>
+                                          <span className="shrink-0 text-neon-300">${currentWorkspaceTabLabel}</span>
+                                      </nav>
+                                  `
+                                : html`
+                                      <p className="text-sm font-semibold app-title text-slate-100">${VIEW_META[dashboardKind].label}</p>
+                                  `}
+                        </div>
 
-                    <div className="md:hidden grid grid-cols-4 gap-1.5">
-                        <button onClick=${() => onNavigate({ kind: ROUTE_KIND.PROJECTS })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.PROJECTS || route.kind === ROUTE_KIND.WORKSPACE ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>项目</button>
-                        <button onClick=${() => onNavigate({ kind: ROUTE_KIND.ASSISTANT })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.ASSISTANT ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>对话</button>
-                        <button onClick=${() => onNavigate({ kind: ROUTE_KIND.TASKS })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.TASKS ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>队列</button>
-                        <button onClick=${() => onNavigate({ kind: ROUTE_KIND.USAGE })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.USAGE ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>费用</button>
-                    </div>
+                        <div className="md:hidden grid grid-cols-4 gap-1.5">
+                            <button onClick=${() => onNavigate({ kind: ROUTE_KIND.PROJECTS })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.PROJECTS || route.kind === ROUTE_KIND.WORKSPACE ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>项目</button>
+                            <button onClick=${() => onNavigate({ kind: ROUTE_KIND.ASSISTANT })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.ASSISTANT ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>对话</button>
+                            <button onClick=${() => onNavigate({ kind: ROUTE_KIND.TASKS })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.TASKS ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>队列</button>
+                            <button onClick=${() => onNavigate({ kind: ROUTE_KIND.USAGE })} className=${cn("h-8 rounded-lg text-[11px]", route.kind === ROUTE_KIND.USAGE ? "bg-neon-500/20 text-neon-300" : "bg-white/5 text-slate-300")}>费用</button>
+                        </div>
 
-                    <div className="hidden md:flex items-center gap-2">
-                        ${headerActions}
-                        <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400">${selectedProjectItem ? `当前：${selectedProjectItem.title || selectedProjectItem.name}` : "未选择项目"}</span>
-                    </div>
-                </header>
+                        <div className="hidden md:flex items-center gap-2">
+                            ${headerActions}
+                            <span className="px-2 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400">${selectedProjectItem ? `当前：${selectedProjectItem.title || selectedProjectItem.name}` : "未选择项目"}</span>
+                        </div>
+                    </header>
 
-                <section
-                    className=${cn(
-                        "flex-1 min-h-0",
-                        fixedViewportLayout ? "overflow-hidden" : "overflow-y-auto"
-                    )}
-                >
-                    ${children}
-                </section>
+                    <section
+                        className=${cn(
+                            "flex-1 min-h-0",
+                            fixedViewportLayout ? "overflow-hidden" : "overflow-y-auto"
+                        )}
+                    >
+                        ${children}
+                    </section>
+                </div>
             </main>
 
             ${showAssistantTrigger
