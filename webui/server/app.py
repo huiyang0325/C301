@@ -6,7 +6,9 @@
     uv run uvicorn webui.server.app:app --reload --port 8080
 """
 
+import logging
 import sys
+import time
 from pathlib import Path
 
 # 添加项目根目录到 Python 路径
@@ -17,6 +19,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.requests import Request
+from starlette.responses import Response
+
+from lib.logging_config import setup_logging
 
 from lib.generation_worker import GenerationWorker
 from webui.server.routers import (
@@ -30,6 +36,10 @@ from webui.server.routers import (
     usage,
     tasks,
 )
+
+# 初始化日志
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -46,6 +56,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    path = request.url.path
+    _skip_log = path.startswith("/assets") or path == "/health"
+    try:
+        response: Response = await call_next(request)
+    except Exception:
+        if not _skip_log:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.exception(
+                "%s %s 500 %.0fms (unhandled)",
+                request.method,
+                path,
+                elapsed_ms,
+            )
+        raise
+    if not _skip_log:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "%s %s %d %.0fms",
+            request.method,
+            path,
+            response.status_code,
+            elapsed_ms,
+        )
+    return response
 
 # 注册 API 路由
 app.include_router(projects.router, prefix="/api/v1", tags=["项目管理"])
@@ -104,9 +143,11 @@ async def health_check():
 @app.on_event("startup")
 async def startup_generation_worker():
     """启动任务 worker（单活由 lease 控制）。"""
+    logger.info("启动 GenerationWorker...")
     worker = GenerationWorker()
     app.state.generation_worker = worker
     await worker.start()
+    logger.info("GenerationWorker 已启动")
 
 
 @app.on_event("shutdown")
@@ -114,7 +155,9 @@ async def shutdown_generation_worker():
     """停止任务 worker。"""
     worker = getattr(app.state, "generation_worker", None)
     if worker:
+        logger.info("正在停止 GenerationWorker...")
         await worker.stop()
+        logger.info("GenerationWorker 已停止")
 
 
 if __name__ == "__main__":
