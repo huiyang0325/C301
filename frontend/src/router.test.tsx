@@ -4,6 +4,7 @@ import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { API } from "@/api";
 import { useAssistantStore } from "@/stores/assistant-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { AppRoutes } from "@/router";
 
@@ -38,6 +39,7 @@ function resetStores(): void {
 describe("AppRoutes", () => {
   beforeEach(() => {
     resetStores();
+    useAuthStore.setState({ isAuthenticated: true, isLoading: false });
     vi.restoreAllMocks();
   });
 
@@ -77,7 +79,6 @@ describe("AppRoutes", () => {
           project_name: "old",
           title: "Old",
           status: "idle",
-          transcript_path: null,
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
         },
