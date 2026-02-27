@@ -204,6 +204,12 @@ async def serve_root():
     return _serve_frontend_index()
 
 
+@app.get("/login", include_in_schema=False)
+async def serve_login():
+    """服务登录页面"""
+    return _serve_frontend_index()
+
+
 @app.get("/app", include_in_schema=False)
 @app.get("/app/", include_in_schema=False)
 @app.get("/app/{subpath:path}", include_in_schema=False)

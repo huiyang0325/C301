@@ -70,3 +70,6 @@ frontend/.vite/
 # Test coverage
 htmlcov/
 .coverage
+
+# Docker runtime data
+claude_data/
