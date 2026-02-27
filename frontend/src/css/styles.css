@@ -10,14 +10,17 @@
     initial-value: 0;
 }
 
-* {
-    --scrollbar-opacity: 0;
-    transition: --scrollbar-opacity 0.4s ease-out;
-}
+/* 放入 @layer base，避免 transition 简写覆盖 Tailwind utilities 层的过渡属性 */
+@layer base {
+    * {
+        --scrollbar-opacity: 0;
+        transition: --scrollbar-opacity 0.4s ease-out;
+    }
 
-[data-scrolling] {
-    --scrollbar-opacity: 1;
-    transition: none;
+    [data-scrolling] {
+        --scrollbar-opacity: 1;
+        transition: none;
+    }
 }
 
 ::-webkit-scrollbar {
