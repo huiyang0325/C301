@@ -75,7 +75,12 @@ class MediaGenerator:
 
         pattern = self.OUTPUT_PATTERNS[resource_type]
         relative_path = pattern.format(resource_id=resource_id)
-        return self.project_path / relative_path
+        output_path = (self.project_path / relative_path).resolve()
+        try:
+            output_path.relative_to(self.project_path.resolve())
+        except ValueError:
+            raise ValueError(f"非法资源 ID: '{resource_id}'")
+        return output_path
 
     def _ensure_parent_dir(self, output_path: Path) -> None:
         """确保输出目录存在"""
@@ -88,7 +93,7 @@ class MediaGenerator:
         resource_id: str,
         reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
         aspect_ratio: str = "9:16",
-        image_size: str = "2K",
+        image_size: str = "1K",
         **version_metadata
     ) -> Tuple[Path, int]:
         """
@@ -107,7 +112,7 @@ class MediaGenerator:
             resource_id: 资源 ID (E1S01, 姜月茴, 玉佩)
             reference_images: 参考图片列表（用于人物一致性）
             aspect_ratio: 宽高比，默认 9:16（竖屏）
-            image_size: 图片尺寸，默认 2K
+            image_size: 图片尺寸，默认 1K
             **version_metadata: 额外元数据（如 aspect_ratio）
 
         Returns:
@@ -182,7 +187,7 @@ class MediaGenerator:
         resource_id: str,
         reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
         aspect_ratio: str = "9:16",
-        image_size: str = "2K",
+        image_size: str = "1K",
         **version_metadata
     ) -> Tuple[Path, int]:
         """
@@ -194,7 +199,7 @@ class MediaGenerator:
             resource_id: 资源 ID (E1S01, 姜月茴, 玉佩)
             reference_images: 参考图片列表（用于人物一致性）
             aspect_ratio: 宽高比，默认 9:16（竖屏）
-            image_size: 图片尺寸，默认 2K
+            image_size: 图片尺寸，默认 1K
             **version_metadata: 额外元数据
 
         Returns:
