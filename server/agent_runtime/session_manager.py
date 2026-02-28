@@ -3,6 +3,7 @@ Manages ClaudeSDKClient instances with background execution and reconnection sup
 """
 
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -202,6 +203,25 @@ class SessionManager:
     ]
     DEFAULT_SETTING_SOURCES = ["user", "project"]
 
+    # File access control — Bash is intentionally excluded: its free-form command
+    # string cannot be reliably parsed for paths.  Isolation relies on cwd being
+    # set to the project directory and system-prompt guidance.
+    _PATH_TOOLS: dict[str, str] = {
+        "Read": "file_path",
+        "Write": "file_path",
+        "Edit": "file_path",
+        "MultiEdit": "file_path",
+        "Glob": "path",
+        "Grep": "path",
+        "LS": "path",
+    }
+    _WRITE_TOOLS = {"Write", "Edit", "MultiEdit"}
+    _READONLY_DIRS = [
+        "docs", "lib", ".claude/skills", ".claude/agents",
+        ".claude/plans", "scripts",
+    ]
+    _READONLY_FILES = ["CLAUDE.md"]
+
     # SDK message class name to type mapping
     _MESSAGE_TYPE_MAP = {
         "UserMessage": "user",
@@ -235,6 +255,60 @@ class SessionManager:
         self.max_turns = int(max_turns_env) if max_turns_env else None
         self.cli_path = os.environ.get("ASSISTANT_CLAUDE_CLI_PATH", "").strip() or None
 
+    def _build_system_prompt(self, project_name: str) -> str:
+        """Build system prompt with project context injected."""
+        base_prompt = self.system_prompt
+
+        try:
+            project_cwd = self._resolve_project_cwd(project_name)
+        except (ValueError, FileNotFoundError):
+            return base_prompt
+
+        project_json = project_cwd / "project.json"
+        if not project_json.exists():
+            return base_prompt
+
+        try:
+            config = json.loads(project_json.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read project.json for %s: %s", project_name, exc)
+            return base_prompt
+
+        if not isinstance(config, dict):
+            logger.warning("project.json for %s is not a JSON object, using base prompt", project_name)
+            return base_prompt
+
+        parts = [base_prompt, "", "## 当前项目上下文", ""]
+
+        if title := config.get("title"):
+            parts.append(f"- 项目名称：{title}")
+        if mode := config.get("content_mode"):
+            parts.append(f"- 内容模式：{mode}")
+        if style := config.get("style"):
+            parts.append(f"- 视觉风格：{style}")
+        if style_desc := config.get("style_description"):
+            parts.append(f"- 风格描述：{style_desc}")
+
+        self._append_overview_section(parts, config.get("overview", {}))
+
+        return "\n".join(parts)
+
+    @staticmethod
+    def _append_overview_section(parts: list[str], overview: Any) -> None:
+        """Append project overview fields to prompt parts."""
+        if not isinstance(overview, dict) or not overview:
+            return
+        parts.append("")
+        parts.append("### 项目概述")
+        if synopsis := overview.get("synopsis"):
+            parts.append(synopsis)
+        if genre := overview.get("genre"):
+            parts.append(f"- 题材：{genre}")
+        if theme := overview.get("theme"):
+            parts.append(f"- 主题：{theme}")
+        if world := overview.get("world_setting"):
+            parts.append(f"- 世界观：{world}")
+
     def _build_options(
         self,
         project_name: str,
@@ -264,7 +338,7 @@ class SessionManager:
             setting_sources=self.DEFAULT_SETTING_SOURCES,
             allowed_tools=self.DEFAULT_ALLOWED_TOOLS,
             max_turns=self.max_turns,
-            system_prompt=self.system_prompt,
+            system_prompt=self._build_system_prompt(project_name),
             include_partial_messages=True,
             resume=resume_id,
             can_use_tool=can_use_tool,
@@ -487,8 +561,126 @@ class SessionManager:
             return "error"
         return "completed"
 
+    def _is_path_allowed(
+        self,
+        file_path: str,
+        tool_name: str,
+        project_cwd: Path,
+    ) -> bool:
+        """Check if file_path is allowed for the given tool."""
+        try:
+            p = Path(file_path)
+            # Resolve relative paths against project_cwd, not server cwd
+            resolved = (project_cwd / p).resolve() if not p.is_absolute() else p.resolve()
+        except (ValueError, OSError):
+            return False
+
+        is_write = tool_name in self._WRITE_TOOLS
+
+        # 1. Within project directory — full access
+        if resolved.is_relative_to(project_cwd):
+            return True
+
+        # Write tools cannot access anything outside project
+        if is_write:
+            return False
+
+        # 2. Public readonly directories
+        project_root = self.project_root
+        for d in self._READONLY_DIRS:
+            readonly_dir = (project_root / d).resolve()
+            if resolved.is_relative_to(readonly_dir):
+                return True
+
+        # 3. Public readonly files
+        for f in self._READONLY_FILES:
+            readonly_file = (project_root / f).resolve()
+            if resolved == readonly_file:
+                return True
+
+        return False
+
+    async def _handle_ask_user_question(
+        self,
+        session_id: str,
+        tool_name: str,
+        input_data: dict[str, Any],
+    ) -> Any:
+        """Handle AskUserQuestion tool invocation within can_use_tool callback."""
+        managed = self.sessions.get(session_id)
+        if managed is None:
+            return PermissionResultAllow(updated_input=input_data)
+
+        raw_questions = input_data.get("questions")
+        questions = raw_questions if isinstance(raw_questions, list) else []
+        payload = {
+            "type": "ask_user_question",
+            "question_id": f"aq_{uuid4().hex}",
+            "tool_name": tool_name,
+            "questions": questions,
+            "timestamp": _utc_now_iso(),
+        }
+        pending = managed.add_pending_question(payload)
+        managed.add_message(payload)
+
+        try:
+            answers = await pending.answer_future
+        except Exception as exc:
+            if PermissionResultDeny is not None:
+                return PermissionResultDeny(
+                    message=str(exc) or "session interrupted by user",
+                    interrupt=True,
+                )
+            raise
+        merged_input = dict(input_data or {})
+        merged_input["answers"] = answers
+        return PermissionResultAllow(updated_input=merged_input)
+
+    @staticmethod
+    def _deny_path_access(input_data: dict[str, Any]) -> Any:
+        """Return a deny result for disallowed file paths, with Allow fallback."""
+        if PermissionResultDeny is not None:
+            return PermissionResultDeny(
+                message="访问被拒绝：不允许访问当前项目和公共目录之外的路径",
+            )
+        # Fallback if PermissionResultDeny not available
+        logger.warning("PermissionResultDeny unavailable; path access control is inoperative")
+        return PermissionResultAllow(updated_input=input_data)
+
+    def _check_file_access(
+        self,
+        tool_name: str,
+        input_data: dict[str, Any],
+        project_cwd: Optional[Path],
+    ) -> Optional[Any]:
+        """Check file access for path-based tools. Returns deny result or None if allowed."""
+        if tool_name not in self._PATH_TOOLS:
+            return None
+        # Fail-close: deny if project_cwd could not be resolved
+        if project_cwd is None:
+            return self._deny_path_access(input_data)
+        path_key = self._PATH_TOOLS[tool_name]
+        file_path = input_data.get(path_key)
+        if file_path and not self._is_path_allowed(file_path, tool_name, project_cwd):
+            return self._deny_path_access(input_data)
+        return None
+
     def _build_can_use_tool_callback(self, session_id: str):
-        """Create per-session can_use_tool callback for AskUserQuestion."""
+        """Create per-session can_use_tool callback for AskUserQuestion and file access control."""
+
+        # Pre-resolve project_cwd at callback creation time
+        meta = self.meta_store.get(session_id)
+        try:
+            project_cwd = self._resolve_project_cwd(meta.project_name) if meta else None
+        except (ValueError, FileNotFoundError):
+            project_cwd = None
+
+        if project_cwd is None:
+            logger.warning(
+                "Cannot resolve project_cwd for session %s; "
+                "file access control will deny all path-based tools",
+                session_id,
+            )
 
         async def _can_use_tool(
             tool_name: str,
@@ -499,37 +691,18 @@ class SessionManager:
                 raise RuntimeError("claude_agent_sdk is not installed")
 
             normalized_tool = str(tool_name or "").strip().lower()
-            if normalized_tool != "askuserquestion":
-                return PermissionResultAllow(updated_input=input_data)
 
-            managed = self.sessions.get(session_id)
-            if managed is None:
-                return PermissionResultAllow(updated_input=input_data)
+            if normalized_tool == "askuserquestion":
+                return await self._handle_ask_user_question(
+                    session_id, tool_name, input_data,
+                )
 
-            raw_questions = input_data.get("questions")
-            questions = raw_questions if isinstance(raw_questions, list) else []
-            payload = {
-                "type": "ask_user_question",
-                "question_id": f"aq_{uuid4().hex}",
-                "tool_name": tool_name,
-                "questions": questions,
-                "timestamp": _utc_now_iso(),
-            }
-            pending = managed.add_pending_question(payload)
-            managed.add_message(payload)
+            # File access control — use original tool_name (case-sensitive)
+            denial = self._check_file_access(tool_name, input_data, project_cwd)
+            if denial is not None:
+                return denial
 
-            try:
-                answers = await pending.answer_future
-            except Exception as exc:
-                if PermissionResultDeny is not None:
-                    return PermissionResultDeny(
-                        message=str(exc) or "session interrupted by user",
-                        interrupt=True,
-                    )
-                raise
-            merged_input = dict(input_data or {})
-            merged_input["answers"] = answers
-            return PermissionResultAllow(updated_input=merged_input)
+            return PermissionResultAllow(updated_input=input_data)
 
         return _can_use_tool
 
