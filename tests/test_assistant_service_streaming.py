@@ -385,8 +385,9 @@ class TestAssistantServiceStreaming:
         assert payload.get("is_error") == True
         assert payload.get("session_id") == "sdk-1"
 
-    async def test_merge_raw_messages_dedupes_local_echo_when_transcript_has_real_user(self, tmp_path):
+    async def test_build_projector_dedupes_local_echo_when_transcript_has_real_user(self, tmp_path):
         service = AssistantService(project_root=tmp_path)
+        meta = make_session_meta()
         history = [
             {
                 "type": "user",
@@ -405,12 +406,18 @@ class TestAssistantServiceStreaming:
             }
         ]
 
-        merged = service._merge_raw_messages(history, buffer)
-        assert len(merged) == 1
-        assert merged[0]["uuid"] == "real-1"
+        service.meta_store = _FakeMetaStore(meta)
+        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
-    async def test_merge_raw_messages_keeps_new_local_echo_for_old_same_text(self, tmp_path):
+        projector = service._build_projector(meta, "session-1")
+        # local echo should be dropped, so only the real transcript user turn exists
+        assert len(projector.turns) == 1
+        assert projector.turns[0]["uuid"] == "real-1"
+
+    async def test_build_projector_keeps_new_local_echo_for_old_same_text(self, tmp_path):
         service = AssistantService(project_root=tmp_path)
+        meta = make_session_meta()
         history = [
             {
                 "type": "user",
@@ -429,9 +436,14 @@ class TestAssistantServiceStreaming:
             }
         ]
 
-        merged = service._merge_raw_messages(history, buffer)
-        assert len(merged) == 2
-        assert merged[-1]["uuid"] == "local-user-new"
+        service.meta_store = _FakeMetaStore(meta)
+        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
+
+        projector = service._build_projector(meta, "session-1")
+        # Time gap is > 5 seconds, so it's treated as a new message
+        assert len(projector.turns) == 2
+        assert projector.turns[-1]["uuid"] == "local-user-new"
 
     def test_prune_transient_buffer_removes_groupable_messages(self):
         """Verify _prune_transient_buffer clears user/assistant/result messages
@@ -618,10 +630,12 @@ class TestAssistantServiceStreaming:
         turns = payload.get("turns", [])
         turn_types = [t.get("type") for t in turns]
         # Transcript provides all 3 users and 2 assistants + 2 results.
-        # Buffer assistant-A3 (no uuid) is correctly excluded.
+        # Buffer assistant-A3 (no uuid) is now correctly included — it
+        # represents the latest reply not yet persisted to JSONL.
+        # Content-based dedup prevents genuine duplicates.
         # user-Q3 must be present after result-R2 so A2 and A3 are not merged.
         assert turn_types == [
-            "user", "assistant", "result", "user", "assistant", "result", "user",
+            "user", "assistant", "result", "user", "assistant", "result", "user", "assistant",
         ], f"unexpected turns={turn_types}"
 
     async def test_stream_new_session_first_round_preserves_user(self, tmp_path):
@@ -710,3 +724,157 @@ class TestAssistantServiceStreaming:
         assert last_assistant.get("uuid") == "assistant-2"
         assert len(last_assistant.get("content", [])) == 1
         assert last_assistant["content"][0].get("text") == "A2 - cwd answer"
+
+    async def test_build_projector_preserves_repeated_assistant_replies_across_rounds(self, tmp_path):
+        """Verify that identical assistant replies in different rounds (e.g. 'Done')
+        are not deduplicated away when processing the buffer, because a new user message
+        clears the content-based dedup cache."""
+        service = AssistantService(project_root=tmp_path)
+        meta = make_session_meta()
+        
+        # Round 1 in transcript: Assistant said "Done"
+        history = [
+            {
+                "type": "user",
+                "content": "task 1",
+                "uuid": "u1",
+                "timestamp": "2026-02-09T08:00:00Z",
+            },
+            {
+                "type": "assistant",
+                "content": [{"text": "Done"}],
+                "uuid": "a1",
+                "timestamp": "2026-02-09T08:00:05Z",
+            }
+        ]
+        
+        # Round 2 in buffer: User asks task 2, Assistant also says "Done" (no uuid from SDK)
+        buffer = [
+            {
+                "type": "user",
+                "content": "task 2",
+                "uuid": "u2",
+                "timestamp": "2026-02-09T08:00:10Z",
+            },
+            {
+                "type": "assistant",
+                "content": [{"text": "Done"}],
+                # No uuid, mimicking SDK payload
+            }
+        ]
+
+        service.meta_store = _FakeMetaStore(meta)
+        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
+
+        projector = service._build_projector(meta, "session-1")
+        
+        # We should have 4 turns total: user1, asst1, user2, asst2
+        assert len(projector.turns) == 4
+        assert projector.turns[0]["content"][0]["text"] == "task 1"
+        assert projector.turns[1]["content"][0]["text"] == "Done"
+        assert projector.turns[2]["content"][0]["text"] == "task 2"
+        assert projector.turns[3]["content"][0]["text"] == "Done"
+
+    async def test_build_projector_dedupes_result_messages(self, tmp_path):
+        """Verify that buffer result messages (lacking timestamp/uuid) are
+        successfully deduplicated against transcript result messages in the same round."""
+        service = AssistantService(project_root=tmp_path)
+        meta = make_session_meta()
+        
+        # Round 1 in transcript: has a completed result with timestamp
+        history = [
+            {
+                "type": "user",
+                "content": "task 1",
+                "uuid": "u1",
+            },
+            {
+                "type": "assistant",
+                "content": [{"text": "Done"}],
+                "uuid": "a1",
+            },
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "uuid": "r1",
+                "timestamp": "2026-02-09T08:00:05Z",
+            }
+        ]
+        
+        # Buffer has the same result message but lacks uuid and timestamp (SDK format)
+        buffer = [
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+            }
+        ]
+
+        service.meta_store = _FakeMetaStore(meta)
+        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.session_manager = _FakeSessionManager([], status="completed", replay_messages=buffer)
+
+        projector = service._build_projector(meta, "session-1")
+        
+        # We should have exactly 3 turns total: user, assistant, result.
+        # The buffer result should be deduplicated away.
+        assert len(projector.turns) == 3
+        turn_types = [t.get("type") for t in projector.turns]
+        assert turn_types == ["user", "assistant", "result"]
+
+    async def test_build_projector_ignores_system_user_when_scoping_dedup(self, tmp_path):
+        """Verify that system-injected user messages do not reset the content deduplication
+        scope. The scope should only begin at the last REAL user message."""
+        service = AssistantService(project_root=tmp_path)
+        meta = make_session_meta()
+        
+        # Transcript: User asks question, Assistant uses tool, Subagent returns result
+        history = [
+            {
+                "type": "user",
+                "content": "task",
+                "uuid": "u1",
+            },
+            {
+                "type": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "Task", "input": {}}
+                ],
+                "uuid": "a1",
+            },
+            {
+                "type": "user",
+                "content": "some system result",
+                "uuid": "sys-u1",
+                # This is the subagent metadata that identifies it as system-injected
+                "sourceToolAssistantUUID": "agent-123",
+            }
+        ]
+        
+        # Buffer: The same assistant tool_use message (replayed by SDK, no uuid).
+        # It must be correctly deduplicated against a1.
+        buffer = [
+            {
+                "type": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "Task", "input": {}}
+                ],
+            }
+        ]
+
+        service.meta_store = _FakeMetaStore(meta)
+        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
+
+        projector = service._build_projector(meta, "session-1")
+        
+        # We should have exactly 2 turns total!
+        # turn 1: user "task"
+        # turn 2: assistant tool_use + system result folded in
+        # The buffer assistant message must be completely deduplicated away.
+        assert len(projector.turns) == 2
+        assert projector.turns[0]["type"] == "user"
+        assert projector.turns[1]["type"] == "assistant"
+

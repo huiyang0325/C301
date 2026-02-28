@@ -262,7 +262,7 @@ class TestAssistantServiceMore:
                 "timestamp": "2026-02-01T00:00:00Z",
             }
         )
-        assert result_key.startswith("content:result:success:False:s1:")
+        assert result_key == "content:result:success:False"
         assert service._content_key({"type": "user", "content": "x"}) is None
 
         seen_keys, seen_content = service._build_seen_sets([{"uuid": "u1"}, "bad"])
@@ -294,17 +294,6 @@ class TestAssistantServiceMore:
         }
         assert service._should_skip_local_echo(local_echo, history) is True
         assert service._should_skip_local_echo({"type": "assistant"}, history) is False
-
-        merged = service._merge_raw_messages(
-            [{"type": "assistant", "uuid": "a1", "content": [{"text": "Hi"}]}],
-            [
-                {"type": "assistant", "content": [{"text": "Hi"}]},
-                {"type": "user", "content": "new", "uuid": "u2"},
-                "bad",
-            ],
-        )
-        assert any(msg.get("uuid") == "u2" for msg in merged)
-        assert sum(1 for msg in merged if msg.get("type") == "assistant") == 1
 
         assert service._extract_plain_user_content({"type": "assistant"}) is None
         assert (

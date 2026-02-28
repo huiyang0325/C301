@@ -3,6 +3,7 @@ Assistant service orchestration using ClaudeSDKClient.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -18,6 +19,11 @@ from server.agent_runtime.session_manager import SessionManager
 from server.agent_runtime.session_store import SessionMetaStore
 from server.agent_runtime.stream_projector import AssistantStreamProjector
 from server.agent_runtime.transcript_reader import TranscriptReader
+from server.agent_runtime.turn_grouper import (
+    _has_subagent_user_metadata,
+    _is_system_injected_user_message,
+)
+from server.agent_runtime.turn_schema import normalize_turns
 
 
 class AssistantService:
@@ -107,17 +113,8 @@ class AssistantService:
             raise FileNotFoundError(f"session not found: {session_id}")
 
         status = self.session_manager.get_status(session_id) or meta.status
-        # Read buffer once to avoid inconsistency from concurrent mutations.
-        buffered_messages = self.session_manager.get_buffered_messages(session_id)
-        raw_messages = self._build_initial_raw_messages(
-            meta, session_id, buffered_messages=buffered_messages
-        )
-        projector = AssistantStreamProjector(initial_messages=raw_messages)
-
-        for message in buffered_messages:
-            if self._is_groupable_message(message):
-                continue
-            projector.apply_message(message)
+        # Use _build_projector which correctly replays the buffer in chronological order
+        projector = self._build_projector(meta, session_id)
 
         pending_questions = []
         if status == "running":
@@ -408,49 +405,53 @@ class AssistantService:
         session_id: str,
         replayed_messages: Optional[list[dict[str, Any]]] = None,
     ) -> AssistantStreamProjector:
-        """Build projector state from transcript history + in-memory buffer."""
-        raw_messages = self._build_initial_raw_messages(
-            meta=meta,
-            session_id=session_id,
-            buffered_messages=replayed_messages,
-        )
-        projector = AssistantStreamProjector(initial_messages=raw_messages)
-        for message in replayed_messages or []:
-            if self._is_groupable_message(message):
-                continue
-            projector.apply_message(message)
-        return projector
-
-    def _build_initial_raw_messages(
-        self,
-        meta: SessionMeta,
-        session_id: str,
-        buffered_messages: Optional[list[dict[str, Any]]] = None,
-    ) -> list[dict[str, Any]]:
-        """Build deduped raw conversation history used by turn grouping."""
+        """Build projector state from transcript history + in-memory buffer in chronological order."""
         history_messages = self.transcript_reader.read_raw_messages(
             session_id,
             meta.sdk_session_id,
             project_name=meta.project_name,
         )
-        runtime_buffer = buffered_messages
+        projector = AssistantStreamProjector(initial_messages=history_messages)
+
+        runtime_buffer = replayed_messages
         if runtime_buffer is None:
             runtime_buffer = self.session_manager.get_buffered_messages(session_id)
 
-        groupable_runtime = [
-            message
-            for message in (runtime_buffer or [])
-            if self._is_groupable_message(message)
-            # Skip buffer assistant/result messages that lack uuid — these are
-            # SDK-serialized duplicates of transcript entries.  The CLI writes
-            # messages to the JSONL transcript with a uuid wrapper; SDK objects
-            # (AssistantMessage, ResultMessage) don't carry uuid, so they can
-            # never be reliably deduplicated against transcript entries.
-            # Only user messages (local_echo with uuid) may be the sole source
-            # for a round that the CLI hasn't persisted yet.
-            and (message.get("type") == "user" or message.get("uuid"))
-        ]
-        return self._merge_raw_messages(history_messages, groupable_runtime)
+        # Build seen sets from history for deduplication
+        seen_keys, seen_content_keys = self._build_seen_sets(history_messages)
+
+        # Apply buffer messages in exact chronological order
+        for message in runtime_buffer or []:
+            if not isinstance(message, dict):
+                continue
+
+            # For groupable messages (user, assistant, result), deduplicate against history
+            if self._is_groupable_message(message):
+                if self._should_skip_local_echo(message, history_messages):
+                    continue
+                if self._is_duplicate(message, seen_keys, seen_content_keys):
+                    continue
+
+                if message.get("type") == "user":
+                    content = message.get("content", "")
+                    has_subagent_meta = _has_subagent_user_metadata(message)
+                    if not (_is_system_injected_user_message(content) or has_subagent_meta):
+                        # Clear previous content keys when a NEW user message arrives.
+                        # This prevents the "P1" issue where a simple "Done" answer
+                        # in round 3 collides with "Done" in round 1.
+                        seen_content_keys.clear()
+
+                # It's a valid new groupable message, update seen sets
+                seen_keys.add(self._message_key(message))
+                ck = self._content_key(message)
+                if ck:
+                    seen_content_keys.add(ck)
+
+            # Apply everything (stream_events, unique groupable messages, etc)
+            projector.apply_message(message)
+
+        return projector
+
 
     @staticmethod
     def _resolve_result_status(result_message: dict[str, Any]) -> SessionStatus:
@@ -534,52 +535,56 @@ class AssistantService:
                     continue
                 text = block.get("text")
                 tool_id = block.get("id")
+                thinking = block.get("thinking")
                 if text is not None:
                     parts.append(f"t:{text}")
                 elif tool_id is not None:
                     parts.append(f"u:{tool_id}")
+                elif thinking is not None:
+                    # Use MD5 hash to accurately deduplicate long thinking blocks
+                    # without retaining unbounded strings in memory.
+                    th_hash = hashlib.md5(thinking.encode("utf-8")).hexdigest()
+                    parts.append(f"th:{th_hash}")
             return f"content:assistant:{'/'.join(parts)}" if parts else None
         if msg_type == "result":
-            # Include session_id and timestamp to avoid cross-round collisions
-            # when multiple results share the same subtype/is_error.
-            sid = message.get("session_id", "")
-            ts = message.get("timestamp", "")
-            return f"content:result:{message.get('subtype', '')}:{message.get('is_error', False)}:{sid}:{ts}"
+            # Since seen_content_keys is now scoped to the current round,
+            # we don't need timestamp or session_id to prevent cross-round collisions.
+            # This allows SDK result messages (which lack timestamps) to successfully
+            # deduplicate against transcript result messages within the same round.
+            return f"content:result:{message.get('subtype', '')}:{message.get('is_error', False)}"
         return None
 
-    def _merge_raw_messages(
-        self,
-        history_raw: list[dict[str, Any]],
-        buffered_raw: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        """Merge transcript raw messages with in-memory buffer, preserving order."""
-        merged = list(history_raw or [])
-        seen_keys, seen_content_keys = self._build_seen_sets(merged)
-
-        for msg in buffered_raw or []:
-            if not isinstance(msg, dict):
-                continue
-            if self._should_skip_local_echo(msg, merged):
-                continue
-            if self._is_duplicate(msg, seen_keys, seen_content_keys):
-                continue
-            seen_keys.add(self._message_key(msg))
-            merged.append(msg)
-        return merged
 
     def _build_seen_sets(
         self, messages: list[dict[str, Any]]
     ) -> tuple[set[str], set[str]]:
-        """Build uuid-based and content-based seen sets from existing messages."""
+        """Build uuid-based and content-based seen sets from existing messages.
+
+        To prevent identical short replies across different rounds (e.g., "Done")
+        from colliding, seen_content_keys only tracks messages from the CURRENT round
+        (i.e. messages that appear after the final user message).
+        """
         seen_keys: set[str] = set()
         seen_content_keys: set[str] = set()
-        for msg in messages:
+
+        last_user_idx = 0
+        for i, msg in enumerate(messages):
+            if isinstance(msg, dict) and msg.get("type") == "user":
+                content = msg.get("content", "")
+                has_subagent_meta = _has_subagent_user_metadata(msg)
+                if not (_is_system_injected_user_message(content) or has_subagent_meta):
+                    last_user_idx = i
+
+        for i, msg in enumerate(messages):
             if not isinstance(msg, dict):
                 continue
             seen_keys.add(self._message_key(msg))
-            ck = self._content_key(msg)
-            if ck:
-                seen_content_keys.add(ck)
+
+            # Only track content keys for the current round
+            if i >= last_user_idx:
+                ck = self._content_key(msg)
+                if ck:
+                    seen_content_keys.add(ck)
         return seen_keys, seen_content_keys
 
     def _is_duplicate(
