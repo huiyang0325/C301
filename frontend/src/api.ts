@@ -15,6 +15,9 @@ import type {
   AssistantSnapshot,
   SkillInfo,
   ProjectOverview,
+  ProjectChangeBatchPayload,
+  ProjectEventHeartbeatPayload,
+  ProjectEventSnapshotPayload,
 } from "@/types";
 import { getToken, clearToken } from "@/utils/auth";
 
@@ -56,6 +59,14 @@ export interface TaskStreamTaskPayload {
 export interface TaskStreamHeartbeatPayload {
   last_event_id: number;
   generated_at: string;
+}
+
+export interface ProjectEventStreamOptions {
+  projectName: string;
+  onSnapshot?: (payload: ProjectEventSnapshotPayload, event: MessageEvent) => void;
+  onChanges?: (payload: ProjectChangeBatchPayload, event: MessageEvent) => void;
+  onHeartbeat?: (payload: ProjectEventHeartbeatPayload, event: MessageEvent) => void;
+  onError?: (event: Event) => void;
 }
 
 /** Filters for {@link API.listTasks} and {@link API.listProjectTasks}. */
@@ -199,6 +210,9 @@ class API {
     name: string,
     updates: Partial<ProjectData>
   ): Promise<{ success: boolean; project: ProjectData }> {
+    if ("content_mode" in updates || "aspect_ratio" in updates) {
+      throw new Error("项目创建后不支持修改 content_mode 或 aspect_ratio");
+    }
     return this.request(`/projects/${encodeURIComponent(name)}`, {
       method: "PATCH",
       body: JSON.stringify(updates),
@@ -746,6 +760,46 @@ class API {
         );
       }
     });
+
+    source.onerror = (event: Event) => {
+      if (typeof options.onError === "function") {
+        options.onError(event);
+      }
+    };
+
+    return source;
+  }
+
+  static openProjectEventStream(options: ProjectEventStreamOptions): EventSource {
+    const url = withAuthQuery(
+      `${API_BASE}/projects/${encodeURIComponent(options.projectName)}/events/stream`
+    );
+    const source = new EventSource(url);
+
+    const parsePayload = (event: MessageEvent): unknown | null => {
+      try {
+        return JSON.parse(event.data || "{}");
+      } catch (err) {
+        console.error("解析项目事件 SSE 数据失败:", err, event.data);
+        return null;
+      }
+    };
+
+    const createHandler = (
+      callback?: (payload: any, event: MessageEvent) => void
+    ) => {
+      return (event: Event) => {
+        if (typeof callback !== "function") return;
+        const payload = parsePayload(event as MessageEvent);
+        if (payload) {
+          callback(payload, event as MessageEvent);
+        }
+      };
+    };
+
+    source.addEventListener("snapshot", createHandler(options.onSnapshot));
+    source.addEventListener("changes", createHandler(options.onChanges));
+    source.addEventListener("heartbeat", createHandler(options.onHeartbeat));
 
     source.onerror = (event: Event) => {
       if (typeof options.onError === "function") {

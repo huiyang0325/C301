@@ -1,4 +1,11 @@
 import { create } from "zustand";
+import type {
+  WorkspaceFocusTarget,
+  WorkspaceFocusTargetInput,
+  WorkspaceNotification,
+  WorkspaceNotificationInput,
+  WorkspaceNotificationTarget,
+} from "@/types";
 
 interface Toast {
   id: string;
@@ -6,15 +13,13 @@ interface Toast {
   tone: "info" | "success" | "error" | "warning";
 }
 
+interface ToastOptions {
+  target?: WorkspaceNotificationTarget | null;
+}
+
 interface FocusedContext {
   type: "character" | "clue" | "segment";
   id: string;
-}
-
-interface ScrollTarget {
-  type: string;
-  id: string;
-  highlight?: boolean;
 }
 
 interface AppState {
@@ -23,14 +28,22 @@ interface AppState {
   setFocusedContext: (ctx: FocusedContext | null) => void;
 
   // Scroll targeting (Agent-triggered)
-  scrollTarget: ScrollTarget | null;
-  triggerScrollTo: (target: ScrollTarget) => void;
-  clearScrollTarget: () => void;
+  scrollTarget: WorkspaceFocusTarget | null;
+  triggerScrollTo: (target: WorkspaceFocusTargetInput) => void;
+  clearScrollTarget: (requestId?: string) => void;
+  assistantToolActivitySuppressed: boolean;
+  setAssistantToolActivitySuppressed: (suppressed: boolean) => void;
 
   // Toast
   toast: Toast | null;
-  pushToast: (text: string, tone?: Toast["tone"]) => void;
+  pushToast: (text: string, tone?: Toast["tone"], options?: ToastOptions) => void;
   clearToast: () => void;
+  workspaceNotifications: WorkspaceNotification[];
+  pushWorkspaceNotification: (input: WorkspaceNotificationInput) => void;
+  markWorkspaceNotificationRead: (id: string) => void;
+  markAllWorkspaceNotificationsRead: () => void;
+  removeWorkspaceNotification: (id: string) => void;
+  clearWorkspaceNotifications: () => void;
 
   // Panels
   assistantPanelOpen: boolean;
@@ -48,18 +61,88 @@ interface AppState {
   invalidateMediaAssets: () => void;
 }
 
+const MAX_WORKSPACE_NOTIFICATIONS = 40;
+
+function buildWorkspaceNotification(
+  input: WorkspaceNotificationInput,
+): WorkspaceNotification {
+  return {
+    id: `${Date.now()}-${Math.random()}`,
+    text: input.text,
+    tone: input.tone ?? "info",
+    created_at: Date.now(),
+    read: input.read ?? false,
+    target: input.target ?? null,
+  };
+}
+
 export const useAppStore = create<AppState>((set) => ({
   focusedContext: null,
   setFocusedContext: (ctx) => set({ focusedContext: ctx }),
 
   scrollTarget: null,
-  triggerScrollTo: (target) => set({ scrollTarget: target }),
-  clearScrollTarget: () => set({ scrollTarget: null }),
+  triggerScrollTo: (target) =>
+    set({
+      scrollTarget: {
+        request_id: target.request_id ?? `${Date.now()}-${Math.random()}`,
+        type: target.type,
+        id: target.id,
+        route: target.route ?? "",
+        highlight: true,
+        highlight_style: target.highlight_style ?? "flash",
+        expires_at: target.expires_at ?? Date.now() + 3000,
+      },
+    }),
+  clearScrollTarget: (requestId) =>
+    set((s) => {
+      if (!requestId || s.scrollTarget?.request_id === requestId) {
+        return { scrollTarget: null };
+      }
+      return s;
+    }),
+  assistantToolActivitySuppressed: false,
+  setAssistantToolActivitySuppressed: (suppressed) =>
+    set({ assistantToolActivitySuppressed: suppressed }),
 
   toast: null,
-  pushToast: (text, tone = "info") =>
-    set({ toast: { id: `${Date.now()}-${Math.random()}`, text, tone } }),
+  pushToast: (text, tone = "info", options) =>
+    set((s) => ({
+      toast: { id: `${Date.now()}-${Math.random()}`, text, tone },
+      workspaceNotifications: [
+        buildWorkspaceNotification({
+          text,
+          tone,
+          target: options?.target ?? null,
+        }),
+        ...s.workspaceNotifications,
+      ].slice(0, MAX_WORKSPACE_NOTIFICATIONS),
+    })),
   clearToast: () => set({ toast: null }),
+  workspaceNotifications: [],
+  pushWorkspaceNotification: (input) =>
+    set((s) => ({
+      workspaceNotifications: [
+        buildWorkspaceNotification(input),
+        ...s.workspaceNotifications,
+      ].slice(0, MAX_WORKSPACE_NOTIFICATIONS),
+    })),
+  markWorkspaceNotificationRead: (id) =>
+    set((s) => ({
+      workspaceNotifications: s.workspaceNotifications.map((item) =>
+        item.id === id ? { ...item, read: true } : item
+      ),
+    })),
+  markAllWorkspaceNotificationsRead: () =>
+    set((s) => ({
+      workspaceNotifications: s.workspaceNotifications.map((item) =>
+        item.read ? item : { ...item, read: true }
+      ),
+    })),
+  removeWorkspaceNotification: (id) =>
+    set((s) => ({
+      workspaceNotifications: s.workspaceNotifications.filter((item) => item.id !== id),
+    })),
+  clearWorkspaceNotifications: () => set({ workspaceNotifications: [] }),
 
   assistantPanelOpen: true,
   toggleAssistantPanel: () =>
