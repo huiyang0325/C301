@@ -47,6 +47,9 @@ RUN uv sync --no-dev --no-install-project
 # 复制应用代码
 COPY lib/ lib/
 COPY server/ server/
+COPY alembic/ alembic/
+COPY alembic.ini ./
+COPY scripts/ scripts/
 COPY .claude/skills/ .claude/skills/
 COPY .claude/agents/ .claude/agents/
 

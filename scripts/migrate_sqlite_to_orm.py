@@ -26,6 +26,18 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Import lib.db submodules directly to avoid triggering lib/__init__.py
+# which pulls in GeminiClient → PIL and other heavy dependencies.
+import importlib
+import types
+
+# Create a minimal lib package stub so sub-imports resolve correctly
+# without executing lib/__init__.py
+lib_stub = types.ModuleType("lib")
+lib_stub.__path__ = [str(ROOT / "lib")]
+lib_stub.__package__ = "lib"
+sys.modules.setdefault("lib", lib_stub)
+
 from lib.db import init_db  # noqa: E402
 from lib.db.engine import async_session_factory  # noqa: E402
 from lib.db.models import AgentSession, ApiCall, Task, TaskEvent, WorkerLease  # noqa: E402
