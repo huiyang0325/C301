@@ -68,14 +68,13 @@ class TestTurnGrouper:
         ]
 
         turns = group_messages_into_turns(raw_messages)
-        assert [turn["type"] for turn in turns] == ["user", "assistant", "result"]
+        assert [turn["type"] for turn in turns] == ["user", "assistant"]
         assistant_turn = turns[1]
         assert len(assistant_turn["content"]) == 3
         assert assistant_turn["content"][0]["type"] == "text"
         assert assistant_turn["content"][1]["type"] == "tool_use"
         assert assistant_turn["content"][1]["result"] == "hello"
         assert assistant_turn["content"][2]["type"] == "text"
-        assert turns[2]["subtype"] == "success"
 
     def test_tool_result_without_type_is_attached(self):
         raw_messages = [
@@ -308,3 +307,160 @@ class TestTurnGrouper:
         assert task_block["type"] == "tool_use"
         assert task_block["name"] == "Task"
         assert task_block["result"] == "subagent finished"
+
+    def test_result_turn_is_eliminated(self):
+        """Result messages flush current turn but don't create independent turn."""
+        raw_messages = [
+            {"type": "user", "content": "hello"},
+            {"type": "assistant", "content": [{"type": "text", "text": "hi"}]},
+            {"type": "result", "subtype": "success"},
+        ]
+        turns = group_messages_into_turns(raw_messages)
+        assert [turn["type"] for turn in turns] == ["user", "assistant"]
+
+    def test_result_between_rounds_flushes_correctly(self):
+        """Result between two user messages flushes correctly."""
+        raw_messages = [
+            {"type": "user", "content": "first"},
+            {"type": "assistant", "content": [{"type": "text", "text": "response 1"}]},
+            {"type": "result", "subtype": "success"},
+            {"type": "user", "content": "second"},
+            {"type": "assistant", "content": [{"type": "text", "text": "response 2"}]},
+        ]
+        turns = group_messages_into_turns(raw_messages)
+        assert [turn["type"] for turn in turns] == ["user", "assistant", "user", "assistant"]
+
+    def test_task_progress_attached_to_assistant_turn(self):
+        """Task notification updates existing task_started block in-place."""
+        raw_messages = [
+            {"type": "user", "content": "do something complex"},
+            {
+                "type": "assistant",
+                "content": [{"type": "tool_use", "id": "agent-1", "name": "Agent", "input": {}}],
+            },
+            {
+                "type": "system",
+                "subtype": "task_started",
+                "description": "Exploring codebase",
+                "task_id": "task-abc",
+                "tool_use_id": "agent-1",
+            },
+            {
+                "type": "system",
+                "subtype": "task_notification",
+                "description": "Exploring codebase",
+                "summary": "Found 3 relevant files",
+                "status": "completed",
+                "task_id": "task-abc",
+            },
+        ]
+        turns = group_messages_into_turns(raw_messages)
+        assert [turn["type"] for turn in turns] == ["user", "assistant"]
+        assistant_content = turns[1]["content"]
+        # tool_use + 1 updated task_progress block (notification merges into started)
+        assert len(assistant_content) == 2
+        assert assistant_content[1]["type"] == "task_progress"
+        assert assistant_content[1]["status"] == "task_notification"
+        assert assistant_content[1]["task_status"] == "completed"
+        assert assistant_content[1]["summary"] == "Found 3 relevant files"
+
+    def test_task_notification_without_prior_started_appends(self):
+        """Task notification without a prior task_started still appends as new block."""
+        raw_messages = [
+            {"type": "user", "content": "do something"},
+            {
+                "type": "assistant",
+                "content": [{"type": "tool_use", "id": "agent-1", "name": "Agent", "input": {}}],
+            },
+            {
+                "type": "system",
+                "subtype": "task_notification",
+                "summary": "Done",
+                "status": "completed",
+                "task_id": "task-new",
+            },
+        ]
+        turns = group_messages_into_turns(raw_messages)
+        assistant_content = turns[1]["content"]
+        assert len(assistant_content) == 2
+        assert assistant_content[1]["type"] == "task_progress"
+        assert assistant_content[1]["status"] == "task_notification"
+
+    def test_stale_task_started_resolved_by_agent_result(self):
+        """task_started block is auto-completed when Agent tool_use has result."""
+        raw_messages = [
+            {"type": "user", "content": "run subagent"},
+            {
+                "type": "assistant",
+                "content": [{"type": "tool_use", "id": "agent-1", "name": "Agent", "input": {}}],
+            },
+            {
+                "type": "system",
+                "subtype": "task_started",
+                "description": "Testing",
+                "task_id": "task-123",
+                "tool_use_id": "agent-1",
+            },
+            # tool_result arrives but no task_notification
+            {
+                "type": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "agent-1", "content": "done"}],
+                "parent_tool_use_id": "agent-1",
+            },
+        ]
+        turns = group_messages_into_turns(raw_messages)
+        assistant_content = turns[1]["content"]
+        task_block = next(b for b in assistant_content if b["type"] == "task_progress")
+        assert task_block["status"] == "task_notification"
+        assert task_block["task_status"] == "completed"
+
+    def test_subagent_prompt_mentioning_skill_paths_not_treated_as_skill_content(self):
+        """Subagent prompt that mentions .claude/skills/**/SKILL.md should be suppressed, not shown as skill_content."""
+        raw_messages = [
+            {"type": "user", "content": "explore project"},
+            {
+                "type": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "agent-1",
+                        "name": "Agent",
+                        "input": {"subagent_type": "Explore", "prompt": "find skills"},
+                    }
+                ],
+            },
+            {
+                "type": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "请用 Glob 查找 .claude/skills/**/SKILL.md 下的所有 skill 文件",
+                    }
+                ],
+                "parent_tool_use_id": "agent-1",
+            },
+        ]
+
+        turns = group_messages_into_turns(raw_messages)
+        assert [turn["type"] for turn in turns] == ["user", "assistant"]
+        # The subagent prompt should be suppressed, not turned into skill_content
+        assert len(turns[1]["content"]) == 1
+        assert turns[1]["content"][0]["type"] == "tool_use"
+        assert "skill_content" not in turns[1]["content"][0]
+
+    def test_task_progress_without_assistant_creates_system_turn(self):
+        """Task progress without a preceding assistant turn creates a system turn."""
+        raw_messages = [
+            {"type": "user", "content": "hello"},
+            {
+                "type": "system",
+                "subtype": "task_started",
+                "description": "Starting task",
+                "task_id": "task-xyz",
+            },
+        ]
+        turns = group_messages_into_turns(raw_messages)
+        assert len(turns) == 2
+        assert turns[0]["type"] == "user"
+        assert turns[1]["type"] == "system"
+        assert turns[1]["content"][0]["type"] == "task_progress"

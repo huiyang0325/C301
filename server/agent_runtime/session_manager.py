@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 from server.agent_runtime.models import SessionMeta, SessionStatus
 from server.agent_runtime.session_store import SessionMetaStore
-from server.agent_runtime.transcript_reader import TranscriptReader
 
 try:
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
@@ -201,7 +200,7 @@ class SessionManager:
         "Skill", "Read", "Write", "Edit", "MultiEdit",
         "Bash", "Grep", "Glob", "LS", "AskUserQuestion",
     ]
-    DEFAULT_SETTING_SOURCES = ["user", "project"]
+    DEFAULT_SETTING_SOURCES = ["project"]
 
     # File access control — Bash is intentionally excluded: its free-form command
     # string cannot be reliably parsed for paths.  Isolation relies on cwd being
@@ -229,6 +228,16 @@ class SessionManager:
         "ResultMessage": "result",
         "SystemMessage": "system",
         "StreamEvent": "stream_event",
+        "TaskStartedMessage": "system",
+        "TaskProgressMessage": "system",
+        "TaskNotificationMessage": "system",
+    }
+
+    # Typed task message subtypes for precise classification
+    _TASK_MESSAGE_SUBTYPES = {
+        "TaskStartedMessage": "task_started",
+        "TaskProgressMessage": "task_progress",
+        "TaskNotificationMessage": "task_notification",
     }
 
     def __init__(
@@ -240,7 +249,6 @@ class SessionManager:
         self.project_root = Path(project_root)
         self.data_dir = Path(data_dir)
         self.meta_store = meta_store
-        self.transcript_reader = TranscriptReader(data_dir, project_root=project_root)
         self.sessions: dict[str, ManagedSession] = {}
         self._connect_locks: dict[str, asyncio.Lock] = {}
         self._load_config()
@@ -719,6 +727,13 @@ class SessionManager:
             msg_type = self._infer_message_type(message)
             if msg_type:
                 msg_dict["type"] = msg_type
+
+        # Inject precise subtype for typed task messages
+        if isinstance(msg_dict, dict):
+            class_name = type(message).__name__
+            subtype = self._TASK_MESSAGE_SUBTYPES.get(class_name)
+            if subtype:
+                msg_dict["subtype"] = subtype
 
         return msg_dict
 

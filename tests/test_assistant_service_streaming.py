@@ -22,13 +22,13 @@ class _FakeMetaStore:
         return None
 
 
-class _FakeTranscriptReader:
+class _FakeTranscriptAdapter:
     def __init__(self, call_log: list[tuple], history_raw: list[dict] | None = None):
         self.call_log = call_log
         self.history_raw = history_raw or []
 
-    def read_raw_messages(self, session_id: str, sdk_session_id=None, project_name=None):
-        self.call_log.append(("read_raw_messages", session_id, sdk_session_id, project_name))
+    def read_raw_messages(self, sdk_session_id=None):
+        self.call_log.append(("read_raw_messages", sdk_session_id))
         return list(self.history_raw)
 
 
@@ -94,7 +94,7 @@ class TestAssistantServiceStreaming:
             }
         ]
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=[])
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=[])
         service.session_manager = _FakeSessionManager(
             call_log,
             status="running",
@@ -110,7 +110,7 @@ class TestAssistantServiceStreaming:
 
         subscribe_idx = call_log.index(("subscribe", "session-1", True))
         read_raw_idx = call_log.index(
-            ("read_raw_messages", "session-1", "sdk-1", "demo")
+            ("read_raw_messages", "sdk-1")
         )
         assert subscribe_idx < read_raw_idx
 
@@ -120,7 +120,7 @@ class TestAssistantServiceStreaming:
 
         call_log: list[tuple] = []
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=[])
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=[])
         service.session_manager = _FakeSessionManager(
             call_log,
             status="running",
@@ -142,7 +142,7 @@ class TestAssistantServiceStreaming:
 
         call_log: list[tuple] = []
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=[])
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=[])
         fake_manager = _FakeSessionManager(call_log, status="running", replay_messages=[])
         service.session_manager = fake_manager
 
@@ -292,7 +292,7 @@ class TestAssistantServiceStreaming:
         ]
 
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=history)
         service.session_manager = _FakeSessionManager(call_log, status="completed")
 
         stream = service.stream_events("session-1")
@@ -304,7 +304,7 @@ class TestAssistantServiceStreaming:
         second_name, second_payload = _parse_sse_event(second)
 
         assert first_name == "snapshot"
-        assert len(first_payload.get("turns", [])) == 3
+        assert len(first_payload.get("turns", [])) == 2
         assert first_payload.get("session_id") == "session-1"
         assert first_payload.get("sdk_session_id") == "sdk-1"
         assert second_name == "status"
@@ -321,7 +321,7 @@ class TestAssistantServiceStreaming:
 
         call_log: list[tuple] = []
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=[])
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=[])
         fake_manager = _FakeSessionManager(call_log, status="running", replay_messages=[])
         service.session_manager = fake_manager
 
@@ -359,7 +359,7 @@ class TestAssistantServiceStreaming:
 
         call_log: list[tuple] = []
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=[])
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=[])
         fake_manager = _FakeSessionManager(call_log, status="running", replay_messages=[])
         service.session_manager = fake_manager
 
@@ -421,7 +421,7 @@ class TestAssistantServiceStreaming:
         ]
 
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
         projector = service._build_projector(meta, "session-1")
@@ -451,13 +451,13 @@ class TestAssistantServiceStreaming:
         ]
 
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
         projector = service._build_projector(meta, "session-1")
-        # Time gap is > 5 seconds, so it's treated as a new message
-        assert len(projector.turns) == 2
-        assert projector.turns[-1]["uuid"] == "local-user-new"
+        # Simplified dedup: local echo with matching text in transcript is always deduped
+        assert len(projector.turns) == 1
+        assert projector.turns[0]["uuid"] == "real-old"
 
     def test_prune_transient_buffer_removes_groupable_messages(self):
         """Verify _prune_transient_buffer clears user/assistant/result messages
@@ -528,7 +528,7 @@ class TestAssistantServiceStreaming:
             },
         ]
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=history)
         service.session_manager = _FakeSessionManager(
             call_log,
             status="running",
@@ -581,7 +581,7 @@ class TestAssistantServiceStreaming:
             },
         ]
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=history)
         service.session_manager = _FakeSessionManager(
             call_log,
             status="running",
@@ -635,7 +635,7 @@ class TestAssistantServiceStreaming:
              "event": {"type": "content_block_delta"}},
         ]
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(
+        service.transcript_adapter = _FakeTranscriptAdapter(
             call_log, history_raw=history)
         service.session_manager = _FakeSessionManager(
             call_log, status="running", replay_messages=buffer)
@@ -647,9 +647,10 @@ class TestAssistantServiceStreaming:
         # Buffer assistant-A3 (no uuid) is now correctly included — it
         # represents the latest reply not yet persisted to JSONL.
         # Content-based dedup prevents genuine duplicates.
-        # user-Q3 must be present after result-R2 so A2 and A3 are not merged.
+        # Result turns are eliminated, but they still flush the current turn,
+        # so user-Q2 and user-Q3 correctly start new rounds.
         assert turn_types == [
-            "user", "assistant", "result", "user", "assistant", "result", "user", "assistant",
+            "user", "assistant", "user", "assistant", "user", "assistant",
         ], f"unexpected turns={turn_types}"
 
     async def test_stream_new_session_first_round_preserves_user(self, tmp_path):
@@ -672,7 +673,7 @@ class TestAssistantServiceStreaming:
              "timestamp": "2026-02-10T08:00:01Z"},
         ]
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(
+        service.transcript_adapter = _FakeTranscriptAdapter(
             call_log, history_raw=[])
         service.session_manager = _FakeSessionManager(
             call_log, status="running", replay_messages=buffer)
@@ -723,7 +724,7 @@ class TestAssistantServiceStreaming:
         # Buffer is empty after prune (groupable messages cleared).
         # Only non-groupable messages like ask_user_question would remain.
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader(call_log, history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter(call_log, history_raw=history)
         service.session_manager = _FakeSessionManager(
             call_log,
             status="completed",
@@ -778,7 +779,7 @@ class TestAssistantServiceStreaming:
         ]
 
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
         projector = service._build_projector(meta, "session-1")
@@ -827,16 +828,16 @@ class TestAssistantServiceStreaming:
         ]
 
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="completed", replay_messages=buffer)
 
         projector = service._build_projector(meta, "session-1")
         
-        # We should have exactly 3 turns total: user, assistant, result.
+        # We should have exactly 2 turns total: user, assistant (result eliminated).
         # The buffer result should be deduplicated away.
-        assert len(projector.turns) == 3
+        assert len(projector.turns) == 2
         turn_types = [t.get("type") for t in projector.turns]
-        assert turn_types == ["user", "assistant", "result"]
+        assert turn_types == ["user", "assistant"]
 
     async def test_build_projector_ignores_system_user_when_scoping_dedup(self, tmp_path):
         """Verify that system-injected user messages do not reset the content deduplication
@@ -879,7 +880,7 @@ class TestAssistantServiceStreaming:
         ]
 
         service.meta_store = _FakeMetaStore(meta)
-        service.transcript_reader = _FakeTranscriptReader([], history_raw=history)
+        service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
         projector = service._build_projector(meta, "session-1")
