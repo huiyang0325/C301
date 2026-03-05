@@ -39,6 +39,7 @@ export interface SystemConfigView {
   rate_limit: SystemRateLimitConfig;
   performance: SystemPerformanceConfig;
   gemini_api_key: SecretFieldView;
+  gemini_base_url: TextFieldView;
   anthropic_api_key: SecretFieldView;
   anthropic_base_url: TextFieldView;
   anthropic_model: TextFieldView;
@@ -88,6 +89,7 @@ export type SystemConfigPatch = Partial<{
   image_backend: SystemBackend | "" | null;
   video_backend: SystemBackend | "" | null;
   gemini_api_key: string | "" | null;
+  gemini_base_url: string | "" | null;
   anthropic_api_key: string | "" | null;
   anthropic_base_url: string | "" | null;
   anthropic_model: string | "" | null;

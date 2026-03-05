@@ -227,6 +227,8 @@ class TestGeminiClientMore:
 
         monkeypatch.setenv("GEMINI_IMAGE_RPM", "12")
         monkeypatch.setenv("GEMINI_VIDEO_RPM", "8")
+        monkeypatch.delenv("GEMINI_IMAGE_MODEL", raising=False)
+        monkeypatch.delenv("GEMINI_VIDEO_MODEL", raising=False)
         gemini_module._shared_rate_limiter = None
         shared_1 = get_shared_rate_limiter()
         shared_2 = get_shared_rate_limiter()

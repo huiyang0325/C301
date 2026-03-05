@@ -468,8 +468,13 @@ class GeminiClient:
                     "请在 .env 文件中添加：GEMINI_API_KEY=your-api-key"
                 )
 
-            self.client = genai.Client(api_key=self.api_key)
-            logger.info("使用 AI Studio 后端")
+            base_url = os.environ.get("GEMINI_BASE_URL", "").strip() or None
+            http_options = {"base_url": base_url} if base_url else None
+            self.client = genai.Client(api_key=self.api_key, http_options=http_options)
+            if base_url:
+                logger.info("使用 AI Studio 后端（Base URL: %s）", base_url)
+            else:
+                logger.info("使用 AI Studio 后端")
 
         # 模型配置（两种后端使用相同的模型名）
         self.IMAGE_MODEL = os.environ.get(

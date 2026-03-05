@@ -48,6 +48,7 @@ type SaveSection = "secrets" | "backend" | "limits";
 
 const SECRET_PATCH_KEYS = [
   "gemini_api_key",
+  "gemini_base_url",
   "anthropic_api_key",
   "anthropic_base_url",
   "anthropic_model",
@@ -138,6 +139,7 @@ function buildPatch(
   data: GetSystemConfigResponse,
   draft: DraftState,
   geminiKeyInput: string,
+  geminiBaseUrlInput: string,
   anthropicKeyInput: string,
   anthropicBaseUrlInput: string,
   anthropicModelInput: string,
@@ -171,9 +173,11 @@ function buildPatch(
   }
 
   const geminiKey = geminiKeyInput.trim();
+  const geminiBaseUrl = geminiBaseUrlInput.trim();
   const anthropicKey = anthropicKeyInput.trim();
   const anthropicBaseUrl = anthropicBaseUrlInput.trim();
   if (geminiKey) patch.gemini_api_key = geminiKey;
+  if (geminiBaseUrl) patch.gemini_base_url = geminiBaseUrl;
   if (anthropicKey) patch.anthropic_api_key = anthropicKey;
   if (anthropicBaseUrl) patch.anthropic_base_url = anthropicBaseUrl;
 
@@ -239,6 +243,7 @@ export function SystemConfigPage() {
     status: "idle",
   });
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [geminiBaseUrlInput, setGeminiBaseUrlInput] = useState("");
   const [anthropicKeyInput, setAnthropicKeyInput] = useState("");
   const [anthropicBaseUrlInput, setAnthropicBaseUrlInput] = useState("");
   const [vertexGcsBucketInput, setVertexGcsBucketInput] = useState("");
@@ -263,6 +268,7 @@ export function SystemConfigPage() {
       setData(res);
       setDraft(buildDraft(res));
       setGeminiKeyInput("");
+      setGeminiBaseUrlInput("");
       setAnthropicKeyInput("");
       setAnthropicBaseUrlInput("");
       setAnthropicModelInput("");
@@ -297,8 +303,8 @@ export function SystemConfigPage() {
 
   const pendingPatch = useMemo(() => {
     if (!data || !draft) return null;
-    return buildPatch(data, draft, geminiKeyInput, anthropicKeyInput, anthropicBaseUrlInput, anthropicModelInput, advancedModelInputs, vertexGcsBucketInput);
-  }, [advancedModelInputs, anthropicBaseUrlInput, anthropicKeyInput, anthropicModelInput, data, draft, geminiKeyInput, vertexGcsBucketInput]);
+    return buildPatch(data, draft, geminiKeyInput, geminiBaseUrlInput, anthropicKeyInput, anthropicBaseUrlInput, anthropicModelInput, advancedModelInputs, vertexGcsBucketInput);
+  }, [advancedModelInputs, anthropicBaseUrlInput, anthropicKeyInput, anthropicModelInput, data, draft, geminiBaseUrlInput, geminiKeyInput, vertexGcsBucketInput]);
 
   const secretPatch = useMemo(
     () => pickPatch(pendingPatch, SECRET_PATCH_KEYS),
@@ -347,6 +353,7 @@ export function SystemConfigPage() {
 
         if (section === "secrets") {
           if ("gemini_api_key" in sectionPatch) setGeminiKeyInput("");
+          if ("gemini_base_url" in sectionPatch) setGeminiBaseUrlInput("");
           if ("anthropic_api_key" in sectionPatch) setAnthropicKeyInput("");
           if ("anthropic_base_url" in sectionPatch) setAnthropicBaseUrlInput("");
           if ("vertex_gcs_bucket" in sectionPatch) setVertexGcsBucketInput("");
@@ -394,6 +401,22 @@ export function SystemConfigPage() {
       }
       if (type === "anthropic") setAnthropicKeyInput("");
       useAppStore.getState().pushToast("已清除，将使用环境变量或默认值", "success");
+    } catch (err) {
+      useAppStore.getState().pushToast(`操作失败: ${(err as Error).message}`, "error");
+    } finally {
+      setSaving(false);
+      setSavingSection(null);
+    }
+  }, []);
+
+  const handleClearGeminiBaseUrl = useCallback(async () => {
+    setSaving(true);
+    setSavingSection("secrets");
+    try {
+      const res = await API.updateSystemConfig({ gemini_base_url: "" });
+      setData(res);
+      setGeminiBaseUrlInput("");
+      useAppStore.getState().pushToast("已清除 Gemini Base URL 自定义配置", "success");
     } catch (err) {
       useAppStore.getState().pushToast(`操作失败: ${(err as Error).message}`, "error");
     } finally {
@@ -547,6 +570,7 @@ export function SystemConfigPage() {
   const videoModels = data.options.video_models;
   const vertexStatus = data.config.vertex_credentials;
   const vertexGcsBucketStatus = data.config.vertex_gcs_bucket;
+  const geminiBaseUrlStatus = data.config.gemini_base_url;
   const anthropicBaseUrlStatus = data.config.anthropic_base_url;
   const anthropicSourceBadge = statusBadge(data.config.anthropic_api_key.source);
   const geminiSourceBadge = statusBadge(data.config.gemini_api_key.source);
@@ -671,7 +695,7 @@ export function SystemConfigPage() {
                 <input
                   value={anthropicBaseUrlInput}
                   onChange={(e) => setAnthropicBaseUrlInput(e.target.value)}
-                  placeholder="https://proxy.example.com"
+                  placeholder="https://anthropic-proxy.example.com"
                   className={`mt-3 ${inputClassName}`}
                   autoComplete="off"
                   spellCheck={false}
@@ -867,6 +891,38 @@ export function SystemConfigPage() {
                   {aistudioTestState.message}
                 </div>
               ) : null}
+              <div className="mt-4 border-t border-gray-800 pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-gray-100">Base URL</div>
+                    <div className="mt-1 text-xs text-gray-400">
+                      当前：{geminiBaseUrlStatus.value ?? "默认 (generativelanguage.googleapis.com)"}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleClearGeminiBaseUrl()}
+                    disabled={saving}
+                    className="text-xs text-gray-400 hover:text-gray-200 disabled:opacity-60"
+                    aria-label="清除 Gemini Base URL"
+                  >
+                    清除 URL
+                  </button>
+                </div>
+                <input
+                  value={geminiBaseUrlInput}
+                  onChange={(e) => setGeminiBaseUrlInput(e.target.value)}
+                  placeholder="https://gemini-proxy.example.com"
+                  className={`mt-3 ${inputClassName}`}
+                  autoComplete="off"
+                  spellCheck={false}
+                  name="gemini_base_url"
+                  aria-label="Gemini Base URL"
+                />
+                <div className="mt-2 text-xs text-gray-500">
+                  可选。留空使用官方默认地址，使用代理网关时填写自定义地址。
+                </div>
+              </div>
             </div>
 
             <div className={cardClassName}>

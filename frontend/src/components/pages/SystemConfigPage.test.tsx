@@ -31,6 +31,10 @@ function makeConfigResponse(): GetSystemConfigResponse {
         masked: null,
         source: "unset" as const,
       },
+      gemini_base_url: {
+        value: null,
+        source: "unset" as const,
+      },
       anthropic_api_key: {
         is_set: false,
         masked: null,
@@ -214,7 +218,7 @@ describe("SystemConfigPage", () => {
     ).toBe(true);
     expect(screen.queryByRole("button", { name: "保存密钥与凭证" })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("https://proxy.example.com"), {
+    fireEvent.change(screen.getByPlaceholderText("https://anthropic-proxy.example.com"), {
       target: { value: "https://proxy.example.com/v1" },
     });
     expect(API.updateSystemConfig).not.toHaveBeenCalled();

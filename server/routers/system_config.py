@@ -276,6 +276,7 @@ def _config_payload(project_root: Path) -> dict[str, Any]:
             "video_max_workers": _read_int_env("VIDEO_MAX_WORKERS", 2),
         },
         "gemini_api_key": _secret_view(overrides, "gemini_api_key", "GEMINI_API_KEY"),
+        "gemini_base_url": _text_view(overrides, "gemini_base_url", "GEMINI_BASE_URL"),
         "anthropic_api_key": _secret_view(overrides, "anthropic_api_key", "ANTHROPIC_API_KEY"),
         "anthropic_base_url": _text_view(
             overrides, "anthropic_base_url", "ANTHROPIC_BASE_URL"
@@ -310,6 +311,7 @@ class SystemConfigPatchRequest(BaseModel):
     image_backend: Optional[str] = None
     video_backend: Optional[str] = None
     gemini_api_key: Optional[str] = None
+    gemini_base_url: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     anthropic_base_url: Optional[str] = None
     anthropic_model: Optional[str] = None
@@ -378,6 +380,9 @@ async def patch_system_config(req: SystemConfigPatchRequest, request: Request):
         if value not in options["video_models"]:
             raise HTTPException(status_code=400, detail="video_model 不在支持列表内")
         patch["video_model"] = value
+
+    if "gemini_base_url" in patch and patch["gemini_base_url"] not in (None, ""):
+        patch["gemini_base_url"] = str(patch["gemini_base_url"]).strip()
 
     if "anthropic_base_url" in patch and patch["anthropic_base_url"] not in (None, ""):
         # TODO(multi-user): 多用户场景需校验 URL 白名单以防 SSRF 窃取 API key。

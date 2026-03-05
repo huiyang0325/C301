@@ -158,6 +158,7 @@ class SystemConfigManager:
         "GEMINI_IMAGE_BACKEND",
         "GEMINI_VIDEO_BACKEND",
         "GEMINI_API_KEY",
+        "GEMINI_BASE_URL",
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
@@ -362,6 +363,11 @@ class SystemConfigManager:
             self._set_env("GEMINI_API_KEY", overrides.get("gemini_api_key"))
         else:
             self._restore_or_unset("GEMINI_API_KEY")
+
+        if "gemini_base_url" in overrides:
+            self._set_env("GEMINI_BASE_URL", overrides.get("gemini_base_url"))
+        else:
+            self._restore_or_unset("GEMINI_BASE_URL")
 
         if "anthropic_api_key" in overrides:
             self._set_env("ANTHROPIC_API_KEY", overrides.get("anthropic_api_key"))
