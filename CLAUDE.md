@@ -425,7 +425,7 @@ projects/{项目名}/
 
 图片和视频生成通过 Gemini API：
 - 图片生成：`gemini-3.1-flash-image-preview`
-- 视频生成：`veo-3.1-generate-preview`
-- 视频扩展：`veo-3.1-generate-preview`（使用 extend 功能）
+- 视频生成：`veo-3.1-generate-001`
+- 视频扩展：`veo-3.1-generate-001`（使用 extend 功能）
 
 后端选择优先从 `.env` 文件读取 `GEMINI_BACKEND` 配置（默认为 `aistudio`）。

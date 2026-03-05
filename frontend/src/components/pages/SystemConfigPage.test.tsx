@@ -13,7 +13,7 @@ function makeConfigResponse(): GetSystemConfigResponse {
       image_backend: "aistudio" as const,
       video_backend: "vertex" as const,
       image_model: "gemini-3.1-flash-image-preview",
-      video_model: "veo-3.1-generate-preview",
+      video_model: "veo-3.1-generate-001",
       video_generate_audio: true,
       video_generate_audio_effective: true,
       video_generate_audio_editable: true,
@@ -68,7 +68,7 @@ function makeConfigResponse(): GetSystemConfigResponse {
     },
     options: {
       image_models: ["gemini-3.1-flash-image-preview"],
-      video_models: ["veo-3.1-generate-preview"],
+      video_models: ["veo-3.1-generate-001"],
     },
   };
 }
@@ -108,9 +108,9 @@ describe("SystemConfigPage", () => {
       provider: "vertex",
       filename: "vertex_credentials.json",
       project_id: "demo-project",
-      checked_models: [{ media_type: "video", model: "veo-3.1-generate-preview" }],
+      checked_models: [{ media_type: "video", model: "veo-3.1-generate-001" }],
       missing_models: [],
-      message: "Vertex 可用，models.list 已返回目标模型：video:veo-3.1-generate-preview",
+      message: "Vertex 可用，models.list 已返回目标模型：video:veo-3.1-generate-001",
     });
 
     renderPage();
@@ -125,7 +125,7 @@ describe("SystemConfigPage", () => {
         image_backend: "aistudio",
         video_backend: "vertex",
         image_model: "gemini-3.1-flash-image-preview",
-        video_model: "veo-3.1-generate-preview",
+        video_model: "veo-3.1-generate-001",
         gemini_api_key: null,
       });
     });
@@ -160,7 +160,7 @@ describe("SystemConfigPage", () => {
         image_backend: "aistudio",
         video_backend: "vertex",
         image_model: "gemini-3.1-flash-image-preview",
-        video_model: "veo-3.1-generate-preview",
+        video_model: "veo-3.1-generate-001",
         gemini_api_key: "AIza-override",
       });
     });

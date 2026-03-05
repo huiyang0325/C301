@@ -29,6 +29,23 @@ class CostCalculator:
     # 视频费用（美元/秒），按模型区分
     # 格式：model -> {(resolution, generate_audio): cost_per_second}
     VIDEO_COST = {
+        "veo-3.1-generate-001": {
+            ("720p", True): 0.40,
+            ("720p", False): 0.20,
+            ("1080p", True): 0.40,
+            ("1080p", False): 0.20,
+            ("4k", True): 0.60,
+            ("4k", False): 0.40,
+        },
+        "veo-3.1-fast-generate-001": {
+            ("720p", True): 0.15,
+            ("720p", False): 0.10,
+            ("1080p", True): 0.15,
+            ("1080p", False): 0.10,
+            ("4k", True): 0.35,
+            ("4k", False): 0.30,
+        },
+        # 历史兼容：preview 模型已下线，保留费率供历史计费使用
         "veo-3.1-generate-preview": {
             ("720p", True): 0.40,
             ("720p", False): 0.20,
@@ -47,7 +64,12 @@ class CostCalculator:
         },
     }
 
-    DEFAULT_VIDEO_MODEL = "veo-3.1-generate-preview"
+    SELECTABLE_VIDEO_MODELS = [
+        "veo-3.1-generate-001",
+        "veo-3.1-fast-generate-001",
+    ]
+
+    DEFAULT_VIDEO_MODEL = "veo-3.1-generate-001"
 
     def calculate_image_cost(self, resolution: str = "1K", model: str = None) -> float:
         """

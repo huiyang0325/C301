@@ -43,7 +43,7 @@ class TestUsageTracker:
         video_id = await tracker.start_call(
             project_name="demo",
             call_type="video",
-            model="veo-3.1-generate-preview",
+            model="veo-3.1-generate-001",
             resolution="4k",
             duration_seconds=6,
             generate_audio=False,

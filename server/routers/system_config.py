@@ -245,7 +245,7 @@ def _text_view(
 def _options_payload() -> dict[str, list[str]]:
     return {
         "image_models": list(cost_calculator.IMAGE_COST.keys()),
-        "video_models": list(cost_calculator.VIDEO_COST.keys()),
+        "video_models": list(cost_calculator.SELECTABLE_VIDEO_MODELS),
     }
 
 

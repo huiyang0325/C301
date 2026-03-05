@@ -223,6 +223,17 @@ class SystemConfigManager:
             overrides.pop("gemini_backend", None)
             migrated = True
 
+        # Migration: preview model names -> stable 001
+        _model_migration = {
+            "veo-3.1-generate-preview": "veo-3.1-generate-001",
+            "veo-3.1-fast-generate-preview": "veo-3.1-fast-generate-001",
+        }
+        for key in ("image_model", "video_model"):
+            old_val = overrides.get(key)
+            if isinstance(old_val, str) and old_val in _model_migration:
+                overrides[key] = _model_migration[old_val]
+                migrated = True
+
         data["version"] = int(data.get("version") or 1)
         data["overrides"] = overrides
         return data, migrated

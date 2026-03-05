@@ -71,7 +71,7 @@ class TestSystemConfigRouter:
                 system_config_router.cost_calculator.IMAGE_COST.keys()
             )
             assert payload["options"]["video_models"] == list(
-                system_config_router.cost_calculator.VIDEO_COST.keys()
+                system_config_router.cost_calculator.SELECTABLE_VIDEO_MODELS
             )
 
     def test_patch_validates_models_and_refreshes_rate_limiter(self, tmp_path, monkeypatch, env_guard):
@@ -231,7 +231,7 @@ class TestSystemConfigRouter:
                 self.calls.append(config)
                 return [
                     type("Model", (), {"name": "models/gemini-3.1-flash-image-preview"})(),
-                    type("Model", (), {"name": "models/veo-3.1-generate-preview"})(),
+                    type("Model", (), {"name": "models/veo-3.1-generate-001"})(),
                 ]
 
         fake_models = _FakeModels()
@@ -253,7 +253,7 @@ class TestSystemConfigRouter:
                     "image_backend": "aistudio",
                     "video_backend": "vertex",
                     "image_model": "gemini-3.1-flash-image-preview",
-                    "video_model": "veo-3.1-generate-preview",
+                    "video_model": "veo-3.1-generate-001",
                     "gemini_api_key": "AIza-override",
                 },
             )
@@ -281,7 +281,7 @@ class TestSystemConfigRouter:
                 self.calls.append(config)
                 return [
                     type("Model", (), {"name": "models/gemini-3.1-flash-image-preview"})(),
-                    type("Model", (), {"name": "models/veo-3.1-generate-preview"})(),
+                    type("Model", (), {"name": "models/veo-3.1-generate-001"})(),
                 ]
 
         fake_models = _FakeModels()
@@ -309,7 +309,7 @@ class TestSystemConfigRouter:
                     "image_backend": "vertex",
                     "video_backend": "vertex",
                     "image_model": "gemini-3.1-flash-image-preview",
-                    "video_model": "veo-3.1-generate-preview",
+                    "video_model": "veo-3.1-generate-001",
                 },
             )
             assert res.status_code == 200
@@ -318,7 +318,7 @@ class TestSystemConfigRouter:
             assert payload["project_id"] == "demo-project"
             assert payload["checked_models"] == [
                 {"media_type": "image", "model": "gemini-3.1-flash-image-preview"},
-                {"media_type": "video", "model": "veo-3.1-generate-preview"},
+                {"media_type": "video", "model": "veo-3.1-generate-001"},
             ]
             assert payload["missing_models"] == []
             assert fake_models.calls == [{"page_size": 200}]
@@ -355,10 +355,10 @@ class TestSystemConfigRouter:
                     "image_backend": "vertex",
                     "video_backend": "vertex",
                     "image_model": "gemini-3.1-flash-image-preview",
-                    "video_model": "veo-3.1-generate-preview",
+                    "video_model": "veo-3.1-generate-001",
                 },
             )
             assert res.status_code == 200
             payload = res.json()
-            assert payload["missing_models"] == ["veo-3.1-generate-preview"]
+            assert payload["missing_models"] == ["veo-3.1-generate-001"]
             assert "models.list" in payload["message"]
