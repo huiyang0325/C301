@@ -46,6 +46,7 @@ export interface SystemConfigView {
   anthropic_default_opus_model: TextFieldView;
   anthropic_default_sonnet_model: TextFieldView;
   claude_code_subagent_model: TextFieldView;
+  vertex_gcs_bucket: TextFieldView;
   vertex_credentials: VertexCredentialView;
 }
 
@@ -102,4 +103,5 @@ export type SystemConfigPatch = Partial<{
   gemini_request_gap: number | null;
   image_max_workers: number | null;
   video_max_workers: number | null;
+  vertex_gcs_bucket: string | "" | null;
 }>;

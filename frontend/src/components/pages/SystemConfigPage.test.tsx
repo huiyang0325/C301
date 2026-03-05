@@ -60,6 +60,10 @@ function makeConfigResponse(): GetSystemConfigResponse {
         value: null,
         source: "unset" as const,
       },
+      vertex_gcs_bucket: {
+        value: null,
+        source: "unset" as const,
+      },
       vertex_credentials: {
         is_set: true,
         filename: "vertex_credentials.json",

@@ -15,7 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import ClaudeColor from "@lobehub/icons/es/Claude/components/Color";
-import GoogleColor from "@lobehub/icons/es/Google/components/Color";
+import GeminiColor from "@lobehub/icons/es/Gemini/components/Color";
 import VertexAIColor from "@lobehub/icons/es/VertexAI/components/Color";
 import { API } from "@/api";
 import { useAppStore } from "@/stores/app-store";
@@ -51,6 +51,7 @@ const SECRET_PATCH_KEYS = [
   "anthropic_api_key",
   "anthropic_base_url",
   "anthropic_model",
+  "vertex_gcs_bucket",
   "anthropic_default_haiku_model",
   "anthropic_default_opus_model",
   "anthropic_default_sonnet_model",
@@ -141,6 +142,7 @@ function buildPatch(
   anthropicBaseUrlInput: string,
   anthropicModelInput: string,
   advancedModelInputs: Record<string, string>,
+  vertexGcsBucketInput: string,
 ): SystemConfigPatch {
   const cfg = data.config;
   const patch: SystemConfigPatch = {};
@@ -174,6 +176,9 @@ function buildPatch(
   if (geminiKey) patch.gemini_api_key = geminiKey;
   if (anthropicKey) patch.anthropic_api_key = anthropicKey;
   if (anthropicBaseUrl) patch.anthropic_base_url = anthropicBaseUrl;
+
+  const gcsBucket = vertexGcsBucketInput.trim();
+  if (gcsBucket) patch.vertex_gcs_bucket = gcsBucket;
 
   const modelTrim = anthropicModelInput.trim();
   if (modelTrim) patch.anthropic_model = modelTrim;
@@ -236,6 +241,7 @@ export function SystemConfigPage() {
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
   const [anthropicKeyInput, setAnthropicKeyInput] = useState("");
   const [anthropicBaseUrlInput, setAnthropicBaseUrlInput] = useState("");
+  const [vertexGcsBucketInput, setVertexGcsBucketInput] = useState("");
   const [anthropicModelInput, setAnthropicModelInput] = useState("");
   const [advancedModelInputs, setAdvancedModelInputs] = useState({
     anthropic_default_haiku_model: "",
@@ -291,8 +297,8 @@ export function SystemConfigPage() {
 
   const pendingPatch = useMemo(() => {
     if (!data || !draft) return null;
-    return buildPatch(data, draft, geminiKeyInput, anthropicKeyInput, anthropicBaseUrlInput, anthropicModelInput, advancedModelInputs);
-  }, [advancedModelInputs, anthropicBaseUrlInput, anthropicKeyInput, anthropicModelInput, data, draft, geminiKeyInput]);
+    return buildPatch(data, draft, geminiKeyInput, anthropicKeyInput, anthropicBaseUrlInput, anthropicModelInput, advancedModelInputs, vertexGcsBucketInput);
+  }, [advancedModelInputs, anthropicBaseUrlInput, anthropicKeyInput, anthropicModelInput, data, draft, geminiKeyInput, vertexGcsBucketInput]);
 
   const secretPatch = useMemo(
     () => pickPatch(pendingPatch, SECRET_PATCH_KEYS),
@@ -343,6 +349,7 @@ export function SystemConfigPage() {
           if ("gemini_api_key" in sectionPatch) setGeminiKeyInput("");
           if ("anthropic_api_key" in sectionPatch) setAnthropicKeyInput("");
           if ("anthropic_base_url" in sectionPatch) setAnthropicBaseUrlInput("");
+          if ("vertex_gcs_bucket" in sectionPatch) setVertexGcsBucketInput("");
           if ("anthropic_model" in sectionPatch) setAnthropicModelInput("");
           if (
             "anthropic_default_haiku_model" in sectionPatch ||
@@ -539,6 +546,7 @@ export function SystemConfigPage() {
   const imageModels = data.options.image_models;
   const videoModels = data.options.video_models;
   const vertexStatus = data.config.vertex_credentials;
+  const vertexGcsBucketStatus = data.config.vertex_gcs_bucket;
   const anthropicBaseUrlStatus = data.config.anthropic_base_url;
   const anthropicSourceBadge = statusBadge(data.config.anthropic_api_key.source);
   const geminiSourceBadge = statusBadge(data.config.gemini_api_key.source);
@@ -774,7 +782,7 @@ export function SystemConfigPage() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
                   <div className={vendorIconFrameClassName}>
-                    <GoogleColor size={20} />
+                    <GeminiColor size={20} />
                   </div>
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-gray-100">Gemini API Key</div>
@@ -888,55 +896,58 @@ export function SystemConfigPage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleTestConnection("vertex")}
-                    disabled={
-                      uploading ||
-                      saving ||
-                      testingProvider !== null ||
-                      !vertexStatus.is_set
-                    }
-                    className={secondaryButtonClassName}
-                  >
-                    {testingProvider === "vertex" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ShieldCheck className="h-4 w-4" />
-                    )}
-                    {testingProvider === "vertex" ? "测试中\u2026" : "测试连接"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => uploadInputRef.current?.click()}
-                    disabled={uploading || testingProvider !== null}
-                    className={secondaryButtonClassName}
-                  >
-                    {uploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Upload className="h-4 w-4" />
-                    )}
-                    上传 JSON
-                  </button>
-                  <input
-                    ref={uploadInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    className="hidden"
-                    aria-label="上传 Vertex AI JSON 凭证文件"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      if (!file) return;
-                      void handleUploadVertex(file);
-                    }}
-                  />
+                <button
+                  type="button"
+                  onClick={() => uploadInputRef.current?.click()}
+                  disabled={uploading || testingProvider !== null}
+                  className={secondaryButtonClassName}
+                >
+                  {uploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  上传 JSON
+                </button>
+                <input
+                  ref={uploadInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  aria-label="上传 Vertex AI JSON 凭证文件"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    void handleUploadVertex(file);
+                  }}
+                />
+              </div>
+              <div className={infoStripClassName}>
+                <div className="text-xs text-gray-300">
+                  验证当前模型可用性。需先上传凭证文件。
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void handleTestConnection("vertex")}
+                  disabled={
+                    uploading ||
+                    saving ||
+                    testingProvider !== null ||
+                    !vertexStatus.is_set
+                  }
+                  className={secondaryButtonClassName}
+                >
+                  {testingProvider === "vertex" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="h-4 w-4" />
+                  )}
+                  {testingProvider === "vertex" ? "测试中\u2026" : "测试连接"}
+                </button>
               </div>
               {vertexTestState.status === "success" ? (
-                <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900/80 px-3 py-2 text-xs text-gray-300" aria-live="polite">
+                <div className={successNoteClassName} aria-live="polite">
                   {vertexTestState.result.message}
                   {vertexTestState.result.project_id ? (
                     <span className="text-gray-500">
@@ -946,10 +957,30 @@ export function SystemConfigPage() {
                 </div>
               ) : null}
               {vertexTestState.status === "error" ? (
-                <div className="mt-4 rounded-lg border border-rose-900/50 bg-rose-950/30 px-3 py-2 text-xs text-rose-100" aria-live="polite">
+                <div className={errorNoteClassName} aria-live="polite">
                   {vertexTestState.message}
                 </div>
               ) : null}
+              <div className="mt-4 border-t border-gray-800 pt-4">
+                <div className="text-sm font-medium text-gray-100">GCS Bucket</div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {vertexGcsBucketStatus.value
+                    ? <>当前：{vertexGcsBucketStatus.value}</>
+                    : "未设置"}
+                  {" · "}Vertex AI 延长视频时需要 GCS 存储
+                </div>
+                <input
+                  type="text"
+                  placeholder="your-gcs-bucket-name"
+                  value={vertexGcsBucketInput}
+                  onChange={(e) => setVertexGcsBucketInput(e.target.value)}
+                  className={`mt-2 ${inputClassName}`}
+                  name="vertex_gcs_bucket"
+                />
+                <div className="mt-1 text-xs text-gray-600">
+                  格式：bucket-name（不含 gs:// 前缀）
+                </div>
+              </div>
             </div>
           </div>
 
