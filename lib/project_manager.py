@@ -81,6 +81,21 @@ class ProjectManager:
             if not (self.projects_root / candidate).exists():
                 return candidate
 
+    @classmethod
+    def from_cwd(cls) -> tuple["ProjectManager", str]:
+        """从当前工作目录推断 ProjectManager 和项目名称。
+
+        假定 cwd 为 ``projects/{project_name}/`` 格式。
+        返回 ``(ProjectManager, project_name)`` 元组。
+        """
+        cwd = Path.cwd().resolve()
+        project_name = cwd.name
+        projects_root = cwd.parent
+        pm = cls(projects_root)
+        if not (projects_root / project_name / cls.PROJECT_FILE).exists():
+            raise FileNotFoundError(f"当前目录不是有效的项目目录: {cwd}")
+        return pm, project_name
+
     def __init__(self, projects_root: Optional[str] = None):
         """
         初始化项目管理器
@@ -123,7 +138,39 @@ class ProjectManager:
         for subdir in self.SUBDIRS:
             (project_dir / subdir).mkdir(parents=True, exist_ok=True)
 
+        self._create_claude_symlink(project_dir)
+
         return project_dir
+
+    def _create_claude_symlink(self, project_dir: Path) -> None:
+        """Create .claude and CLAUDE.md symlinks for agent runtime isolation.
+
+        Creates two symlinks in the project directory:
+        - .claude -> ../../agent_runtime_profile/.claude  (SDK skill/agent discovery)
+        - CLAUDE.md -> ../../agent_runtime_profile/CLAUDE.md  (SDK auto-loads system prompt)
+        """
+        project_root = self.projects_root.parent
+        profile_dir = project_root / "agent_runtime_profile"
+
+        # .claude directory symlink
+        profile_claude = profile_dir / ".claude"
+        if profile_claude.exists():
+            symlink_path = project_dir / ".claude"
+            if not symlink_path.exists() and not symlink_path.is_symlink():
+                try:
+                    symlink_path.symlink_to(Path("../../agent_runtime_profile/.claude"))
+                except OSError as e:
+                    logger.warning("无法为项目 %s 创建 .claude 符号链接: %s", project_dir.name, e)
+
+        # CLAUDE.md file symlink
+        profile_prompt = profile_dir / "CLAUDE.md"
+        if profile_prompt.exists():
+            symlink_path = project_dir / "CLAUDE.md"
+            if not symlink_path.exists() and not symlink_path.is_symlink():
+                try:
+                    symlink_path.symlink_to(Path("../../agent_runtime_profile/CLAUDE.md"))
+                except OSError as e:
+                    logger.warning("无法为项目 %s 创建 CLAUDE.md 符号链接: %s", project_dir.name, e)
 
     def get_project_path(self, name: str) -> Path:
         """获取项目路径（含路径遍历防护）"""
