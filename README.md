@@ -1,6 +1,10 @@
 <h1 align="center">
   <br>
-  <img src="frontend/public/android-chrome-512x512.png" alt="ArcReel Logo" width="128">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="frontend/public/android-chrome-maskable-512x512.png">
+    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/android-chrome-512x512.png">
+    <img src="frontend/public/android-chrome-maskable-512x512.png" alt="ArcReel Logo" width="128" style="border-radius: 16px;">
+  </picture>
   <br>
   ArcReel
   <br>
