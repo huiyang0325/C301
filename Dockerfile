@@ -51,11 +51,11 @@ COPY --from=frontend-builder /build/frontend/dist/ frontend/dist/
 RUN mkdir -p projects vertex_keys
 
 # 暴露端口
-EXPOSE 8080
+EXPOSE 1241
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:1241/health || exit 1
 
 # 启动命令
-CMD ["uv", "run", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uv", "run", "uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "1241"]

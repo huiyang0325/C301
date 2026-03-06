@@ -40,8 +40,9 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-950">
       <div className="w-full max-w-sm rounded-xl border border-gray-800 bg-gray-900 p-8 shadow-2xl">
-        <h1 className="mb-6 text-center text-xl font-semibold text-gray-100">
-          ArcReel
+        <h1 className="mb-6 flex items-center justify-center gap-2 text-xl font-semibold text-gray-100">
+          <img src="/android-chrome-192x192.png" alt="ArcReel" className="h-7 w-7" />
+          <span>ArcReel</span>
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">

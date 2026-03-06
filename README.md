@@ -1,202 +1,192 @@
-# AI 视频生成器
+<h1 align="center">
+  <br>
+  <img src="frontend/public/android-chrome-512x512.png" alt="ArcReel Logo" width="128">
+  <br>
+  ArcReel
+  <br>
+</h1>
 
-让 Claude Code 帮你把小说自动变成短视频。
+<h4 align="center">开源 AI 视频生成工作台 — 从小说到短视频，全程 AI Agent 驱动</h4>
+<h5 align="center">Open-source AI Video Generation Workspace — Novel to Short Video, Powered by AI Agents</h5>
 
-## 这是什么？
+<p align="center">
+  <a href="#快速开始"><img src="https://img.shields.io/badge/Quick_Start-blue?style=for-the-badge" alt="Quick Start"></a>
+  <a href="https://github.com/ArcReel/ArcReel/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-green?style=for-the-badge" alt="License"></a>
+  <a href="https://github.com/ArcReel/ArcReel"><img src="https://img.shields.io/github/stars/ArcReel/ArcReel?style=for-the-badge" alt="Stars"></a>
+  <a href="https://github.com/ArcReel/ArcReel/pkgs/container/arcreel"><img src="https://img.shields.io/badge/Docker-ghcr.io-blue?style=for-the-badge&logo=docker" alt="Docker"></a>
+</p>
 
-通过 **Claude Code**（命令行 AI Agent）进行交互式对话，AI 会一步步引导你完成视频制作：
-- 拆分小说成适合视频的片段
-- 设计人物形象
-- 绘制分镜图片
-- 生成动态视频
-- 拼接成完整作品
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React">
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-191919?logo=anthropic&logoColor=white" alt="Claude Agent SDK">
+  <img src="https://img.shields.io/badge/Nano_Banana_2-Image_AI-886FBF?logo=googlegemini&logoColor=white" alt="Nano Banana 2">
+  <img src="https://img.shields.io/badge/Veo_3.1-Video_AI-EA4335?logo=google&logoColor=white" alt="Veo 3.1">
+</p>
 
-基于 **Skills** 和 **Subagent** 实现，每个环节都有专门的 AI 负责处理。
+<p align="center">
+  <img src="docs/assets/hero-screenshot.png" alt="ArcReel 工作台" width="800">
+</p>
 
-## 两种使用方式
+---
 
-| 方式 | 适合场景 | 说明 |
-|------|---------|------|
-| **Claude Code** | 完整视频生成流程 | 交互式对话，AI 引导你完成每一步 |
-| **Web UI 界面** | 项目管理与进阶操作 | 可视化管理项目、调整参数、预览素材 |
+## 核心能力
 
-默认输出 9:16 竖屏视频，适合发布到短视频平台。
+<table>
+<tr>
+<td width="20%" align="center">
+<h3>🤖 AI Agent 工作流</h3>
+基于 <strong>Claude Agent SDK</strong>，Skill + Subagent 多智能体协作，自动完成从剧本创作到视频合成的完整流水线
+</td>
+<td width="20%" align="center">
+<h3>🎨 Nano Banana 2 图像生成</h3>
+Gemini 最新图像模型驱动，人物设计图确保角色一致性，线索追踪保证道具/场景跨镜连贯
+</td>
+<td width="20%" align="center">
+<h3>🎬 Veo 3.1 视频生成</h3>
+Google 最新视频模型，以分镜图作为起始帧生成 4-8 秒视频片段，再由 FFmpeg 合成完整作品
+</td>
+<td width="20%" align="center">
+<h3>⚡ 异步任务队列</h3>
+RPM 速率限制 + Image/Video 独立并发通道，lease-based 调度，支持断点续传
+</td>
+<td width="20%" align="center">
+<h3>🖥️ 可视化工作台</h3>
+Web UI 管理项目、预览素材、版本回滚、实时 SSE 任务追踪，内置 AI 助手
+</td>
+</tr>
+</table>
 
-> :mortar_board: **新手？** 请查看 [完整入门教程](docs/getting-started.md)，手把手教你从零开始。
+## 工作流程
 
-## 功能特点
+```mermaid
+graph TD
+    A["📖 上传小说"] --> B["📝 AI Agent 生成分镜剧本"]
+    B --> C["👤 生成人物设计图"]
+    B --> D["🔑 生成线索设计图"]
+    C --> E["🖼️ 生成分镜图片"]
+    D --> E
+    E --> F["🎬 生成视频片段"]
+    F --> G["🎞️ FFmpeg 合成最终视频"]
+```
 
-- :clapper: **完整工作流**：小说 -> 分镜剧本 -> 人物设计 -> 分镜图片 -> 视频片段 -> 最终视频
-- :art: **人物一致性**：AI 先生成人物设计图，后续所有场景都参考该设计，确保角色外观统一
-- :key: **线索追踪**：重要道具和场景元素（如信物、特定地点）可标记为"线索"，确保跨场景一致
-- :white_check_mark: **人工审核点**：每个阶段都可以暂停审核，不满意可重新生成
-- :moneybag: **费用统计**：自动记录 API 调用次数和费用，方便控制成本
-- :iphone: **竖屏优化**：默认 9:16 比例，直接发布到短视频平台
-- :robot: **AI 驱动**：基于 Claude Code Skills 和 Subagent 架构，专业 AI 处理每个环节
-- :desktop_computer: **可视化管理**：Web UI 界面管理项目、预览素材、调整参数
+## 功能特性
 
-## 安装
+- **完整生产流水线** — 小说 → 剧本 → 人物设计 → 分镜图片 → 视频片段 → 成片，一键编排
+- **多智能体架构** — Skills 处理单步任务（生成人物/分镜/视频），Subagent 处理复杂多步骤推理（剧本创作）
+- **人物一致性** — AI 先生成人物设计图，后续所有分镜和视频均参考该设计
+- **场景连贯** — 分镜图自动参考上一张生成，确保相邻场景画面衔接自然
+- **线索追踪** — 关键道具、场景元素标记为"线索"，跨镜头保持视觉连贯
+- **版本历史** — 每次重新生成自动保存历史版本，支持一键回滚
+- **费用统计** — 自动记录 API 调用次数与费用，精确到每个任务
+- **项目导入/导出** — 整个项目打包归档，方便备份和迁移
+- **竖屏优化** — 默认 9:16 比例，适合短视频平台发布
 
-### 前置要求
-
-在开始之前，请确保你的电脑已安装：
-
-- **Python 3.10+** - 运行脚本所需（[下载地址](https://www.python.org/downloads/)）
-- **uv** - Python 包与环境管理工具（[安装文档](https://docs.astral.sh/uv/)）
-- **Node.js 20+** - 运行 React 前端开发服务（[下载地址](https://nodejs.org/)）
-- **pnpm** - 前端包管理器（`npm install -g pnpm` 或 [安装文档](https://pnpm.io/installation)）
-- **Claude Code** - 命令行 AI 助手（[使用指南](https://docs.anthropic.com/claude-code)）
-- **Anthropic API 密钥** - 用于 Claude Agent SDK（设置 `ANTHROPIC_API_KEY`）
-- **ffmpeg** - 视频处理工具（[下载地址](https://ffmpeg.org/download.html)）
-- **Gemini API 密钥** - 用于图片和视频生成（[获取地址](https://aistudio.google.com/apikey)）
-  > ⚠️ **重要**：需要付费层级的 API 密钥才能使用图片和视频生成功能。新用户注册后可获得 **$300 免费赠金**，足够生成大量视频内容。
-
-> :bulb: 不知道怎么安装这些？请查看 [完整入门教程](docs/getting-started.md) 中的详细步骤。
-
-### 安装步骤
+## 快速开始
 
 ```bash
 # 1. 克隆项目
 git clone https://github.com/ArcReel/ArcReel.git
 cd ArcReel
 
-# 2. 安装依赖（uv 会自动创建和管理虚拟环境）
-uv sync
-
-# 3. 安装前端依赖
-cd frontend
-pnpm install
-cd ..
-
-# 4. 配置 API 密钥
+# 2. 配置环境变量
 cp .env.example .env
-# 编辑 .env 文件，填入你的 GEMINI_API_KEY 和 ANTHROPIC_API_KEY
+
+# 3. 启动服务
+docker compose up -d
+
+# 访问 http://localhost:1241
 ```
 
-## 快速开始
+首次启动后，前往 **设置页**（`/settings`）配置 Gemini API Key 等参数即可开始使用。
 
-### 方式一：命令行（完整视频生成流程）
+## 使用方式
 
-```bash
-# 1. 进入项目目录
-cd ArcReel
+通过 Web UI 工作台完成所有操作：
 
-# 2. 启动 Claude Code
-claude
+- **项目管理** — 创建项目、上传小说、管理多剧集
+- **AI 助手** — 内置 AI 助手（Claude Agent SDK 驱动），对话式引导完成剧本创作、人物设计等
+- **素材预览** — 人物图、分镜图、视频片段全屏预览
+- **任务监控** — 实时查看生成任务进度（SSE 推送）
+- **版本管理** — 每次重新生成自动保存历史，支持一键回滚
+- **参数配置** — API Key、模型选择、速率限制等均可在页面配置
 
-# 3. 运行完整工作流
-/manga-workflow
+## 技术架构
+
+```mermaid
+flowchart TB
+    subgraph UI["Web UI — React 19"]
+        U1["项目管理"] ~~~ U2["素材预览"] ~~~ U3["AI 助手"] ~~~ U4["任务监控"]
+    end
+
+    subgraph Server["FastAPI Server"]
+        S1["REST API<br/>路由分发"] ~~~ S2["Agent Runtime<br/>Claude Agent SDK"] ~~~ S3["SSE Stream<br/>实时状态推送"]
+    end
+
+    subgraph Core["Core Library"]
+        C1["GeminiClient<br/>Nano Banana 2 + Veo 3.1"] ~~~ C2["GenerationQueue<br/>RPM 限速 · Image/Video 通道"] ~~~ C3["ProjectManager<br/>文件系统 + 版本管理"]
+    end
+
+    UI --> Server --> Core
 ```
 
-AI 会引导你完成以下步骤：
-1. 创建项目并上传小说
-2. 生成分镜剧本
-3. 生成人物设计图
-4. 生成线索设计图（重要道具/场景）
-5. 生成分镜图片
-6. 生成视频片段
-7. 合成最终视频
+## 技术栈
 
-每一步都有审核点，确认满意后再继续下一步。
-
-### 方式二：Web UI（项目管理与进阶操作）
-
-```bash
-# 终端 1：启动后端 API
-uv run uvicorn server.app:app --reload --port 8080
-
-# 终端 2：启动前端开发服务
-cd frontend
-pnpm dev
-
-# 在浏览器中打开
-# http://localhost:5173
-```
-
-如果要让后端直接托管前端静态文件：
-
-```bash
-cd frontend
-pnpm build
-cd ..
-uv run uvicorn server.app:app --reload --port 8080
-# 然后访问 http://localhost:8080
-```
-
-Web UI 支持：
-- 项目列表与项目工作台（`/app/projects`、`/app/projects/{name}`）
-- 素材预览（人物图、分镜图、视频片段）
-- 参数调整
-- 费用统计查看（`/app/usage`）
-- 助手会话工作台（`/app/assistant`）
-  - 支持输入 `/` 查看 Skills 提示
-  - 支持 `/技能名 任务描述` 指定优先使用的 Skill
-  - 支持通过 `ANTHROPIC_BASE_URL` 自定义 Claude API Base URL
-  - 支持通过 `ANTHROPIC_MODEL`、`ANTHROPIC_DEFAULT_*` 和 `CLAUDE_CODE_SUBAGENT_MODEL` 覆盖 Claude Code 模型路由
-  - 当使用代理时，将 `ANTHROPIC_API_KEY` 设为代理的鉴权 token
-
-## 项目结构
-
-```
-ArcReel/
-├── .claude/
-│   ├── agents/           # Subagent（子代理）：处理复杂多步骤任务
-│   │   ├── novel-to-narration-script.md   # 小说 → 说书剧本
-│   │   └── novel-to-storyboard-script.md  # 小说 → 分镜剧本
-│   └── skills/           # Skills（技能模块）：处理单一任务
-│       ├── generate-characters/   # 生成人物设计图
-│       ├── generate-clues/        # 生成线索设计图
-│       ├── generate-storyboard/   # 生成分镜图片
-│       ├── generate-video/        # 生成视频片段
-│       ├── compose-video/         # 合成最终视频
-│       └── manga-workflow/        # 主流程编排
-├── lib/                  # Python 共享库
-├── projects/             # 你的视频项目存放处
-├── server/              # FastAPI 后端 API 服务
-├── frontend/             # React + Vite 前端工程
-│   ├── src/              # 前端源码
-│   ├── package.json      # 前端依赖与脚本
-│   └── dist/             # 前端构建产物（可由后端托管）
-├── .env.example          # 环境变量模板
-├── CLAUDE.md             # Claude 系统配置
-├── pyproject.toml        # Python 依赖（uv 主配置）
-└── requirements.txt      # 过渡依赖清单（可选）
-```
-
-### 视频项目目录
-
-每个项目存放在 `projects/{项目名}/` 下：
-
-```
-projects/我的小说/
-├── source/       # 原始小说（.txt 文件）
-├── scripts/      # 分镜剧本（.json 文件）
-├── characters/   # 人物设计图（.png）
-├── clues/        # 线索设计图（.png）
-├── storyboards/  # 分镜图片（.png）
-├── videos/       # 视频片段（.mp4）
-└── output/       # 最终输出（.mp4）
-```
-
-## 可用命令
-
-在 Claude Code 中输入以下命令：
-
-| 命令 | 功能 |
+| 层级 | 技术 |
 |------|------|
-| `/manga-workflow` | 完整工作流程（推荐新手使用） |
-| `/generate-characters` | 生成人物设计图 |
-| `/generate-clues` | 生成线索设计图 |
-| `/generate-storyboard` | 生成分镜图片 |
-| `/generate-video` | 生成视频片段 |
-| `/compose-video` | 合成最终视频（添加转场、BGM） |
+| **前端** | React 19, TypeScript, Tailwind CSS 4, wouter, zustand, Framer Motion, Vite |
+| **后端** | FastAPI, Python 3.12+, SQLAlchemy 2.0 (async), Alembic, uvicorn, Pydantic 2 |
+| **AI & 媒体** | Claude Agent SDK, Gemini API (Nano Banana 2 + Veo 3.1), FFmpeg, Pillow |
+| **数据库** | SQLite (默认) / PostgreSQL (生产) |
+| **部署** | Docker, Docker Compose |
 
-## 详细文档
+## 文档
 
-- :book: [完整入门教程](docs/getting-started.md) - 从零开始的手把手指南
-- :moneybag: [费用说明](docs/视频&图片生成费用表.md) - API 调用费用参考
-- :wrench: [Veo API 参考](docs/veo.md) - 视频生成技术细节
+- 📖 [完整入门教程](docs/getting-started.md) — 从零开始的手把手指南
+- 💰 [费用说明](docs/视频&图片生成费用表.md) — API 调用费用参考
+
+## 贡献
+
+欢迎贡献代码、报告 Bug 或提出功能建议！
+
+### 本地开发环境
+
+```bash
+# 前置要求：Python 3.12+, Node.js 20+, uv, pnpm, ffmpeg
+
+# 安装依赖
+uv sync
+cd frontend && pnpm install && cd ..
+
+# 初始化数据库
+uv run alembic upgrade head
+
+# 启动后端 (终端 1)
+uv run uvicorn server.app:app --reload --port 1241
+
+# 启动前端 (终端 2)
+cd frontend && pnpm dev
+
+# 访问 http://localhost:5173
+```
+
+### 运行测试
+
+```bash
+# 后端测试
+python -m pytest
+
+# 前端类型检查 + 测试
+cd frontend && pnpm check
+```
 
 ## 许可证
 
 [AGPL-3.0](LICENSE)
+
+---
+
+<p align="center">
+  如果觉得项目有用，请给个 ⭐ Star 支持一下！
+</p>

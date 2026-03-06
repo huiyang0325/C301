@@ -181,6 +181,9 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-gray-800 bg-gray-900/80 px-4 backdrop-blur-sm">
       {/* ---- Left section ---- */}
       <div className="flex items-center gap-3">
+        {/* Logo */}
+        <img src="/android-chrome-192x192.png" alt="ArcReel" className="h-5 w-5" />
+
         {/* Back to projects */}
         <button
           type="button"

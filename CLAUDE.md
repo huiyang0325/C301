@@ -20,7 +20,7 @@ frontend/ (React SPA)  →  server/ (FastAPI)  →  lib/ (核心库)
 
 ```bash
 # 后端
-uv run uvicorn server.app:app --reload --port 8080   # 启动开发服务器
+uv run uvicorn server.app:app --reload --port 1241   # 启动开发服务器
 python -m pytest                                       # 全部测试
 python -m pytest tests/test_generation_queue.py -v     # 单文件
 python -m pytest -k "test_enqueue" -v                  # 按关键字
@@ -30,7 +30,7 @@ uv run alembic upgrade head                            # 数据库迁移
 uv run alembic revision --autogenerate -m "desc"       # 生成迁移
 
 # 前端
-cd frontend && pnpm dev                                # 开发服务器 (5173，代理 /api → 8080)
+cd frontend && pnpm dev                                # 开发服务器 (5173，代理 /api → 1241)
 cd frontend && pnpm build                              # 生产构建 (含 typecheck)
 cd frontend && pnpm test                               # vitest 测试
 cd frontend && pnpm typecheck                          # TypeScript 类型检查
@@ -82,7 +82,7 @@ cd frontend && pnpm check                              # typecheck + test
 - 路由：`wouter`（非 React Router）
 - 状态管理：`zustand`（stores 在 `frontend/src/stores/`）
 - 路径别名：`@/` → `frontend/src/`
-- Vite 代理：`/api` → `http://127.0.0.1:8080`
+- Vite 代理：`/api` → `http://127.0.0.1:1241`
 
 ## 关键设计模式
 

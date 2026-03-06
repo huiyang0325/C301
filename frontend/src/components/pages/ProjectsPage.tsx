@@ -285,11 +285,12 @@ export function ProjectsPage() {
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-4">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <h1 className="text-xl font-bold">
+          <h1 className="flex items-center gap-2 text-xl font-bold">
+            <img src="/android-chrome-192x192.png" alt="ArcReel" className="h-7 w-7" />
             <span className="text-indigo-400">
               ArcReel
             </span>
-            <span className="ml-2 text-gray-400 font-normal text-base">项目</span>
+            <span className="ml-1 text-gray-400 font-normal text-base">项目</span>
           </h1>
           <div className="flex items-center gap-3">
             <button

@@ -3,7 +3,7 @@
 
 启动方式:
     cd ArcReel
-    uv run uvicorn server.app:app --reload --port 8080
+    uv run uvicorn server.app:app --reload --port 1241
 """
 
 import logging
@@ -245,4 +245,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=1241, reload=True)
