@@ -44,33 +44,33 @@ class _FakeService:
     async def delete_session(self, session_id):
         return session_id in self.sessions
 
-    async def get_snapshot(self, session_id):
+    async def get_snapshot(self, session_id, **kwargs):
         if session_id == "missing":
             raise FileNotFoundError(session_id)
         return {"session_id": session_id, "status": "running", "turns": [], "pending_questions": []}
 
-    async def send_message(self, session_id, content):
+    async def send_message(self, session_id, content, **kwargs):
         if session_id == "missing":
             raise FileNotFoundError(session_id)
         if content == "bad":
             raise ValueError("bad")
         return {"status": "accepted", "session_id": session_id}
 
-    async def interrupt_session(self, session_id):
+    async def interrupt_session(self, session_id, **kwargs):
         if session_id == "missing":
             raise FileNotFoundError(session_id)
         if session_id == "bad":
             raise ValueError("bad")
         return {"status": "accepted", "session_id": session_id, "session_status": "interrupted"}
 
-    async def answer_user_question(self, session_id, question_id, answers):
+    async def answer_user_question(self, session_id, question_id, answers, **kwargs):
         if session_id == "missing":
             raise FileNotFoundError(session_id)
         if question_id == "bad":
             raise ValueError("bad question")
         return {"status": "accepted", "session_id": session_id, "question_id": question_id, "answers": answers}
 
-    async def stream_events(self, session_id):
+    async def stream_events(self, session_id, **kwargs):
         yield ServerSentEvent(event="snapshot", data={})
         await asyncio.sleep(0)
 

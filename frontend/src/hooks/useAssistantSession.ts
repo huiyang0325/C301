@@ -68,6 +68,7 @@ function saveLastSessionId(projectName: string, sessionId: string): void {
 export function useAssistantSession(projectName: string | null) {
   const store = useAssistantStore;
   const streamRef = useRef<EventSource | null>(null);
+  const streamSessionRef = useRef<string | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusRef = useRef<string>("idle");
 
@@ -96,12 +97,23 @@ export function useAssistantSession(projectName: string | null) {
       streamRef.current.close();
       streamRef.current = null;
     }
+    streamSessionRef.current = null;
   }, []);
 
   // 连接 SSE 流
   const connectStream = useCallback(
     (sessionId: string) => {
+      // 如果已连接到同一 session 且连接健康，跳过重连
+      if (
+        streamRef.current &&
+        streamSessionRef.current === sessionId &&
+        streamRef.current.readyState !== EventSource.CLOSED
+      ) {
+        return;
+      }
+
       closeStream();
+      streamSessionRef.current = sessionId;
 
       const url = API.getAssistantStreamUrl(projectName!, sessionId);
       const source = new EventSource(url);
@@ -274,13 +286,21 @@ export function useAssistantSession(projectName: string | null) {
 
         if (!sessionId) throw new Error("无法创建会话");
 
-        // 发送消息
-        await API.sendAssistantMessage(projectName!, sessionId, content);
-
-        // 连接 SSE 流
+        // 乐观更新：立即在 UI 上显示用户消息，不等后端返回
+        const optimisticTurn: Turn = {
+          type: "user",
+          content: [{ type: "text", text: content.trim() }],
+          uuid: `optimistic-${crypto.randomUUID()}`,
+          timestamp: new Date().toISOString(),
+        };
+        store.getState().setTurns([...store.getState().turns, optimisticTurn]);
         statusRef.current = "running";
         store.getState().setSessionStatus("running");
+
+        // 先建立 SSE 连接（复用已有连接），再发送消息
+        // 这样后端的 local echo 可以通过已连接的 SSE 实时推送
         connectStream(sessionId);
+        await API.sendAssistantMessage(projectName!, sessionId, content);
       } catch (err) {
         store.getState().setError((err as Error).message ?? "发送失败");
         store.getState().setSending(false);

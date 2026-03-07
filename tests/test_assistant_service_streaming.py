@@ -424,7 +424,7 @@ class TestAssistantServiceStreaming:
         service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
-        projector = service._build_projector(meta, "session-1")
+        projector = await service._build_projector(meta, "session-1")
         # local echo should be dropped, so only the real transcript user turn exists
         assert len(projector.turns) == 1
         assert projector.turns[0]["uuid"] == "real-1"
@@ -454,7 +454,7 @@ class TestAssistantServiceStreaming:
         service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
-        projector = service._build_projector(meta, "session-1")
+        projector = await service._build_projector(meta, "session-1")
         # Simplified dedup: local echo with matching text in transcript is always deduped
         assert len(projector.turns) == 1
         assert projector.turns[0]["uuid"] == "real-old"
@@ -782,7 +782,7 @@ class TestAssistantServiceStreaming:
         service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
-        projector = service._build_projector(meta, "session-1")
+        projector = await service._build_projector(meta, "session-1")
         
         # We should have 4 turns total: user1, asst1, user2, asst2
         assert len(projector.turns) == 4
@@ -831,7 +831,7 @@ class TestAssistantServiceStreaming:
         service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="completed", replay_messages=buffer)
 
-        projector = service._build_projector(meta, "session-1")
+        projector = await service._build_projector(meta, "session-1")
         
         # We should have exactly 2 turns total: user, assistant (result eliminated).
         # The buffer result should be deduplicated away.
@@ -883,7 +883,7 @@ class TestAssistantServiceStreaming:
         service.transcript_adapter = _FakeTranscriptAdapter([], history_raw=history)
         service.session_manager = _FakeSessionManager([], status="running", replay_messages=buffer)
 
-        projector = service._build_projector(meta, "session-1")
+        projector = await service._build_projector(meta, "session-1")
         
         # We should have exactly 2 turns total!
         # turn 1: user "task"

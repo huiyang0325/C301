@@ -68,7 +68,7 @@ class _FakeSessionManager:
     async def get_pending_questions_snapshot(self, session_id):
         return list(self.pending)
 
-    async def send_message(self, session_id, content):
+    async def send_message(self, session_id, content, **kwargs):
         self.sent.append((session_id, content))
 
     async def answer_user_question(self, session_id, question_id, answers):

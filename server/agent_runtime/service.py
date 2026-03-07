@@ -3,6 +3,7 @@ Assistant service orchestration using ClaudeSDKClient.
 """
 
 import asyncio
+import copy
 import logging
 import os
 from datetime import datetime, timezone
@@ -23,6 +24,7 @@ from server.agent_runtime.turn_grouper import (
     _has_subagent_user_metadata,
     _is_system_injected_user_message,
 )
+from server.agent_runtime.message_utils import extract_plain_user_content
 from server.agent_runtime.turn_schema import normalize_turns
 
 
@@ -44,6 +46,8 @@ class AssistantService:
         )
         self._startup_lock = asyncio.Lock()
         self._startup_done = False
+        self._snapshot_cache: dict[str, dict[str, Any]] = {}  # session_id → snapshot
+        self._snapshot_cache_max = 128
         self.stream_heartbeat_seconds = int(
             os.environ.get("ASSISTANT_STREAM_HEARTBEAT_SECONDS", "20")
         )
@@ -123,26 +127,32 @@ class AssistantService:
                 logger.warning("会话断开清理异常: %s", exc)
             del self.session_manager.sessions[session_id]
 
+        self._snapshot_cache.pop(session_id, None)
         return await self.meta_store.delete(session_id)
 
     # ==================== Messages ====================
 
-    async def get_snapshot(self, session_id: str) -> dict[str, Any]:
+    async def get_snapshot(self, session_id: str, *, meta: Optional[SessionMeta] = None) -> dict[str, Any]:
         """Build a normalized v2 snapshot for history and reconnect."""
-        meta = await self.meta_store.get(session_id)
         if meta is None:
-            raise FileNotFoundError(f"session not found: {session_id}")
+            meta = await self.meta_store.get(session_id)
+            if meta is None:
+                raise FileNotFoundError(f"session not found: {session_id}")
 
         status = await self.session_manager.get_status(session_id) or meta.status
-        # Use _build_projector which correctly replays the buffer in chronological order
-        projector = self._build_projector(meta, session_id)
+
+        # Return cached snapshot for terminal (non-running) sessions
+        if status != "running" and session_id in self._snapshot_cache:
+            return copy.deepcopy(self._snapshot_cache[session_id])
+
+        projector = await self._build_projector(meta, session_id)
 
         pending_questions = []
         if status == "running":
             pending_questions = await self.session_manager.get_pending_questions_snapshot(
                 session_id
             )
-        return await self._with_session_metadata(
+        snapshot = await self._with_session_metadata(
             projector.build_snapshot(
                 session_id=session_id,
                 status=status,
@@ -151,18 +161,30 @@ class AssistantService:
             session_id=session_id,
         )
 
-    async def send_message(self, session_id: str, content: str) -> dict[str, Any]:
+        # Cache snapshots for terminal sessions (transcript won't change)
+        if status != "running":
+            if len(self._snapshot_cache) >= self._snapshot_cache_max:
+                # Evict oldest entry (first inserted key in insertion-ordered dict)
+                oldest = next(iter(self._snapshot_cache))
+                del self._snapshot_cache[oldest]
+            self._snapshot_cache[session_id] = snapshot
+
+        return snapshot
+
+    async def send_message(self, session_id: str, content: str, *, meta: Optional[SessionMeta] = None) -> dict[str, Any]:
         """Send a message to the session."""
         text = content.strip()
         if not text:
             raise ValueError("消息内容不能为空")
 
-        meta = await self.meta_store.get(session_id)
         if meta is None:
-            raise FileNotFoundError(f"session not found: {session_id}")
+            meta = await self.meta_store.get(session_id)
+            if meta is None:
+                raise FileNotFoundError(f"session not found: {session_id}")
 
         logger.info("发送消息到会话 session_id=%s", session_id)
-        await self.session_manager.send_message(session_id, text)
+        self._snapshot_cache.pop(session_id, None)
+        await self.session_manager.send_message(session_id, text, meta=meta)
         return {"status": "accepted", "session_id": session_id}
 
     async def answer_user_question(
@@ -170,19 +192,23 @@ class AssistantService:
         session_id: str,
         question_id: str,
         answers: dict[str, str],
+        *,
+        meta: Optional[SessionMeta] = None,
     ) -> dict[str, Any]:
         """Submit answers for a pending AskUserQuestion."""
-        meta = await self.meta_store.get(session_id)
         if meta is None:
-            raise FileNotFoundError(f"session not found: {session_id}")
+            meta = await self.meta_store.get(session_id)
+            if meta is None:
+                raise FileNotFoundError(f"session not found: {session_id}")
         await self.session_manager.answer_user_question(session_id, question_id, answers)
         return {"status": "accepted", "session_id": session_id, "question_id": question_id}
 
-    async def interrupt_session(self, session_id: str) -> dict[str, Any]:
+    async def interrupt_session(self, session_id: str, *, meta: Optional[SessionMeta] = None) -> dict[str, Any]:
         """Interrupt a running session."""
-        meta = await self.meta_store.get(session_id)
         if meta is None:
-            raise FileNotFoundError(f"session not found: {session_id}")
+            meta = await self.meta_store.get(session_id)
+            if meta is None:
+                raise FileNotFoundError(f"session not found: {session_id}")
         session_status = await self.session_manager.interrupt_session(session_id)
         return {
             "status": "accepted",
@@ -192,11 +218,12 @@ class AssistantService:
 
     # ==================== Streaming ====================
 
-    async def stream_events(self, session_id: str) -> AsyncIterator[ServerSentEvent]:
+    async def stream_events(self, session_id: str, *, meta: Optional[SessionMeta] = None) -> AsyncIterator[ServerSentEvent]:
         """Stream SSE events for a session."""
-        meta = await self.meta_store.get(session_id)
         if meta is None:
-            raise FileNotFoundError(f"session not found: {session_id}")
+            meta = await self.meta_store.get(session_id)
+            if meta is None:
+                raise FileNotFoundError(f"session not found: {session_id}")
 
         initial_status = await self.session_manager.get_status(session_id) or meta.status
         if initial_status != "running":
@@ -226,7 +253,7 @@ class AssistantService:
             return
 
         status = await self.session_manager.get_status(session_id) or initial_status
-        projector = self._build_projector(meta, session_id, replayed_messages)
+        projector = await self._build_projector(meta, session_id, replayed_messages)
         snapshot_events = await self._emit_running_snapshot(
             session_id, status, projector
         )
@@ -258,7 +285,7 @@ class AssistantService:
         self, meta: SessionMeta, session_id: str, status: SessionStatus
     ) -> list[ServerSentEvent]:
         """Build snapshot + status events for a non-running session."""
-        projector = self._build_projector(meta, session_id)
+        projector = await self._build_projector(meta, session_id)
         snapshot_payload = await self._with_session_metadata(
             projector.build_snapshot(
                 session_id=session_id,
@@ -446,14 +473,16 @@ class AssistantService:
         """Build an SSE event for FastAPI's EventSourceResponse."""
         return ServerSentEvent(event=event, data=data)
 
-    def _build_projector(
+    async def _build_projector(
         self,
         meta: SessionMeta,
         session_id: str,
         replayed_messages: Optional[list[dict[str, Any]]] = None,
     ) -> AssistantStreamProjector:
         """Build projector state from transcript history + in-memory buffer."""
-        history_messages = self.transcript_adapter.read_raw_messages(meta.sdk_session_id)
+        history_messages = await asyncio.to_thread(
+            self.transcript_adapter.read_raw_messages, meta.sdk_session_id
+        )
         projector = AssistantStreamProjector(initial_messages=history_messages)
 
         # UUID set for primary dedup
@@ -694,28 +723,7 @@ class AssistantService:
                 return True
         return False
 
-    @staticmethod
-    def _extract_plain_user_content(message: dict[str, Any]) -> Optional[str]:
-        """Extract plain text from a user message payload."""
-        if message.get("type") != "user":
-            return None
-        content = message.get("content")
-        if isinstance(content, str):
-            text = content.strip()
-            return text or None
-        if (
-            isinstance(content, list)
-            and len(content) == 1
-            and isinstance(content[0], dict)
-        ):
-            block = content[0]
-            block_type = block.get("type")
-            if block_type in {"text", None}:
-                text = block.get("text")
-                if isinstance(text, str):
-                    text = text.strip()
-                    return text or None
-        return None
+    _extract_plain_user_content = staticmethod(extract_plain_user_content)
 
     @staticmethod
     def _parse_iso_datetime(value: Any) -> Optional[datetime]:

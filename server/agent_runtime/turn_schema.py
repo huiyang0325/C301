@@ -120,9 +120,10 @@ def normalize_turn(turn: dict[str, Any]) -> dict[str, Any]:
     - ``tool_use.input`` is always ``dict``
     - ``uuid`` and ``timestamp`` keys always exist (may be ``None``)
     """
-    result = copy.deepcopy(turn)
+    # Shallow copy at turn level; normalize_block handles block-level copies.
+    result = dict(turn)
 
-    # Ensure content is list[dict]
+    # Ensure content is list[dict] (normalize_block deepcopies each block)
     result["content"] = normalize_content(result.get("content", []))
 
     # Ensure uuid and timestamp keys exist

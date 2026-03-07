@@ -439,14 +439,28 @@ class AssistantStreamProjector:
         self.draft = DraftAssistantProjector()
         self.last_result: Optional[dict[str, Any]] = None
 
-        for message in initial_messages or []:
-            self.apply_message(message)
+        if initial_messages:
+            self._batch_init(initial_messages)
+
+    def _batch_init(self, messages: list[dict[str, Any]]) -> None:
+        """Batch-process initial messages in O(n) instead of per-message apply."""
+        groupable: list[dict[str, Any]] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            msg_type = message.get("type")
+            if msg_type in _GROUPABLE_TYPES:
+                groupable.append(message)
+                if msg_type == "result":
+                    self.last_result = copy.deepcopy(message)
+        self._groupable_messages = groupable
+        self.turns = group_messages_into_turns(groupable) if groupable else []
 
     def _build_visible_draft_turn(self) -> Optional[dict[str, Any]]:
         """Build the current draft turn and hide reconnect/resume duplicates."""
-        normalized_turns = [normalize_turn(t) for t in self.turns]
+        # self.turns are already normalized by group_messages_into_turns
         return _hide_stale_draft_turn(
-            normalized_turns,
+            self.turns,
             self.draft.build_turn(),
         )
 
@@ -499,11 +513,11 @@ class AssistantStreamProjector:
         pending_questions: Optional[list[dict[str, Any]]] = None,
     ) -> dict[str, Any]:
         """Build unified snapshot payload for API and SSE."""
-        normalized_turns = [normalize_turn(t) for t in self.turns]
+        # self.turns are already normalized by group_messages_into_turns
         return {
             "session_id": session_id,
             "status": status,
-            "turns": normalized_turns,
+            "turns": self.turns,
             "draft_turn": self._build_visible_draft_turn(),
-            "pending_questions": copy.deepcopy(pending_questions or []),
+            "pending_questions": pending_questions or [],
         }

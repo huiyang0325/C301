@@ -14,6 +14,7 @@ from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
+from server.agent_runtime.message_utils import extract_plain_user_content
 from server.agent_runtime.models import SessionMeta, SessionStatus
 from server.agent_runtime.session_store import SessionMetaStore
 
@@ -454,7 +455,7 @@ class SessionManager:
         meta = await self.meta_store.create(project_name, title)
         return meta
 
-    async def get_or_connect(self, session_id: str) -> ManagedSession:
+    async def get_or_connect(self, session_id: str, *, meta: Optional["SessionMeta"] = None) -> ManagedSession:
         """Get existing managed session or create new connection."""
         if session_id in self.sessions:
             return self.sessions[session_id]
@@ -469,9 +470,10 @@ class SessionManager:
             if session_id in self.sessions:
                 return self.sessions[session_id]
 
-            meta = await self.meta_store.get(session_id)
             if meta is None:
-                raise FileNotFoundError(f"session not found: {session_id}")
+                meta = await self.meta_store.get(session_id)
+                if meta is None:
+                    raise FileNotFoundError(f"session not found: {session_id}")
 
             if not SDK_AVAILABLE or ClaudeSDKClient is None:
                 raise RuntimeError("claude_agent_sdk is not installed")
@@ -493,9 +495,9 @@ class SessionManager:
             self.sessions[session_id] = managed
             return managed
 
-    async def send_message(self, session_id: str, content: str) -> None:
+    async def send_message(self, session_id: str, content: str, *, meta: Optional["SessionMeta"] = None) -> None:
         """Send a message and start background consumer."""
-        managed = await self.get_or_connect(session_id)
+        managed = await self.get_or_connect(session_id, meta=meta)
 
         if managed.status == "running":
             raise ValueError(
@@ -504,16 +506,16 @@ class SessionManager:
 
         self._prune_transient_buffer(managed)
 
-        # Update status to running
+        # Update in-memory status and echo user input immediately so live SSE
+        # shows it even when SDK stream doesn't replay user messages in real time.
         managed.status = "running"
-        await self.meta_store.update_status(session_id, "running")
-
-        # Echo user input immediately so live SSE shows it even when SDK stream
-        # doesn't replay user messages in real time.
         managed.pending_user_echoes.append(content)
         if len(managed.pending_user_echoes) > 20:
             managed.pending_user_echoes.pop(0)
         managed.add_message(self._build_user_echo_message(content))
+
+        # Persist status asynchronously — don't block the echo broadcast
+        await self.meta_store.update_status(session_id, "running")
 
         # Send the query — restore status on failure so the session is not
         # permanently stuck in "running" without an active consumer.
@@ -819,28 +821,7 @@ class SessionManager:
             "timestamp": _utc_now_iso(),
         }
 
-    @staticmethod
-    def _extract_plain_user_content(message: dict[str, Any]) -> Optional[str]:
-        """Extract plain text from a real user message for echo dedupe."""
-        if message.get("type") != "user":
-            return None
-        content = message.get("content")
-        if isinstance(content, str):
-            text = content.strip()
-            return text or None
-        if (
-            isinstance(content, list)
-            and len(content) == 1
-            and isinstance(content[0], dict)
-        ):
-            block = content[0]
-            block_type = block.get("type")
-            if block_type in {"text", None}:
-                text = block.get("text")
-                if isinstance(text, str):
-                    text = text.strip()
-                    return text or None
-        return None
+    _extract_plain_user_content = staticmethod(extract_plain_user_content)
 
     def _is_duplicate_user_echo(
         self,

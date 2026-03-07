@@ -13,6 +13,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from pydantic import BaseModel, Field
 
 from lib import PROJECT_ROOT
+from server.agent_runtime.models import SessionMeta
 from server.agent_runtime.service import AssistantService
 
 router = APIRouter()
@@ -26,21 +27,22 @@ def get_assistant_service() -> AssistantService:
 
 async def _validate_session_ownership(
     service: AssistantService, session_id: str, project_name: str
-) -> None:
-    """Validate session belongs to the specified project."""
+) -> "SessionMeta":
+    """Validate session belongs to the specified project and return it."""
     session = await service.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"会话 '{session_id}' 不存在")
     if session.project_name != project_name:
         raise HTTPException(status_code=404, detail=f"会话 '{session_id}' 不存在")
+    return session
 
 async def _assistant_service_for_stream(
     project_name: str,
     session_id: str,
-) -> AssistantService:
+) -> tuple[AssistantService, SessionMeta]:
     service = get_assistant_service()
-    await _validate_session_ownership(service, session_id, project_name)
-    return service
+    meta = await _validate_session_ownership(service, session_id, project_name)
+    return service, meta
 
 
 class CreateSessionRequest(BaseModel):
@@ -97,8 +99,7 @@ async def list_sessions(
 async def get_session(project_name: str, session_id: str):
     try:
         service = get_assistant_service()
-        await _validate_session_ownership(service, session_id, project_name)
-        session = await service.get_session(session_id)
+        session = await _validate_session_ownership(service, session_id, project_name)
         return session.model_dump()
     except HTTPException:
         raise
@@ -153,8 +154,8 @@ async def list_messages(project_name: str, session_id: str):
 async def get_snapshot(project_name: str, session_id: str):
     try:
         service = get_assistant_service()
-        await _validate_session_ownership(service, session_id, project_name)
-        snapshot = await service.get_snapshot(session_id)
+        meta = await _validate_session_ownership(service, session_id, project_name)
+        snapshot = await service.get_snapshot(session_id, meta=meta)
         return snapshot
     except HTTPException:
         raise
@@ -169,8 +170,8 @@ async def get_snapshot(project_name: str, session_id: str):
 async def send_message(project_name: str, session_id: str, req: SendMessageRequest):
     try:
         service = get_assistant_service()
-        await _validate_session_ownership(service, session_id, project_name)
-        result = await service.send_message(session_id, req.content)
+        meta = await _validate_session_ownership(service, session_id, project_name)
+        result = await service.send_message(session_id, req.content, meta=meta)
         return result
     except HTTPException:
         raise
@@ -187,8 +188,8 @@ async def send_message(project_name: str, session_id: str, req: SendMessageReque
 async def interrupt_session(project_name: str, session_id: str):
     try:
         service = get_assistant_service()
-        await _validate_session_ownership(service, session_id, project_name)
-        result = await service.interrupt_session(session_id)
+        meta = await _validate_session_ownership(service, session_id, project_name)
+        result = await service.interrupt_session(session_id, meta=meta)
         return result
     except HTTPException:
         raise
@@ -207,11 +208,12 @@ async def answer_question(project_name: str, session_id: str, question_id: str, 
         raise HTTPException(status_code=400, detail="answers 不能为空")
     try:
         service = get_assistant_service()
-        await _validate_session_ownership(service, session_id, project_name)
+        meta = await _validate_session_ownership(service, session_id, project_name)
         result = await service.answer_user_question(
             session_id=session_id,
             question_id=question_id,
             answers=req.answers,
+            meta=meta,
         )
         return result
     except HTTPException:
@@ -229,10 +231,11 @@ async def answer_question(project_name: str, session_id: str, question_id: str, 
 async def stream_events(
     project_name: str,
     session_id: str,
-    service: AssistantService = Depends(_assistant_service_for_stream),
+    deps: tuple[AssistantService, SessionMeta] = Depends(_assistant_service_for_stream),
 ) -> AsyncIterator[ServerSentEvent]:
+    service, meta = deps
     try:
-        async for event in service.stream_events(session_id):
+        async for event in service.stream_events(session_id, meta=meta):
             yield event
     except HTTPException:
         raise
