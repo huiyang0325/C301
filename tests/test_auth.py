@@ -8,6 +8,8 @@ import os
 import time
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 import server.auth as auth_module
 
 
@@ -88,6 +90,9 @@ class TestCreateAndVerifyToken:
 
 
 class TestCheckCredentials:
+    def setup_method(self):
+        auth_module._cached_password_hash = None
+
     def test_check_credentials_valid(self):
         """正确凭据返回 True"""
         with patch.dict(
@@ -163,6 +168,18 @@ class TestEnsureAuthPassword:
             # 原有内容应保留
             assert "SOME_VAR=hello" in content
 
+    def test_env_file_not_exist_no_error(self, tmp_path):
+        """.env 文件不存在时不抛异常，并创建新文件"""
+        env_file = tmp_path / "nonexistent" / ".env"
+        env = os.environ.copy()
+        env.pop("AUTH_PASSWORD", None)
+        with patch.dict(os.environ, env, clear=True):
+            # 父目录不存在会触发 OSError，函数不应抛异常
+            password = auth_module.ensure_auth_password(env_path=str(env_file))
+            assert len(password) == 16
+            assert password.isalnum()
+
+
 class TestDownloadToken:
     def setup_method(self):
         auth_module._cached_token_secret = None
@@ -221,18 +238,77 @@ class TestDownloadToken:
                 auth_module.verify_download_token(token, "demo")
 
 
-class TestEnsureAuthPassword:
+class TestPasswordHash:
+    """密码哈希功能测试"""
+
     def setup_method(self):
-        """每个测试前重置缓存"""
+        auth_module._cached_password_hash = None
+
+    def test_check_credentials_with_hash(self):
+        """密码通过哈希比对验证"""
+        with patch.dict(
+            os.environ, {"AUTH_USERNAME": "admin", "AUTH_PASSWORD": "pass123"}
+        ):
+            assert auth_module.check_credentials("admin", "pass123") is True
+
+    def test_check_credentials_wrong_password_with_hash(self):
+        """错误密码哈希比对失败"""
+        with patch.dict(
+            os.environ, {"AUTH_USERNAME": "admin", "AUTH_PASSWORD": "pass123"}
+        ):
+            assert auth_module.check_credentials("admin", "wrong") is False
+
+    def test_check_credentials_wrong_username_timing_safe(self):
+        """错误用户名也执行哈希验证（防时序攻击）"""
+        with patch.dict(
+            os.environ, {"AUTH_USERNAME": "admin", "AUTH_PASSWORD": "pass123"}
+        ):
+            assert auth_module.check_credentials("nobody", "pass123") is False
+
+    def test_password_hash_cached(self):
+        """哈希值应被缓存"""
+        with patch.dict(
+            os.environ, {"AUTH_USERNAME": "admin", "AUTH_PASSWORD": "pass123"}
+        ):
+            auth_module.check_credentials("admin", "pass123")
+            first_hash = auth_module._cached_password_hash
+            auth_module.check_credentials("admin", "pass123")
+            assert auth_module._cached_password_hash is first_hash  # 同一对象
+
+
+class TestGetCurrentUser:
+    """FastAPI 依赖函数测试"""
+
+    def setup_method(self):
         auth_module._cached_token_secret = None
 
-    def test_env_file_not_exist_no_error(self, tmp_path):
-        """.env 文件不存在时不抛异常，并创建新文件"""
-        env_file = tmp_path / "nonexistent" / ".env"
-        env = os.environ.copy()
-        env.pop("AUTH_PASSWORD", None)
-        with patch.dict(os.environ, env, clear=True):
-            # 父目录不存在会触发 OSError，函数不应抛异常
-            password = auth_module.ensure_auth_password(env_path=str(env_file))
-            assert len(password) == 16
-            assert password.isalnum()
+    async def test_get_current_user_valid_token(self):
+        with patch.dict(os.environ, {"AUTH_TOKEN_SECRET": "test-secret-key-that-is-at-least-32-bytes"}):
+            token = auth_module.create_token("admin")
+            payload = await auth_module.get_current_user(token)
+            assert payload["sub"] == "admin"
+
+    async def test_get_current_user_invalid_token(self):
+        import pytest
+        with patch.dict(os.environ, {"AUTH_TOKEN_SECRET": "test-secret-key-that-is-at-least-32-bytes"}):
+            with pytest.raises(HTTPException) as exc_info:
+                await auth_module.get_current_user("invalid-token")
+            assert exc_info.value.status_code == 401
+
+    async def test_get_current_user_flexible_header(self):
+        with patch.dict(os.environ, {"AUTH_TOKEN_SECRET": "test-secret-key-that-is-at-least-32-bytes"}):
+            token = auth_module.create_token("admin")
+            payload = await auth_module.get_current_user_flexible(token, None)
+            assert payload["sub"] == "admin"
+
+    async def test_get_current_user_flexible_query(self):
+        with patch.dict(os.environ, {"AUTH_TOKEN_SECRET": "test-secret-key-that-is-at-least-32-bytes"}):
+            token = auth_module.create_token("admin")
+            payload = await auth_module.get_current_user_flexible(None, token)
+            assert payload["sub"] == "admin"
+
+    async def test_get_current_user_flexible_no_token(self):
+        import pytest
+        with pytest.raises(HTTPException) as exc_info:
+            await auth_module.get_current_user_flexible(None, None)
+        assert exc_info.value.status_code == 401

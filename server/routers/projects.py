@@ -9,12 +9,13 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional, List, Union
+from typing import Annotated, Optional, Union
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ from lib import PROJECT_ROOT
 from lib.project_change_hints import project_change_source
 from lib.project_manager import ProjectManager
 from lib.status_calculator import StatusCalculator
-from server.auth import create_download_token, verify_download_token, verify_token
+from server.auth import create_download_token, get_current_user, verify_download_token
 from server.services.project_archive import (
     ProjectArchiveService,
     ProjectArchiveValidationError,
@@ -70,6 +71,7 @@ def _cleanup_temp_file(path: str) -> None:
 
 @router.post("/projects/import")
 async def import_project_archive(
+    _user: Annotated[dict, Depends(get_current_user)],
     file: UploadFile = File(...),
     conflict_policy: str = Form("prompt"),
 ):
@@ -121,20 +123,16 @@ async def import_project_archive(
 
 
 @router.post("/projects/{name}/export/token")
-async def create_export_token(name: str, request: Request):
+async def create_export_token(
+    name: str,
+    current_user: Annotated[dict, Depends(get_current_user)],
+):
     """签发短时效下载 token，用于浏览器原生下载认证。"""
     try:
         if not get_project_manager().project_exists(name):
             raise HTTPException(status_code=404, detail=f"项目 '{name}' 不存在或未初始化")
 
-        # 从 Authorization header 解析用户名（必须通过认证）
-        auth_header = request.headers.get("authorization", "")
-        token = auth_header.removeprefix("Bearer ").strip()
-        payload = verify_token(token)
-        if not payload:
-            raise HTTPException(status_code=401, detail="认证 token 无效或已过期")
-        username = payload["sub"]
-
+        username = current_user["sub"]
         download_token = create_download_token(username, name)
         return {"download_token": download_token, "expires_in": 300}
     except HTTPException:
@@ -147,25 +145,24 @@ async def create_export_token(name: str, request: Request):
 @router.get("/projects/{name}/export")
 async def export_project_archive(
     name: str,
-    download_token: str = Query(None),
+    download_token: str = Query(...),
     scope: str = Query("full"),
 ):
-    """将项目导出为 ZIP。支持 download_token 认证和 scope 选择。"""
+    """将项目导出为 ZIP。需要 download_token 认证（通过 POST /export/token 获取）。"""
     if scope not in ("full", "current"):
         raise HTTPException(status_code=422, detail="scope 必须为 full 或 current")
 
-    # 验证 download_token（如果提供）
-    if download_token:
-        import jwt as pyjwt
+    # 验证 download_token
+    import jwt as pyjwt
 
-        try:
-            verify_download_token(download_token, name)
-        except pyjwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="下载链接已过期，请重新导出")
-        except ValueError:
-            raise HTTPException(status_code=403, detail="下载 token 与目标项目不匹配")
-        except pyjwt.InvalidTokenError:
-            raise HTTPException(status_code=401, detail="下载 token 无效")
+    try:
+        verify_download_token(download_token, name)
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="下载链接已过期，请重新导出")
+    except ValueError:
+        raise HTTPException(status_code=403, detail="下载 token 与目标项目不匹配")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="下载 token 无效")
 
     try:
         archive_path, download_name = get_archive_service().export_project(name, scope=scope)
@@ -185,7 +182,7 @@ async def export_project_archive(
 
 
 @router.get("/projects")
-async def list_projects():
+async def list_projects(_user: Annotated[dict, Depends(get_current_user)]):
     """列出所有项目"""
     manager = get_project_manager()
     calculator = get_status_calculator()
@@ -244,7 +241,7 @@ async def list_projects():
 
 
 @router.post("/projects")
-async def create_project(req: CreateProjectRequest):
+async def create_project(req: CreateProjectRequest, _user: Annotated[dict, Depends(get_current_user)]):
     """创建新项目"""
     try:
         manager = get_project_manager()
@@ -277,7 +274,7 @@ async def create_project(req: CreateProjectRequest):
 
 
 @router.get("/projects/{name}")
-async def get_project(name: str):
+async def get_project(name: str, _user: Annotated[dict, Depends(get_current_user)]):
     """获取项目详情（含实时计算字段）"""
     try:
         manager = get_project_manager()
@@ -318,7 +315,7 @@ async def get_project(name: str):
 
 
 @router.patch("/projects/{name}")
-async def update_project(name: str, req: UpdateProjectRequest):
+async def update_project(name: str, req: UpdateProjectRequest, _user: Annotated[dict, Depends(get_current_user)]):
     """更新项目元数据"""
     try:
         manager = get_project_manager()
@@ -348,7 +345,7 @@ async def update_project(name: str, req: UpdateProjectRequest):
 
 
 @router.delete("/projects/{name}")
-async def delete_project(name: str):
+async def delete_project(name: str, _user: Annotated[dict, Depends(get_current_user)]):
     """删除项目"""
     try:
         project_dir = get_project_manager().get_project_path(name)
@@ -364,7 +361,7 @@ async def delete_project(name: str):
 
 
 @router.get("/projects/{name}/scripts/{script_file}")
-async def get_script(name: str, script_file: str):
+async def get_script(name: str, script_file: str, _user: Annotated[dict, Depends(get_current_user)]):
     """获取剧本内容"""
     try:
         script = get_project_manager().load_script(name, script_file)
@@ -384,7 +381,7 @@ class UpdateSceneRequest(BaseModel):
 
 
 @router.patch("/projects/{name}/scenes/{scene_id}")
-async def update_scene(name: str, scene_id: str, req: UpdateSceneRequest):
+async def update_scene(name: str, scene_id: str, req: UpdateSceneRequest, _user: Annotated[dict, Depends(get_current_user)]):
     """更新场景"""
     try:
         manager = get_project_manager()
@@ -436,7 +433,7 @@ class UpdateOverviewRequest(BaseModel):
 
 
 @router.patch("/projects/{name}/segments/{segment_id}")
-async def update_segment(name: str, segment_id: str, req: UpdateSegmentRequest):
+async def update_segment(name: str, segment_id: str, req: UpdateSegmentRequest, _user: Annotated[dict, Depends(get_current_user)]):
     """更新说书模式片段"""
     try:
         manager = get_project_manager()
@@ -482,7 +479,7 @@ async def update_segment(name: str, segment_id: str, req: UpdateSegmentRequest):
 # ==================== 项目概述管理 ====================
 
 @router.post("/projects/{name}/generate-overview")
-async def generate_overview(name: str):
+async def generate_overview(name: str, _user: Annotated[dict, Depends(get_current_user)]):
     """使用 AI 生成项目概述"""
     try:
         with project_change_source("webui"):
@@ -500,7 +497,7 @@ async def generate_overview(name: str):
 
 
 @router.patch("/projects/{name}/overview")
-async def update_overview(name: str, req: UpdateOverviewRequest):
+async def update_overview(name: str, req: UpdateOverviewRequest, _user: Annotated[dict, Depends(get_current_user)]):
     """更新项目概述（手动编辑）"""
     try:
         manager = get_project_manager()
