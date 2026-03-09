@@ -668,12 +668,7 @@ class AssistantService:
     @staticmethod
     def _fingerprint_tail(messages: list[dict[str, Any]]) -> set[str]:
         """Build content fingerprints for messages after the last real user message."""
-        last_user_idx = 0
-        for i, msg in enumerate(messages):
-            if msg.get("type") == "user":
-                content = msg.get("content", "")
-                if not (_is_system_injected_user_message(content) or _has_subagent_user_metadata(msg)):
-                    last_user_idx = i
+        last_user_idx = AssistantService._find_last_real_user_idx(messages) or 0
 
         fps: set[str] = set()
         for msg in messages[last_user_idx:]:
@@ -681,6 +676,14 @@ class AssistantService:
             if fp:
                 fps.add(fp)
         return fps
+
+    @staticmethod
+    def _find_last_real_user_idx(messages: list[dict[str, Any]]) -> int | None:
+        """Find the latest real user message, skipping system/subagent payloads."""
+        for i in range(len(messages) - 1, -1, -1):
+            if AssistantService._is_real_user_message(messages[i]):
+                return i
+        return None
 
     @staticmethod
     def _fingerprint(message: dict[str, Any]) -> Optional[str]:
@@ -711,17 +714,43 @@ class AssistantService:
         echo_msg: dict[str, Any],
         transcript_msgs: list[dict[str, Any]],
     ) -> bool:
-        """Check if a local echo has a matching real message in transcript."""
+        """Check if a local echo has a matching real message in transcript.
+
+        The comparison must use the last *real* user message, skipping
+        system/subagent-injected user payloads. A matching transcript user only
+        counts as the current round when it is not older than the local echo;
+        otherwise the echo is for a new round that happens to reuse the same
+        text. Explicit `result` messages are still treated as round boundaries.
+        """
         echo_text = AssistantService._extract_plain_user_content(echo_msg)
         if not echo_text:
             return False
-        for existing in reversed(transcript_msgs):
-            if existing.get("type") != "user":
-                continue
-            existing_text = AssistantService._extract_plain_user_content(existing)
-            if existing_text == echo_text:
-                return True
-        return False
+
+        last_user_idx = AssistantService._find_last_real_user_idx(transcript_msgs)
+        if last_user_idx is None:
+            return False
+
+        existing_msg = transcript_msgs[last_user_idx]
+        # Content must match.
+        existing_text = AssistantService._extract_plain_user_content(
+            existing_msg
+        )
+        if existing_text != echo_text:
+            return False
+
+        echo_dt = AssistantService._parse_iso_datetime(echo_msg.get("timestamp"))
+        existing_dt = AssistantService._parse_iso_datetime(existing_msg.get("timestamp"))
+        if echo_dt is not None and existing_dt is not None and existing_dt < echo_dt:
+            return False
+
+        # An explicit result marks the prior round complete, so a new echo with
+        # the same text must be preserved as a genuinely new round.
+        for i in range(last_user_idx + 1, len(transcript_msgs)):
+            if transcript_msgs[i].get("type") == "result":
+                return False
+
+        # No result after the last real user → round is still in-progress.
+        return True
 
     _extract_plain_user_content = staticmethod(extract_plain_user_content)
 
