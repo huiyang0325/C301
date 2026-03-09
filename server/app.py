@@ -164,6 +164,15 @@ async def auth_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
 
+    # 导出下载端点：仅 GET /api/v1/projects/{name}/export 携带 download_token 时放行
+    if (
+        request.method == "GET"
+        and path.startswith("/api/v1/projects/")
+        and path.endswith("/export")
+        and request.query_params.get("download_token")
+    ):
+        return await call_next(request)
+
     # 从 Authorization header 获取 token
     token = None
     auth_header = request.headers.get("authorization", "")
