@@ -395,8 +395,8 @@ async def update_scene(name: str, scene_id: str, req: UpdateSceneRequest, _user:
                 # 更新允许的字段
                 for key, value in req.updates.items():
                     if key in ["duration_seconds", "image_prompt", "video_prompt",
-                               "characters_in_scene", "clues_in_scene", "segment_break"]:
-                        if value is None:
+                               "characters_in_scene", "clues_in_scene", "segment_break", "note"]:
+                        if value is None and key != "note":
                             continue
                         scene[key] = value
                 break
@@ -423,6 +423,7 @@ class UpdateSegmentRequest(BaseModel):
     image_prompt: Optional[Union[dict, str]] = None
     video_prompt: Optional[Union[dict, str]] = None
     transition_to_next: Optional[str] = None
+    note: Optional[str] = None
 
 
 class UpdateOverviewRequest(BaseModel):
@@ -459,6 +460,8 @@ async def update_segment(name: str, segment_id: str, req: UpdateSegmentRequest, 
                     segment["video_prompt"] = req.video_prompt
                 if req.transition_to_next is not None:
                     segment["transition_to_next"] = req.transition_to_next
+                if "note" in req.model_fields_set:
+                    segment["note"] = req.note
                 break
 
         if not segment_found:
