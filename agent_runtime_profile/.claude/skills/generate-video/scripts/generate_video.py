@@ -1138,20 +1138,20 @@ def main():
 
     try:
         if args.scene:
-            generate_scene_video(args.project, args.script, args.scene)
+            generate_scene_video(args.script, args.scene)
         elif args.scenes:
             scene_ids = parse_scene_ids(args.scenes)
             generate_selected_videos(
-                args.project, args.script,
+                args.script,
                 scene_ids,
                 resume=args.resume,
                 max_workers=args.max_workers
             )
         elif args.all:
-            generate_all_videos(args.project, args.script, max_workers=args.max_workers)
+            generate_all_videos(args.script, max_workers=args.max_workers)
         elif args.episode:
             generate_episode_video(
-                args.project, args.script,
+                args.script,
                 args.episode,
                 resume=args.resume,
                 max_workers=args.max_workers
