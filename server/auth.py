@@ -2,13 +2,16 @@
 认证核心模块
 
 提供密码生成、JWT token 创建/验证、凭据校验等功能。
+同时支持 API Key 认证（`arc-` 前缀的 Bearer token）。
 """
 
+import hashlib
 import logging
 import os
 import secrets
 import string
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -209,8 +212,133 @@ def ensure_auth_password(env_path: Optional[str] = None) -> str:
     return password
 
 
+# ---------------------------------------------------------------------------
+# API Key 认证支持
+# ---------------------------------------------------------------------------
+
+API_KEY_PREFIX = "arc-"
+API_KEY_CACHE_TTL = 300  # 5 分钟
+
+# LRU 缓存：key_hash → (payload_dict | None, expires_at_timestamp)
+# payload 为 None 表示 key 不存在或已过期（负缓存）
+# 使用 OrderedDict 实现 LRU：命中时 move_to_end，淘汰时 popitem(last=False)
+_api_key_cache: OrderedDict[str, tuple[Optional[dict], float]] = OrderedDict()
+_API_KEY_CACHE_MAX = 512
+
+
+def _hash_api_key(key: str) -> str:
+    """计算 API Key 的 SHA-256 哈希。"""
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def invalidate_api_key_cache(key_hash: str) -> None:
+    """立即清除指定 key_hash 的缓存条目（key 删除时调用）。"""
+    _api_key_cache.pop(key_hash, None)
+
+
+def _get_cached_api_key_payload(key_hash: str) -> tuple[bool, Optional[dict]]:
+    """从缓存中查找。返回 (命中, payload 或 None)。命中时将条目移至末尾（LRU）。"""
+    entry = _api_key_cache.get(key_hash)
+    if entry is None:
+        return False, None
+    payload, expiry = entry
+    if time.monotonic() > expiry:
+        _api_key_cache.pop(key_hash, None)
+        return False, None
+    _api_key_cache.move_to_end(key_hash)
+    return True, payload
+
+
+def _set_api_key_cache(key_hash: str, payload: Optional[dict], expires_at_ts: Optional[float] = None) -> None:
+    """写入缓存（含 LRU 淘汰）。
+
+    正向缓存（payload 非 None）TTL 以 key 实际过期时间为上界，
+    避免 key 过期后仍在缓存中通过验证的安全问题。
+    """
+    if len(_api_key_cache) >= _API_KEY_CACHE_MAX:
+        # 淘汰最久未使用的条目（LRU：OrderedDict 头部）
+        _api_key_cache.popitem(last=False)
+    ttl = API_KEY_CACHE_TTL
+    if payload is not None and expires_at_ts is not None:
+        time_to_expiry = expires_at_ts - time.monotonic()
+        if time_to_expiry <= 0:
+            # key 已过期，写入负缓存
+            _api_key_cache[key_hash] = (None, time.monotonic() + API_KEY_CACHE_TTL)
+            return
+        ttl = min(ttl, time_to_expiry)
+    _api_key_cache[key_hash] = (payload, time.monotonic() + ttl)
+
+
+async def _verify_api_key(token: str) -> Optional[dict]:
+    """验证 API Key token，返回 payload dict 或 None（失败/过期/不存在）。
+
+    内部先查缓存，缓存未命中再查数据库。
+    查库成功后更新 last_used_at（后台异步，不阻塞响应）。
+    """
+    key_hash = _hash_api_key(token)
+
+    # 缓存查询
+    hit, cached_payload = _get_cached_api_key_payload(key_hash)
+    if hit:
+        return cached_payload
+
+    # 数据库查询
+    from lib.db import async_session_factory
+    from lib.db.repositories.api_key_repository import ApiKeyRepository
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            repo = ApiKeyRepository(session)
+            row = await repo.get_by_hash(key_hash)
+
+    if row is None:
+        _set_api_key_cache(key_hash, None)
+        return None
+
+    # 检查过期
+    expires_at = row.get("expires_at")
+    expires_at_monotonic: Optional[float] = None
+    if expires_at:
+        from datetime import datetime, timezone
+        try:
+            # get_by_hash 返回 ORM 原生 datetime 对象；兼容旧式 ISO 字符串路径
+            if isinstance(expires_at, str):
+                exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            else:
+                exp_dt = expires_at
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) >= exp_dt:
+                _set_api_key_cache(key_hash, None)
+                return None
+            # 将过期时刻转换为 monotonic 时间戳，供缓存 TTL 上界计算
+            remaining_secs = (exp_dt - datetime.now(timezone.utc)).total_seconds()
+            expires_at_monotonic = time.monotonic() + remaining_secs
+        except (ValueError, TypeError):
+            logger.warning("API Key expires_at 值格式无法解析，忽略过期检查: %r", expires_at)
+
+    payload = {"sub": f"apikey:{row['name']}", "via": "apikey"}
+    _set_api_key_cache(key_hash, payload, expires_at_ts=expires_at_monotonic)
+
+    # 异步更新 last_used_at（不阻塞，保存引用防止 GC）
+    import asyncio
+
+    async def _touch():
+        try:
+            async with async_session_factory() as s:
+                async with s.begin():
+                    await ApiKeyRepository(s).touch_last_used(key_hash)
+        except Exception:
+            logger.exception("更新 API Key last_used_at 失败（非致命）")
+
+    _touch_task = asyncio.create_task(_touch())
+    _touch_task.add_done_callback(lambda _: None)  # suppress "never retrieved" warning
+
+    return payload
+
+
 def _verify_and_get_payload(token: str) -> dict:
-    """验证 token 并在失败时抛出 401 异常。"""
+    """同步验证 JWT token 并在失败时抛出 401 异常。（仅用于 JWT 路径）"""
     payload = verify_token(token)
     if payload is None:
         raise HTTPException(
@@ -221,11 +349,26 @@ def _verify_and_get_payload(token: str) -> dict:
     return payload
 
 
+async def _verify_and_get_payload_async(token: str) -> dict:
+    """异步验证 token，支持 API Key（arc- 前缀）和 JWT 两种模式。"""
+    if token.startswith(API_KEY_PREFIX):
+        payload = await _verify_api_key(token)
+        if payload is None:
+            raise HTTPException(
+                status_code=401,
+                detail="API Key 无效、已过期或不存在",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return payload
+    # JWT 路径
+    return _verify_and_get_payload(token)
+
+
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
 ) -> dict:
-    """标准认证依赖 — 从 Authorization header 提取并验证 JWT token。"""
-    return _verify_and_get_payload(token)
+    """标准认证依赖 — 支持 JWT 和 API Key Bearer token。"""
+    return await _verify_and_get_payload_async(token)
 
 
 async def get_current_user_flexible(
@@ -240,4 +383,4 @@ async def get_current_user_flexible(
             detail="缺少认证 token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return _verify_and_get_payload(raw)
+    return await _verify_and_get_payload_async(raw)
