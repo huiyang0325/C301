@@ -43,6 +43,7 @@ COPY alembic/ alembic/
 COPY alembic.ini ./
 COPY scripts/ scripts/
 COPY agent_runtime_profile/ agent_runtime_profile/
+COPY public/ public/
 
 # 复制前端构建产物
 COPY --from=frontend-builder /build/frontend/dist/ frontend/dist/
