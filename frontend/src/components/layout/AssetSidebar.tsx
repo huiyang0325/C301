@@ -78,14 +78,19 @@ function CharacterThumbnail({
   name,
   sheetPath,
   projectName,
-  mediaRevision,
 }: {
   name: string;
   sheetPath: string | undefined;
   projectName: string;
-  mediaRevision: number;
 }) {
+  const sheetFp = useProjectsStore((s) =>
+    sheetPath ? s.getAssetFingerprint(sheetPath) : null,
+  );
   const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [sheetFp, sheetPath]);
 
   if (!sheetPath || imgError) {
     return (
@@ -97,7 +102,7 @@ function CharacterThumbnail({
 
   return (
     <img
-      src={API.getFileUrl(projectName, sheetPath, mediaRevision)}
+      src={API.getFileUrl(projectName, sheetPath, sheetFp)}
       alt={name}
       className="h-6 w-6 shrink-0 rounded-full object-cover"
       onError={() => setImgError(true)}
@@ -113,14 +118,19 @@ function ClueThumbnail({
   name,
   sheetPath,
   projectName,
-  mediaRevision,
 }: {
   name: string;
   sheetPath: string | undefined;
   projectName: string;
-  mediaRevision: number;
 }) {
+  const sheetFp = useProjectsStore((s) =>
+    sheetPath ? s.getAssetFingerprint(sheetPath) : null,
+  );
   const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [sheetFp, sheetPath]);
 
   if (!sheetPath || imgError) {
     return (
@@ -132,7 +142,7 @@ function ClueThumbnail({
 
   return (
     <img
-      src={API.getFileUrl(projectName, sheetPath, mediaRevision)}
+      src={API.getFileUrl(projectName, sheetPath, sheetFp)}
       alt={name}
       className="h-6 w-6 shrink-0 rounded object-cover"
       onError={() => setImgError(true)}
@@ -161,7 +171,6 @@ interface AssetSidebarProps {
 export function AssetSidebar({ className }: AssetSidebarProps) {
   const { currentProjectData, currentProjectName } = useProjectsStore();
   const sourceFilesVersion = useAppStore((s) => s.sourceFilesVersion);
-  const mediaRevision = useAppStore((s) => s.mediaRevision);
   const [location, setLocation] = useLocation();
 
   const characters = currentProjectData?.characters ?? {};
@@ -350,7 +359,6 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
                       name={name}
                       sheetPath={char.character_sheet}
                       projectName={projectName}
-                      mediaRevision={mediaRevision}
                     />
                     <span className="truncate">{name}</span>
                   </button>
@@ -385,7 +393,6 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
                       name={name}
                       sheetPath={clue.clue_sheet}
                       projectName={projectName}
-                      mediaRevision={mediaRevision}
                     />
                     <span className="truncate">{name}</span>
                   </button>

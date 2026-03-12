@@ -8,7 +8,7 @@ import { AutoTextarea } from "@/components/ui/AutoTextarea";
 import { GenerateButton } from "@/components/ui/GenerateButton";
 import { ImageFlipReveal } from "@/components/ui/ImageFlipReveal";
 import { PreviewableImageFrame } from "@/components/ui/PreviewableImageFrame";
-import { useAppStore } from "@/stores/app-store";
+import { useProjectsStore } from "@/stores/projects-store";
 import { ImagePromptEditor } from "./ImagePromptEditor";
 import { VideoPromptEditor } from "./VideoPromptEditor";
 import type {
@@ -443,15 +443,16 @@ function PromptColumn({
 // Column 3 — Visual media area
 // ---------------------------------------------------------------------------
 
-/** Simple video player with play/pause toggle. */
-function VideoPlayer({ src }: { src: string }) {
+/** Simple video player with poster thumbnail and lazy preload. */
+function VideoPlayer({ src, poster }: { src: string; poster?: string | null }) {
   return (
     <video
       src={src}
+      poster={poster ?? undefined}
       className="h-full w-full bg-black object-contain"
       controls
       playsInline
-      preload="metadata"
+      preload={poster ? "none" : "metadata"}
     />
   );
 }
@@ -479,13 +480,24 @@ function MediaColumn({
   generatingStoryboard?: boolean;
   generatingVideo?: boolean;
 }) {
-  const mediaRevision = useAppStore((s) => s.mediaRevision);
   const assets = segment.generated_assets;
+  const storyboardFp = useProjectsStore(
+    (s) => assets?.storyboard_image ? s.getAssetFingerprint(assets.storyboard_image) : null,
+  );
+  const videoFp = useProjectsStore(
+    (s) => assets?.video_clip ? s.getAssetFingerprint(assets.video_clip) : null,
+  );
+  const thumbnailFp = useProjectsStore(
+    (s) => assets?.video_thumbnail ? s.getAssetFingerprint(assets.video_thumbnail) : null,
+  );
   const storyboardUrl = assets?.storyboard_image
-    ? API.getFileUrl(projectName, assets.storyboard_image, mediaRevision)
+    ? API.getFileUrl(projectName, assets.storyboard_image, storyboardFp)
     : null;
   const videoUrl = assets?.video_clip
-    ? API.getFileUrl(projectName, assets.video_clip, mediaRevision)
+    ? API.getFileUrl(projectName, assets.video_clip, videoFp)
+    : null;
+  const thumbnailUrl = assets?.video_thumbnail
+    ? API.getFileUrl(projectName, assets.video_thumbnail, thumbnailFp)
     : null;
 
   // Normalize aspect ratio to the union type expected by AspectFrame
@@ -514,6 +526,7 @@ function MediaColumn({
             <ImageFlipReveal
               src={storyboardUrl}
               alt={`${segmentId} 分镜图`}
+              loading="lazy"
               className="h-full w-full object-cover"
               fallback={
                 <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-600">
@@ -550,7 +563,7 @@ function MediaColumn({
         </div>
         {videoUrl ? (
           <AspectFrame ratio={normalizedRatio}>
-            <VideoPlayer src={videoUrl} />
+            <VideoPlayer src={videoUrl} poster={thumbnailUrl} />
           </AspectFrame>
         ) : (
           <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-700 bg-gray-800/30 py-4">

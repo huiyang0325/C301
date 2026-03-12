@@ -111,9 +111,14 @@ describe("stores", () => {
     app.invalidateSourceFiles();
     expect(useAppStore.getState().sourceFilesVersion).toBe(1);
 
-    expect(useAppStore.getState().mediaRevision).toBe(0);
-    app.invalidateMediaAssets();
-    expect(useAppStore.getState().mediaRevision).toBe(1);
+    expect(useAppStore.getState().entityRevisions).toEqual({});
+    expect(app.getEntityRevision("segment:S1")).toBe(0);
+    app.invalidateEntities(["segment:S1", "character:hero", "segment:S1"]);
+    expect(app.getEntityRevision("segment:S1")).toBe(1);
+    expect(app.getEntityRevision("character:hero")).toBe(1);
+    app.invalidateAllEntities();
+    expect(app.getEntityRevision("segment:S1")).toBe(2);
+    expect(app.getEntityRevision("clue:missing")).toBe(1);
   });
 
   it("upserts tasks by task_id and updates task stats", () => {
@@ -213,6 +218,31 @@ describe("stores", () => {
     expect(state.sessionStatus).toBe("running");
     expect(state.skills).toHaveLength(1);
     expect(state.isDraftSession).toBe(true);
+  });
+
+  describe("ProjectsStore fingerprints", () => {
+    it("should store and retrieve asset fingerprints", () => {
+      const { updateAssetFingerprints, getAssetFingerprint } = useProjectsStore.getState();
+      updateAssetFingerprints({ "storyboards/scene_E1S01.png": 1710288000 });
+      expect(getAssetFingerprint("storyboards/scene_E1S01.png")).toBe(1710288000);
+    });
+
+    it("should merge fingerprints on update", () => {
+      const { updateAssetFingerprints, getAssetFingerprint } = useProjectsStore.getState();
+      updateAssetFingerprints({ "a.png": 100 });
+      updateAssetFingerprints({ "b.png": 200 });
+      expect(getAssetFingerprint("a.png")).toBe(100);
+      expect(getAssetFingerprint("b.png")).toBe(200);
+    });
+
+    it("should return null for unknown paths", () => {
+      expect(useProjectsStore.getState().getAssetFingerprint("unknown")).toBeNull();
+    });
+
+    it("should set fingerprints from project API response", () => {
+      useProjectsStore.getState().setCurrentProject("demo", {} as any, {}, { "storyboards/x.png": 999 });
+      expect(useProjectsStore.getState().getAssetFingerprint("storyboards/x.png")).toBe(999);
+    });
   });
 
   it("updates usage store filters, pagination and result payloads", () => {
