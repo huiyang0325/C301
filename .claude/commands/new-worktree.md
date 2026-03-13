@@ -71,8 +71,14 @@ else
 fi
 
 # 链接 projects/ 目录（两个 worktree 共享同一份项目数据和数据库）
+# 注意：git worktree 会将 projects/.gitkeep 等追踪文件检出为真实目录。
+# 需先删除再建链；被删的是占位文件，但 git 仍会标记为 D，
+# 用 --skip-worktree 让该 worktree 忽略这些文件的"删除"状态。
 if [ -d "$ROOT/projects" ]; then
-  ln -sfn "$ROOT/projects" "$TARGET/projects"
+  rm -rf "$TARGET/projects"
+  ln -s "$ROOT/projects" "$TARGET/projects"
+  # 对所有被追踪的 projects/ 内占位文件标记 skip-worktree
+  git -C "$TARGET" ls-files projects/ | xargs -r git -C "$TARGET" update-index --skip-worktree
   echo "✓ 已链接 projects/ → $ROOT/projects"
 else
   echo "- projects/ 不存在，已跳过"
