@@ -22,6 +22,7 @@ async def handle_tool_request(tool_name, input_data, context):
     # Prompt user and return allow or deny
     ...
 
+
 options = ClaudeAgentOptions(can_use_tool=handle_tool_request)
 ```
 
@@ -30,7 +31,7 @@ async function handleToolRequest(toolName, input) {
   // Prompt user and return allow or deny
 }
 
-const options = { canUseTool: handleToolRequest }
+const options = { canUseTool: handleToolRequest };
 ```
 </CodeGroup>
 
@@ -61,7 +62,7 @@ The `input` object contains tool-specific parameters. Common examples:
 | `Edit` | `file_path`, `old_string`, `new_string` |
 | `Read` | `file_path`, `offset`, `limit` |
 
-See the SDK reference for complete input schemas: [Python](/docs/en/agent-sdk/python#tool-inputoutput-types) | [TypeScript](/docs/en/agent-sdk/typescript#tool-input-types).
+See the SDK reference for complete input schemas: [Python](/docs/en/agent-sdk/python#tool-input-output-types) | [TypeScript](/docs/en/agent-sdk/typescript#tool-input-types).
 
 You can display this information to the user so they can decide whether to allow or reject the action, then return the appropriate response.
 
@@ -143,7 +144,7 @@ import * as readline from "readline";
 function prompt(question: string): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
-    output: process.stdout,
+    output: process.stdout
   });
   return new Promise((resolve) =>
     rl.question(question, (answer) => {
@@ -177,8 +178,8 @@ for await (const message of query({
         // Deny: tool doesn't execute, Claude sees the message
         return { behavior: "deny", message: "User denied this action" };
       }
-    },
-  },
+    }
+  }
 })) {
   if ("result" in message) console.log(message.result);
 }
@@ -257,7 +258,7 @@ Beyond allowing or denying, you can modify the tool's input or provide context t
         return { behavior: "allow", updatedInput: input };
       }
       return { behavior: "deny", message: "User declined" };
-    }
+    };
     ```
     </CodeGroup>
   </Tab>
@@ -271,7 +272,9 @@ Beyond allowing or denying, you can modify the tool's input or provide context t
         if tool_name == "Bash":
             # User approved, but scope all commands to sandbox
             sandboxed_input = {**input_data}
-            sandboxed_input["command"] = input_data["command"].replace("/tmp", "/tmp/sandbox")
+            sandboxed_input["command"] = input_data["command"].replace(
+                "/tmp", "/tmp/sandbox"
+            )
             return PermissionResultAllow(updated_input=sandboxed_input)
         return PermissionResultAllow(updated_input=input_data)
     ```
@@ -287,7 +290,7 @@ Beyond allowing or denying, you can modify the tool's input or provide context t
         return { behavior: "allow", updatedInput: sandboxedInput };
       }
       return { behavior: "allow", updatedInput: input };
-    }
+    };
     ```
     </CodeGroup>
   </Tab>
@@ -316,7 +319,7 @@ Beyond allowing or denying, you can modify the tool's input or provide context t
         };
       }
       return { behavior: "allow", updatedInput: input };
-    }
+    };
     ```
     </CodeGroup>
   </Tab>
@@ -341,11 +344,12 @@ Beyond allowing or denying, you can modify the tool's input or provide context t
         // User doesn't want to delete, suggest archiving instead
         return {
           behavior: "deny",
-          message: "User doesn't want to delete files. They asked if you could compress them into an archive instead."
+          message:
+            "User doesn't want to delete files. They asked if you could compress them into an archive instead."
         };
       }
       return { behavior: "allow", updatedInput: input };
-    }
+    };
     ```
     </CodeGroup>
   </Tab>
@@ -379,7 +383,7 @@ The following steps show how to handle clarifying questions:
             can_use_tool=can_use_tool,
         ),
     ):
-        # ...
+        print(message)
     ```
 
     ```typescript TypeScript
@@ -390,10 +394,10 @@ The following steps show how to handle clarifying questions:
         tools: ["Read", "Glob", "Grep", "AskUserQuestion"],
         canUseTool: async (toolName, input) => {
           // Handle clarifying questions here
-        },
-      },
+        }
+      }
     })) {
-      // ...
+      console.log(message);
     }
     ```
     </CodeGroup>
@@ -421,7 +425,7 @@ The following steps show how to handle clarifying questions:
       }
       // Handle other tools normally
       return promptForApproval(toolName, input);
-    }
+    };
     ```
 
     </CodeGroup>
@@ -480,8 +484,8 @@ The following steps show how to handle clarifying questions:
             "questions": input_data.get("questions", []),
             "answers": {
                 "How should I format the output?": "Summary",
-                "Which sections should I include?": "Introduction, Conclusion"
-            }
+                "Which sections should I include?": "Introduction, Conclusion",
+            },
         }
     )
     ```
@@ -496,7 +500,7 @@ The following steps show how to handle clarifying questions:
           "Which sections should I include?": "Introduction, Conclusion"
         }
       }
-    }
+    };
     ```
 
     </CodeGroup>
@@ -511,10 +515,10 @@ The input contains Claude's generated questions in a `questions` array. Each que
 |-------|-------------|
 | `question` | The full question text to display |
 | `header` | Short label for the question (max 12 characters) |
-| `options` | Array of 2-4 choices, each with `label` and `description` |
+| `options` | Array of 2-4 choices, each with `label` and `description`. TypeScript: optionally `preview` (see [below](#option-previews-type-script)) |
 | `multiSelect` | If `true`, users can select multiple options |
 
-Here's an example of the structure you'll receive:
+The structure your callback receives:
 
 ```json
 {
@@ -532,6 +536,48 @@ Here's an example of the structure you'll receive:
 }
 ```
 
+#### Option previews (TypeScript)
+
+`toolConfig.askUserQuestion.previewFormat` adds a `preview` field to each option so your app can show a visual mockup alongside the label. Without this setting, Claude does not generate previews and the field is absent.
+
+| `previewFormat` | `preview` contains |
+|:----------------|:-----------------------|
+| unset (default) | Field is absent. Claude does not generate previews. |
+| `"markdown"` | ASCII art and fenced code blocks |
+| `"html"` | A styled `
+` fragment (the SDK rejects `<script>`, `<style>`, and `<!DOCTYPE>` before your callback runs) |
+
+The format applies to all questions in the session. Claude includes `preview` on options where a visual comparison helps (layout choices, color schemes) and omits it where one wouldn't (yes/no confirmations, text-only choices). Check for `undefined` before rendering.
+
+```typescript
+import { query } from "@anthropic-ai/claude-agent-sdk";
+
+for await (const message of query({
+  prompt: "Help me choose a card layout",
+  options: {
+    toolConfig: {
+      askUserQuestion: { previewFormat: "html" }
+    },
+    canUseTool: async (toolName, input) => {
+      // input.questions[].options[].preview is an HTML string or undefined
+      return { behavior: "allow", updatedInput: input };
+    }
+  }
+})) {
+  // ...
+}
+```
+
+An option with an HTML preview:
+
+```json
+{
+  "label": "Compact",
+  "description": "Title and metric value only",
+  "preview": "<div style=\"padding:12px;border:1px solid #ddd;border-radius:8px\"><div style=\"font-size:12px;color:#666\">Active users</div><div style=\"font-size:28px;font-weight:600\">1,284</div></div>"
+}
+```
+
 ### Response format
 
 Return an `answers` object mapping each question's `question` field to the selected option's `label`:
@@ -545,7 +591,9 @@ For multi-select questions, join multiple labels with `", "`. For free-text inpu
 
 ```json
 {
-  "questions": [...],
+  "questions": [
+    // ...
+  ],
   "answers": {
     "How should I format the output?": "Summary",
     "Which sections should I include?": "Introduction, Conclusion"
@@ -619,7 +667,9 @@ async def handle_ask_user_question(input_data: dict) -> PermissionResultAllow:
     )
 
 
-async def can_use_tool(tool_name: str, input_data: dict, context) -> PermissionResultAllow:
+async def can_use_tool(
+    tool_name: str, input_data: dict, context
+) -> PermissionResultAllow:
     # Route AskUserQuestion to our question handler
     if tool_name == "AskUserQuestion":
         return await handle_ask_user_question(input_data)
@@ -630,7 +680,10 @@ async def can_use_tool(tool_name: str, input_data: dict, context) -> PermissionR
 async def prompt_stream():
     yield {
         "type": "user",
-        "message": {"role": "user", "content": "Help me decide on the tech stack for a new mobile app"},
+        "message": {
+            "role": "user",
+            "content": "Help me decide on the tech stack for a new mobile app",
+        },
     }
 
 
@@ -656,12 +709,14 @@ asyncio.run(main())
 
 ```typescript TypeScript
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import * as readline from "readline";
+import * as readline from "readline/promises";
 
 // Helper to prompt user for input in the terminal
-function prompt(question: string): Promise<string> {
+async function prompt(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => rl.question(question, (answer) => { rl.close(); resolve(answer); }));
+  const answer = await rl.question(question);
+  rl.close();
+  return answer;
 }
 
 // Parse user input as option number(s) or free text
@@ -697,7 +752,7 @@ async function handleAskUserQuestion(input: any) {
   // Return the answers to Claude (must include original questions)
   return {
     behavior: "allow",
-    updatedInput: { questions: input.questions, answers },
+    updatedInput: { questions: input.questions, answers }
   };
 }
 
@@ -712,8 +767,8 @@ async function main() {
         }
         // Auto-approve other tools for this example
         return { behavior: "allow", updatedInput: input };
-      },
-    },
+      }
+    }
   })) {
     if ("result" in message) console.log(message.result);
   }
@@ -726,7 +781,7 @@ main();
 
 ## Limitations
 
-- **Subagents**: `AskUserQuestion` is not currently available in subagents spawned via the Task tool
+- **Subagents**: `AskUserQuestion` is not currently available in subagents spawned via the Agent tool
 - **Question limits**: each `AskUserQuestion` call supports 1-4 questions with 2-4 options each
 
 ## Other ways to get user input
@@ -757,4 +812,4 @@ Custom tools give you full control over the interaction, but require more implem
 
 - [Configure permissions](/docs/en/agent-sdk/permissions): set up permission modes and rules
 - [Control execution with hooks](/docs/en/agent-sdk/hooks): run custom code at key points in the agent lifecycle
-- [TypeScript SDK reference](/docs/en/agent-sdk/typescript#canusetool): full canUseTool API documentation
+- [TypeScript SDK reference](/docs/en/agent-sdk/typescript#can-use-tool): full canUseTool API documentation

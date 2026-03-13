@@ -8,21 +8,33 @@ BASE_URL="https://platform.claude.com/docs/en/agent-sdk"
 OUTPUT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 DOCS=(
+  # 顶层
   "overview"
+  "quickstart"
+  "agent-loop"
+
+  # Guides
   "streaming-vs-single-mode"
   "streaming-output"
-  "stop-reasons"
   "permissions"
   "user-input"
   "hooks"
-  "sessions"
   "file-checkpointing"
+  "structured-outputs"
   "hosting"
   "secure-deployment"
+  "modifying-system-prompts"
+  "mcp"
+  "custom-tools"
   "subagents"
   "slash-commands"
   "skills"
+  "cost-tracking"
   "todo-tracking"
+  "plugins"
+
+  # SDK References
+  "python"
 )
 
 echo "下载目录: $OUTPUT_DIR"
