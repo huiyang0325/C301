@@ -9,6 +9,12 @@ import type {
   Turn,
 } from "@/types";
 
+export interface AttachedImage {
+  id: string;
+  dataUrl: string;
+  mimeType: string;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers — 从旧 use-assistant-state.js 移植
 // ---------------------------------------------------------------------------
@@ -386,8 +392,8 @@ export function useAssistantSession(projectName: string | null) {
 
   // 发送消息
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!content.trim() || store.getState().sending) return;
+    async (content: string, images?: AttachedImage[]) => {
+      if ((!content.trim() && (!images || images.length === 0)) || store.getState().sending) return;
 
       const sendVersion = pendingSendVersionRef.current + 1;
       pendingSendVersionRef.current = sendVersion;
@@ -400,7 +406,7 @@ export function useAssistantSession(projectName: string | null) {
       try {
         // 如果没有会话，创建一个（懒创建：以首条消息作为标题）
         if (!sessionId && projectName) {
-          const title = content.trim().slice(0, 30);
+          const title = content.trim().slice(0, 30) || "图片消息";
           const res = await API.createAssistantSession(projectName, title);
           const raw = res as Record<string, unknown>;
           const sessionObj = (raw.session ?? raw) as Record<string, unknown>;
@@ -424,10 +430,27 @@ export function useAssistantSession(projectName: string | null) {
 
         if (!sessionId) throw new Error("无法创建会话");
 
+        // 提取 base64 数据（每张图片只 split 一次）
+        const imagePayload = images?.map((img) => ({
+          data: img.dataUrl.split(",")[1] ?? "",
+          media_type: img.mimeType,
+        }));
+
         // 乐观更新：立即在 UI 上显示用户消息，不等后端返回
+        const optimisticContent: import("@/types").ContentBlock[] = [
+          ...(imagePayload ?? []).map((img) => ({
+            type: "image" as const,
+            source: {
+              type: "base64" as const,
+              media_type: img.media_type,
+              data: img.data,
+            },
+          })),
+          ...(content.trim() ? [{ type: "text" as const, text: content.trim() }] : []),
+        ];
         const optimisticTurn: Turn = {
           type: "user",
-          content: [{ type: "text", text: content.trim() }],
+          content: optimisticContent,
           uuid: `${OPTIMISTIC_PREFIX}${crypto.randomUUID()}`,
           timestamp: new Date().toISOString(),
         };
@@ -437,10 +460,7 @@ export function useAssistantSession(projectName: string | null) {
         store.getState().setSessionStatus("running");
 
         // 先发送消息，再建立 SSE 连接。
-        // 这样 SSE 连接时后端已将 session 设为 "running"，避免连接到旧
-        // "completed/idle" session 导致立即关闭并需要 3 秒重连。
-        // local echo 在后端 buffer 中，SSE 连接时的 snapshot 会包含它。
-        await API.sendAssistantMessage(projectName!, sessionId, content);
+        await API.sendAssistantMessage(projectName!, sessionId, content, imagePayload);
         if (pendingSendVersionRef.current !== sendVersion) return;
         if (store.getState().currentSessionId !== sessionId) return;
         connectStream(sessionId);

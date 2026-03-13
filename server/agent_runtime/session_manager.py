@@ -6,10 +6,11 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import AsyncIterable
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -214,6 +215,11 @@ class SessionManager:
         "Grep": "path",
     }
     _WRITE_TOOLS = {"Write", "Edit"}
+
+    # Sentinel used in pending_user_echoes for image-only messages (no text).
+    # The SDK parser drops image blocks, so the replayed UserMessage arrives
+    # with empty content; this sentinel lets _is_duplicate_user_echo match it.
+    _IMAGE_ONLY_SENTINEL = "__image_only__"
 
     # SDK message class name to type mapping
     _MESSAGE_TYPE_MAP = {
@@ -552,7 +558,15 @@ class SessionManager:
             self.sessions[session_id] = managed
             return managed
 
-    async def send_message(self, session_id: str, content: str, *, meta: Optional["SessionMeta"] = None) -> None:
+    async def send_message(
+        self,
+        session_id: str,
+        prompt: Union[str, AsyncIterable[dict]],
+        *,
+        echo_text: Optional[str] = None,
+        echo_content: Optional[list[dict[str, Any]]] = None,
+        meta: Optional["SessionMeta"] = None,
+    ) -> None:
         """Send a message and start background consumer."""
         managed = await self.get_or_connect(session_id, meta=meta)
 
@@ -563,13 +577,22 @@ class SessionManager:
 
         self._prune_transient_buffer(managed)
 
+        # Determine the display text for echo dedup (pending_user_echoes).
+        # For image-only messages display_text is empty; use a sentinel so the
+        # SDK-replayed empty-content user message can still be deduplicated.
+        display_text = echo_text or (prompt if isinstance(prompt, str) else "")
+        dedup_key = display_text or (
+            self._IMAGE_ONLY_SENTINEL if echo_content else ""
+        )
+
         # Update in-memory status and echo user input immediately so live SSE
         # shows it even when SDK stream doesn't replay user messages in real time.
         managed.status = "running"
-        managed.pending_user_echoes.append(content)
-        if len(managed.pending_user_echoes) > 20:
-            managed.pending_user_echoes.pop(0)
-        managed.add_message(self._build_user_echo_message(content))
+        if dedup_key:
+            managed.pending_user_echoes.append(dedup_key)
+            if len(managed.pending_user_echoes) > 20:
+                managed.pending_user_echoes.pop(0)
+        managed.add_message(self._build_user_echo_message(display_text, echo_content))
 
         # Persist status asynchronously — don't block the echo broadcast
         await self.meta_store.update_status(session_id, "running")
@@ -577,7 +600,7 @@ class SessionManager:
         # Send the query — restore status on failure so the session is not
         # permanently stuck in "running" without an active consumer.
         try:
-            await managed.client.query(content)
+            await managed.client.query(prompt)
         except Exception:
             logger.exception("会话消息处理失败")
             managed.pending_user_echoes.clear()
@@ -612,6 +635,13 @@ class SessionManager:
         managed.cancel_pending_questions("session interrupted by user")
 
         await managed.client.interrupt()
+
+        # If the consumer task is still alive, cancel it. This handles cases where
+        # the CLI hangs (e.g. malformed input) and never sends a ResultMessage in
+        # response to the interrupt signal.
+        if managed.consumer_task and not managed.consumer_task.done():
+            managed.consumer_task.cancel()
+
         return managed.status
 
     async def _consume_messages(self, managed: ManagedSession) -> None:
@@ -838,8 +868,17 @@ class SessionManager:
         return msg_dict
 
     @staticmethod
-    def _build_user_echo_message(content: str) -> dict[str, Any]:
-        """Build a synthetic user message for real-time UI echo."""
+    def _build_user_echo_message(
+        text: str,
+        content_blocks: Optional[list[dict[str, Any]]] = None,
+    ) -> dict[str, Any]:
+        """Build a synthetic user message for real-time UI echo.
+
+        When content_blocks is provided (e.g. image + text blocks), the echo
+        content is a list of blocks so the UI can render image thumbnails in
+        the bubble.  If no blocks are provided, content is the plain text string.
+        """
+        content: Any = content_blocks if content_blocks is not None else text
         return {
             "type": "user",
             "content": content,
@@ -898,9 +937,16 @@ class SessionManager:
         if not managed.pending_user_echoes:
             return False
         incoming = self._extract_plain_user_content(message)
-        if not incoming:
-            return False
         expected = managed.pending_user_echoes[0].strip()
+
+        # Image-only sentinel: the SDK parser drops image blocks, so the
+        # replayed UserMessage arrives with empty content (incoming is None).
+        if not incoming:
+            if message.get("type") != "user" or expected != self._IMAGE_ONLY_SENTINEL:
+                return False
+            managed.pending_user_echoes.pop(0)
+            return True
+
         if incoming != expected:
             return False
         managed.pending_user_echoes.pop(0)

@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 同步 Agent 对话端点
 系统 SHALL 提供 `POST /api/v1/agent/chat` 同步端点，接收用户消息（含可选图片附件）并返回完整的 Agent 回复。
