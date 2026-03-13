@@ -3,10 +3,12 @@ import { ImageIcon, Film, Clock } from "lucide-react";
 import { API } from "@/api";
 import { VersionTimeMachine } from "@/components/canvas/timeline/VersionTimeMachine";
 import { AvatarStack } from "@/components/ui/AvatarStack";
+import { ClueStack } from "@/components/ui/ClueStack";
 import { AspectFrame } from "@/components/ui/AspectFrame";
 import { AutoTextarea } from "@/components/ui/AutoTextarea";
 import { GenerateButton } from "@/components/ui/GenerateButton";
 import { ImageFlipReveal } from "@/components/ui/ImageFlipReveal";
+import { Popover } from "@/components/ui/Popover";
 import { PreviewableImageFrame } from "@/components/ui/PreviewableImageFrame";
 import { useProjectsStore } from "@/stores/projects-store";
 import { ImagePromptEditor } from "./ImagePromptEditor";
@@ -43,13 +45,23 @@ function getSegmentId(segment: Segment, mode: "narration" | "drama"): string {
     : (segment as DramaScene).scene_id;
 }
 
-function getCharacterNames(
+function getSegmentField(
   segment: Segment,
-  mode: "narration" | "drama"
+  mode: "narration" | "drama",
+  narrationKey: keyof NarrationSegment,
+  dramaKey: keyof DramaScene,
 ): string[] {
   return mode === "narration"
-    ? ((segment as NarrationSegment).characters_in_segment ?? [])
-    : ((segment as DramaScene).characters_in_scene ?? []);
+    ? (((segment as NarrationSegment)[narrationKey] as string[] | undefined) ?? [])
+    : (((segment as DramaScene)[dramaKey] as string[] | undefined) ?? []);
+}
+
+function getCharacterNames(segment: Segment, mode: "narration" | "drama"): string[] {
+  return getSegmentField(segment, mode, "characters_in_segment", "characters_in_scene");
+}
+
+function getClueNames(segment: Segment, mode: "narration" | "drama"): string[] {
+  return getSegmentField(segment, mode, "clues_in_segment", "clues_in_scene");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -149,13 +161,69 @@ interface SegmentCardProps {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** Duration badge (4s / 6s / 8s). */
-function DurationBadge({ seconds }: { seconds: number }) {
+const DURATION_OPTIONS = [4, 6, 8];
+
+/** Duration selector — clickable when onUpdatePrompt is provided, read-only otherwise. */
+function DurationSelector({
+  seconds,
+  segmentId,
+  onUpdatePrompt,
+}: {
+  seconds: number;
+  segmentId: string;
+  onUpdatePrompt?: (segmentId: string, field: string, value: unknown) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+
+  if (!onUpdatePrompt) {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300">
+        <Clock className="h-3 w-3" />
+        {seconds}s
+      </span>
+    );
+  }
+
   return (
-    <span className="inline-flex items-center gap-0.5 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300">
-      <Clock className="h-3 w-3" />
-      {seconds}s
-    </span>
+    <>
+      <button
+        ref={ref}
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600"
+      >
+        <Clock className="h-3 w-3" />
+        {seconds}s
+      </button>
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={ref}
+        width="w-auto"
+        className="rounded-lg border border-gray-700 p-1.5 shadow-xl"
+        align="start"
+        sideOffset={6}
+      >
+        <div className="flex gap-1">
+          {DURATION_OPTIONS.map((d) => (
+            <button
+              key={d}
+              onClick={() => {
+                onUpdatePrompt(segmentId, "duration_seconds", d);
+                setOpen(false);
+              }}
+              className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                d === seconds
+                  ? "bg-indigo-600 text-white"
+                  : "text-gray-300 hover:bg-gray-700"
+              }`}
+            >
+              {d}s
+            </button>
+          ))}
+        </div>
+      </Popover>
+    </>
   );
 }
 
@@ -595,7 +663,7 @@ export function SegmentCard({
   contentMode,
   aspectRatio,
   characters,
-  clues: _clues,
+  clues,
   projectName,
   onUpdatePrompt,
   onGenerateStoryboard,
@@ -607,6 +675,7 @@ export function SegmentCard({
 }: SegmentCardProps) {
   const segmentId = getSegmentId(segment, contentMode);
   const charNames = getCharacterNames(segment, contentMode);
+  const clueNames = getClueNames(segment, contentMode);
 
   return (
     <div>
@@ -622,15 +691,29 @@ export function SegmentCard({
             <span className="font-mono text-xs bg-gray-800 rounded px-1.5 py-0.5 text-gray-300">
               {segmentId}
             </span>
-            <DurationBadge seconds={segment.duration_seconds} />
+            <DurationSelector
+              seconds={segment.duration_seconds}
+              segmentId={segmentId}
+              onUpdatePrompt={onUpdatePrompt}
+            />
           </div>
 
-          {/* Right: AvatarStack */}
-          <AvatarStack
-            names={charNames}
-            characters={characters}
-            projectName={projectName}
-          />
+          {/* Right: AvatarStack + ClueStack */}
+          <div className="flex items-center gap-2">
+            <AvatarStack
+              names={charNames}
+              characters={characters}
+              projectName={projectName}
+            />
+            {charNames.length > 0 && clueNames.length > 0 && (
+              <div className="border-l border-gray-700 self-stretch" />
+            )}
+            <ClueStack
+              names={clueNames}
+              clues={clues}
+              projectName={projectName}
+            />
+          </div>
         </div>
 
         {/* ---- Content: three-column grid ---- */}
