@@ -75,6 +75,17 @@ def upgrade() -> None:
                         nullable=nullable,
                     )
 
+    # 2b. Rebuild expression-based partial index lost during batch rebuild
+    #     (SQLAlchemy cannot reflect expression indexes on SQLite)
+    if not is_pg:
+        op.execute(
+            sa.text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_dedupe_active "
+                "ON tasks(project_name, task_type, resource_id, COALESCE(script_file, '')) "
+                "WHERE status IN ('queued', 'running')"
+            )
+        )
+
     # 3. Add FK constraint: task_events.task_id → tasks.task_id
     with op.batch_alter_table("task_events") as batch_op:
         batch_op.create_foreign_key(
@@ -126,3 +137,12 @@ def downgrade() -> None:
                         existing_type=sa.DateTime(timezone=True),
                         nullable=nullable,
                     )
+
+        # Rebuild expression-based partial index lost during batch rebuild
+        op.execute(
+            sa.text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_dedupe_active "
+                "ON tasks(project_name, task_type, resource_id, COALESCE(script_file, '')) "
+                "WHERE status IN ('queued', 'running')"
+            )
+        )
