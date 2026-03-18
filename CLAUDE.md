@@ -21,10 +21,10 @@ frontend/ (React SPA)  →  server/ (FastAPI)  →  lib/ (核心库)
 ```bash
 # 后端
 uv run uvicorn server.app:app --reload --port 1241   # 启动开发服务器
-python -m pytest                                       # 全部测试
-python -m pytest tests/test_generation_queue.py -v     # 单文件
-python -m pytest -k "test_enqueue" -v                  # 按关键字
-python -m pytest --cov --cov-report=html               # 覆盖率
+uv run python -m pytest                                # 全部测试
+uv run python -m pytest tests/test_generation_queue.py -v  # 单文件
+uv run python -m pytest -k "test_enqueue" -v           # 按关键字
+uv run python -m pytest --cov --cov-report=html        # 覆盖率
 uv sync                                                # 安装依赖
 uv run alembic upgrade head                            # 数据库迁移
 uv run alembic revision --autogenerate -m "desc"       # 生成迁移
@@ -35,6 +35,7 @@ cd frontend && pnpm build                              # 生产构建 (含 typec
 cd frontend && pnpm test                               # vitest 测试
 cd frontend && pnpm typecheck                          # TypeScript 类型检查
 cd frontend && pnpm check                              # typecheck + test
+cd frontend && pnpm test:watch                         # vitest watch 模式
 ```
 
 ## 架构要点
@@ -45,11 +46,15 @@ cd frontend && pnpm check                              # typecheck + test
 - `projects.py` — 项目 CRUD、概述生成
 - `generate.py` — 分镜/视频/人物/线索生成（入队到任务队列）
 - `assistant.py` — Claude Agent SDK 会话管理（SSE 流式）
+- `agent_chat.py` — 智能体对话交互
 - `tasks.py` — 任务队列状态（SSE 流式）
+- `project_events.py` — 项目事件 SSE 推送
 - `files.py` — 文件上传与静态资源
 - `versions.py` — 资源版本历史与回滚
 - `characters.py` / `clues.py` — 人物/线索管理
 - `usage.py` — API 用量统计
+- `auth.py` / `api_keys.py` — 认证与 API 密钥管理
+- `system_config.py` — 系统配置
 
 ### lib/ 核心模块
 
@@ -64,8 +69,8 @@ cd frontend && pnpm check                              # typecheck + test
 
 - `engine.py` — 异步引擎 + session factory；`DATABASE_URL` 环境变量控制后端（默认 `sqlite+aiosqlite`）
 - `base.py` — `DeclarativeBase`
-- `models/` — ORM 模型：`Task`、`TaskEvent`、`WorkerLease`、`ApiCall`、`AgentSession`
-- `repositories/` — 异步 Repository：`TaskRepository`、`UsageRepository`、`SessionRepository`
+- `models/` — ORM 模型：`Task`、`TaskEvent`、`WorkerLease`、`ApiCall`、`ApiKey`、`AgentSession`
+- `repositories/` — 异步 Repository：`TaskRepository`、`UsageRepository`、`SessionRepository`、`ApiKeyRepository`
 
 数据库文件：`projects/.arcreel.db`（开发 SQLite）
 
