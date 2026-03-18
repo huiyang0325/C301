@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from lib import PROJECT_ROOT
-from lib.gemini_client import GeminiClient, get_shared_rate_limiter
+from lib.gemini_client import get_shared_rate_limiter
 from lib.media_generator import MediaGenerator
 from lib.project_change_hints import emit_project_change_batch, project_change_source
 from lib.project_manager import ProjectManager
@@ -27,20 +27,66 @@ from lib.storyboard_sequence import (
     resolve_previous_storyboard_path,
 )
 from lib.thumbnail import extract_video_thumbnail
+from lib.video_backends.base import PROVIDER_GEMINI, PROVIDER_SEEDANCE
 
 
 pm = ProjectManager(PROJECT_ROOT / "projects")
 rate_limiter = get_shared_rate_limiter()
 logger = logging.getLogger(__name__)
 
+# 按 (provider_name, model) 缓存 VideoBackend 实例，避免每次任务重建 API 客户端
+_backend_cache: dict[tuple[str, str | None], Any] = {}
+
 
 def get_project_manager() -> ProjectManager:
     return pm
 
 
-def get_media_generator(project_name: str) -> MediaGenerator:
+def _get_or_create_video_backend(provider_name: str, provider_settings: dict):
+    """获取或创建 VideoBackend 实例（带缓存）。"""
+    import os
+    from lib.video_backends import create_backend
+
+    cache_key = (provider_name, provider_settings.get("model"))
+    if cache_key in _backend_cache:
+        return _backend_cache[cache_key]
+
+    kwargs: dict = {}
+    if provider_name == PROVIDER_GEMINI:
+        kwargs["backend_type"] = (os.environ.get("GEMINI_VIDEO_BACKEND") or "aistudio").strip().lower()
+        kwargs["api_key"] = os.environ.get("GEMINI_API_KEY")
+        kwargs["rate_limiter"] = rate_limiter
+        kwargs["video_model"] = os.environ.get("GEMINI_VIDEO_MODEL")
+    elif provider_name == PROVIDER_SEEDANCE:
+        kwargs["api_key"] = os.environ.get("ARK_API_KEY")
+        kwargs["file_service_base_url"] = os.environ.get("FILE_SERVICE_BASE_URL", "")
+        kwargs["model"] = provider_settings.get("model")
+
+    backend = create_backend(provider_name, **kwargs)
+    _backend_cache[cache_key] = backend
+    return backend
+
+
+def get_media_generator(project_name: str, payload: dict | None = None) -> MediaGenerator:
+    """创建 MediaGenerator。仅当 payload 包含视频配置时才初始化视频后端。"""
+    import os
+
     project_path = get_project_manager().get_project_path(project_name)
-    return MediaGenerator(project_path, rate_limiter=rate_limiter)
+
+    # 仅在有 payload（即视频任务）时创建 VideoBackend，避免图片任务因视频配置缺失而报错
+    video_backend = None
+    if payload and payload.get("video_provider"):
+        provider_name = payload["video_provider"]
+        provider_settings = payload.get("video_provider_settings", {})
+        video_backend = _get_or_create_video_backend(provider_name, provider_settings)
+    elif payload:
+        # payload 存在但无 video_provider → 从 project.json / env 读取
+        project = get_project_manager().load_project(project_name)
+        provider_name = project.get("video_provider") or os.environ.get("DEFAULT_VIDEO_PROVIDER", PROVIDER_GEMINI)
+        provider_settings = project.get("video_provider_settings", {}).get(provider_name, {})
+        video_backend = _get_or_create_video_backend(provider_name, provider_settings)
+
+    return MediaGenerator(project_path, rate_limiter=rate_limiter, video_backend=video_backend)
 
 
 def get_aspect_ratio(project: dict, resource_type: str) -> str:
@@ -56,19 +102,6 @@ def get_aspect_ratio(project: dict, resource_type: str) -> str:
     if content_mode == "narration":
         return "9:16"
     return "16:9"
-
-
-def normalize_veo_duration_seconds(duration_seconds: Optional[int]) -> str:
-    try:
-        value = int(duration_seconds) if duration_seconds is not None else 4
-    except (TypeError, ValueError):
-        value = 4
-
-    if value <= 4:
-        return "4"
-    if value <= 6:
-        return "6"
-    return "8"
 
 
 def _normalize_storyboard_prompt(prompt: Union[str, dict], style: str) -> str:
@@ -365,7 +398,7 @@ async def execute_video_task(project_name: str, resource_id: str, payload: Dict[
 
     project = get_project_manager().load_project(project_name)
     project_path = get_project_manager().get_project_path(project_name)
-    generator = get_media_generator(project_name)
+    generator = get_media_generator(project_name, payload=payload)
 
     storyboard_file = project_path / "storyboards" / f"scene_{resource_id}.png"
     if not storyboard_file.exists():
@@ -373,7 +406,9 @@ async def execute_video_task(project_name: str, resource_id: str, payload: Dict[
 
     prompt_text = _normalize_video_prompt(prompt)
     aspect_ratio = get_aspect_ratio(project, "videos")
-    duration_seconds = normalize_veo_duration_seconds(payload.get("duration_seconds"))
+    duration_seconds = payload.get("duration_seconds") or 4
+    seed = payload.get("seed")
+    service_tier = payload.get("video_provider_settings", {}).get("service_tier", "default")
 
     _, version, _, video_uri = await generator.generate_video_async(
         prompt=prompt_text,
@@ -382,6 +417,8 @@ async def execute_video_task(project_name: str, resource_id: str, payload: Dict[
         start_image=storyboard_file,
         aspect_ratio=aspect_ratio,
         duration_seconds=duration_seconds,
+        seed=seed,
+        service_tier=service_tier,
     )
 
     get_project_manager().update_scene_asset(

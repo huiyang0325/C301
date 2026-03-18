@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.cost_calculator import cost_calculator
 from lib.db.models.api_call import ApiCall
+from lib.video_backends.base import PROVIDER_GEMINI, PROVIDER_SEEDANCE
 
 
 def _utc_now() -> datetime:
@@ -39,7 +40,10 @@ def _row_to_dict(row: ApiCall) -> dict[str, Any]:
         "finished_at": _dt_to_iso(row.finished_at),
         "duration_ms": row.duration_ms,
         "retry_count": row.retry_count,
-        "cost_usd": row.cost_usd,
+        "cost_amount": row.cost_amount,
+        "currency": row.currency,
+        "provider": row.provider,
+        "usage_tokens": row.usage_tokens,
         "created_at": _dt_to_iso(row.created_at),
     }
 
@@ -59,6 +63,7 @@ class UsageRepository:
         duration_seconds: Optional[int] = None,
         aspect_ratio: Optional[str] = None,
         generate_audio: bool = True,
+        provider: str = PROVIDER_GEMINI,
     ) -> int:
         now = _utc_now()
         prompt_truncated = prompt[:500] if prompt else None
@@ -74,6 +79,7 @@ class UsageRepository:
             generate_audio=generate_audio,
             status="pending",
             started_at=now,
+            provider=provider,
         )
         self.session.add(row)
         await self.session.commit()
@@ -88,6 +94,8 @@ class UsageRepository:
         output_path: Optional[str] = None,
         error_message: Optional[str] = None,
         retry_count: int = 0,
+        usage_tokens: Optional[int] = None,
+        service_tier: str = "default",
     ) -> None:
         finished_at = _utc_now()
 
@@ -105,19 +113,31 @@ class UsageRepository:
             duration_ms = 0
 
         # Calculate cost (failed = 0)
-        cost_usd = 0.0
+        cost_amount = 0.0
+        currency = row.currency or "USD"
+        effective_provider = row.provider or PROVIDER_GEMINI
+
         if status == "success":
-            if row.call_type == "image":
-                cost_usd = cost_calculator.calculate_image_cost(
+            if effective_provider == PROVIDER_SEEDANCE and row.call_type == "video":
+                cost_amount, currency = cost_calculator.calculate_seedance_video_cost(
+                    usage_tokens=usage_tokens or 0,
+                    service_tier=service_tier,
+                    generate_audio=bool(row.generate_audio),
+                    model=row.model,
+                )
+            elif row.call_type == "image":
+                cost_amount = cost_calculator.calculate_image_cost(
                     row.resolution or "1K", model=row.model
                 )
+                currency = "USD"
             elif row.call_type == "video":
-                cost_usd = cost_calculator.calculate_video_cost(
+                cost_amount = cost_calculator.calculate_video_cost(
                     duration_seconds=row.duration_seconds or 8,
                     resolution=row.resolution or "1080p",
                     generate_audio=bool(row.generate_audio),
                     model=row.model,
                 )
+                currency = "USD"
 
         error_truncated = error_message[:500] if error_message else None
 
@@ -129,7 +149,9 @@ class UsageRepository:
                 finished_at=finished_at,
                 duration_ms=duration_ms,
                 retry_count=retry_count,
-                cost_usd=cost_usd,
+                cost_amount=cost_amount,
+                currency=currency,
+                usage_tokens=usage_tokens,
                 output_path=output_path,
                 error_message=error_truncated,
             )
@@ -157,10 +179,12 @@ class UsageRepository:
 
         filters = _base_filters()
 
-        # Single aggregation query replacing 5 separate queries
+        # Main aggregation query
         row = (await self.session.execute(
             select(
-                func.coalesce(func.sum(ApiCall.cost_usd), 0).label("total_cost"),
+                func.coalesce(func.sum(
+                    case((ApiCall.currency == "USD", ApiCall.cost_amount), else_=0)
+                ), 0).label("total_cost_usd"),
                 func.count(case((ApiCall.call_type == "image", 1))).label("image_count"),
                 func.count(case((ApiCall.call_type == "video", 1))).label("video_count"),
                 func.count(case((ApiCall.status == "failed", 1))).label("failed_count"),
@@ -168,8 +192,19 @@ class UsageRepository:
             ).select_from(ApiCall).where(*filters)
         )).one()
 
+        # Cost by currency
+        currency_rows = (await self.session.execute(
+            select(
+                ApiCall.currency,
+                func.coalesce(func.sum(ApiCall.cost_amount), 0).label("total"),
+            ).select_from(ApiCall).where(*filters).group_by(ApiCall.currency)
+        )).all()
+
+        cost_by_currency = {r.currency: round(r.total, 4) for r in currency_rows}
+
         return {
-            "total_cost": round(row.total_cost, 4),
+            "total_cost": round(row.total_cost_usd, 4),
+            "cost_by_currency": cost_by_currency,
             "image_count": row.image_count,
             "video_count": row.video_count,
             "failed_count": row.failed_count,

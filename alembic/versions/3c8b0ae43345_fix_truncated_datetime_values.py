@@ -10,7 +10,7 @@ This migration converts those corrupted integer values back to a
 placeholder datetime string so the application can read them again.
 
 Revision ID: 3c8b0ae43345
-Revises: dd7c8cc633e3
+Revises: b942e8c5d545
 Create Date: 2026-03-18 16:22:16.940767
 
 """

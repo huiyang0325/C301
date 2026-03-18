@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from lib.db import safe_session_factory
 from lib.db.repositories.usage_repo import UsageRepository
+from lib.video_backends.base import PROVIDER_GEMINI
 
 
 class UsageTracker:
@@ -29,6 +30,7 @@ class UsageTracker:
         duration_seconds: Optional[int] = None,
         aspect_ratio: Optional[str] = None,
         generate_audio: bool = True,
+        provider: str = PROVIDER_GEMINI,
     ) -> int:
 
         async with self._session_factory() as session:
@@ -42,6 +44,7 @@ class UsageTracker:
                 duration_seconds=duration_seconds,
                 aspect_ratio=aspect_ratio,
                 generate_audio=generate_audio,
+                provider=provider,
             )
 
     async def finish_call(
@@ -51,6 +54,8 @@ class UsageTracker:
         output_path: Optional[str] = None,
         error_message: Optional[str] = None,
         retry_count: int = 0,
+        usage_tokens: Optional[int] = None,
+        service_tier: str = "default",
     ) -> None:
 
         async with self._session_factory() as session:
@@ -61,6 +66,8 @@ class UsageTracker:
                 output_path=output_path,
                 error_message=error_message,
                 retry_count=retry_count,
+                usage_tokens=usage_tokens,
+                service_tier=service_tier,
             )
 
     async def get_stats(

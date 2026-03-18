@@ -108,14 +108,6 @@ class _FakeGenerator:
         return {"versions": [{"created_at": "2026-01-01T00:00:00Z"}]}
 
 
-class _FakeGeminiClient:
-    def __init__(self, rate_limiter=None):
-        self.calls = []
-
-    def generate_image(self, **kwargs):
-        self.calls.append(kwargs)
-
-
 def _prepare_files(tmp_path: Path):
     project_path = tmp_path / "projects" / "demo"
     (project_path / "storyboards").mkdir(parents=True, exist_ok=True)
@@ -131,10 +123,6 @@ def _prepare_files(tmp_path: Path):
 
 class TestGenerationTasks:
     def test_helper_functions(self, tmp_path):
-        assert generation_tasks.normalize_veo_duration_seconds(None) == "4"
-        assert generation_tasks.normalize_veo_duration_seconds(5) == "6"
-        assert generation_tasks.normalize_veo_duration_seconds(9) == "8"
-
         from lib.storyboard_sequence import get_storyboard_items
         mode_items = get_storyboard_items({"content_mode": "drama", "scenes": []})
         assert mode_items[1] == "scene_id"
@@ -165,8 +153,7 @@ class TestGenerationTasks:
         emitted_batches = []
 
         monkeypatch.setattr(generation_tasks, "get_project_manager", lambda: fake_pm)
-        monkeypatch.setattr(generation_tasks, "get_media_generator", lambda _p: fake_generator)
-        monkeypatch.setattr(generation_tasks, "GeminiClient", _FakeGeminiClient)
+        monkeypatch.setattr(generation_tasks, "get_media_generator", lambda _p, **kw: fake_generator)
         monkeypatch.setattr(
             generation_tasks,
             "emit_project_change_batch",
@@ -263,7 +250,7 @@ class TestGenerationTasks:
             return out_path
 
         monkeypatch.setattr(generation_tasks, "get_project_manager", lambda: fake_pm)
-        monkeypatch.setattr(generation_tasks, "get_media_generator", lambda _: fake_generator)
+        monkeypatch.setattr(generation_tasks, "get_media_generator", lambda _, **kw: fake_generator)
         monkeypatch.setattr(generation_tasks, "extract_video_thumbnail", fake_extract)
         monkeypatch.setattr(generation_tasks, "emit_project_change_batch", lambda *a, **kw: None)
 
@@ -314,7 +301,7 @@ class TestGenerationTasks:
         project_path = _prepare_files(tmp_path)
         fake_pm = _FakePM(project_path)
         monkeypatch.setattr(generation_tasks, "get_project_manager", lambda: fake_pm)
-        monkeypatch.setattr(generation_tasks, "get_media_generator", lambda _p: _FakeGenerator())
+        monkeypatch.setattr(generation_tasks, "get_media_generator", lambda _p, **kw: _FakeGenerator())
 
         with pytest.raises(ValueError):
             await generation_tasks.execute_storyboard_task("demo", "E1S01", {"prompt": "x"})
