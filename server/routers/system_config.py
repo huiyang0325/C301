@@ -19,6 +19,7 @@ from lib.config.repository import mask_secret
 from lib.config.registry import PROVIDER_REGISTRY
 from lib.config.service import (
     ConfigService,
+    sync_anthropic_env,
     _DEFAULT_IMAGE_BACKEND,
     _DEFAULT_VIDEO_BACKEND,
 )
@@ -106,6 +107,7 @@ _STRING_SETTINGS = (
     "anthropic_default_sonnet_model",
     "claude_code_subagent_model",
 )
+
 
 # ---------------------------------------------------------------------------
 # GET /system/config
@@ -198,6 +200,10 @@ async def patch_system_config(
             await svc.set_setting(key, str(value).strip() if value else "")
 
     await session.commit()
+
+    # Sync Anthropic settings to env vars so Claude Agent SDK picks them up
+    all_settings = await svc.get_all_settings()
+    sync_anthropic_env(all_settings)
 
     # Return updated config
     return await get_system_config(_user=_user, svc=svc)
