@@ -43,6 +43,11 @@ _TASK_NOTIFICATION_RE = re.compile(
     r"<task-notification>\s*.*?</task-notification>", re.DOTALL
 )
 
+# Pattern for CLI-injected interrupt echo messages.
+# The exact text is an internal CLI implementation detail (not a stable API),
+# so we use a loose prefix match rather than exact string comparison.
+_INTERRUPT_ECHO_PREFIX = "[Request interrupted"
+
 
 def _extract_task_notification(content: Any) -> Optional[dict[str, str]]:
     """Extract task notification fields from SDK-injected user message.
@@ -134,6 +139,31 @@ def _all_blocks_are_system_injected(blocks: list[Any]) -> bool:
             return False
         return False
     return True
+
+
+def _is_interrupt_echo(content: Any) -> bool:
+    """Detect CLI-injected interrupt echo user message.
+
+    When the user interrupts a running tool, the CLI injects a user message
+    like ``[Request interrupted by user for tool use]``.  The exact wording
+    is an internal CLI implementation detail, so we match by prefix.
+    """
+    text = ""
+    if isinstance(content, str):
+        text = content.strip()
+    elif isinstance(content, list):
+        blocks = _normalize_content(content)
+        if len(blocks) == 1 and blocks[0].get("type") == "text":
+            text = (blocks[0].get("text") or "").strip()
+    return text.startswith(_INTERRUPT_ECHO_PREFIX)
+
+
+def _last_turn_is_interrupt_notice(turn: Optional[dict[str, Any]]) -> bool:
+    """Check whether *turn* is already an interrupt_notice system turn."""
+    if turn is None or turn.get("type") != "system":
+        return False
+    blocks = turn.get("content", [])
+    return bool(blocks and blocks[-1].get("type") == "interrupt_notice")
 
 
 def _is_system_injected_user_message(content: Any) -> bool:
@@ -402,6 +432,28 @@ def group_messages_into_turns(raw_messages: list[dict[str, Any]]) -> list[dict[s
                         "uuid": msg.get("uuid"),
                         "timestamp": msg.get("timestamp"),
                     }
+                continue
+
+            # CLI-injected interrupt echo → convert to a system indicator.
+            # Dedup only *adjacent* echoes: the SDK echo and our synthetic
+            # echo may both arrive for the same interrupt (race between
+            # consumer processing and consumer_task.cancel()).  We only
+            # skip when current_turn is already an interrupt_notice — a
+            # new interrupt in a later round will have user/assistant turns
+            # in between, so current_turn will differ and dedup won't fire.
+            if _is_interrupt_echo(content):
+                if _last_turn_is_interrupt_notice(current_turn):
+                    continue
+                if current_turn:
+                    turns.append(current_turn)
+                current_turn = {
+                    "type": "system",
+                    "content": [{
+                        "type": "interrupt_notice",
+                    }],
+                    "uuid": msg.get("uuid"),
+                    "timestamp": msg.get("timestamp"),
+                }
                 continue
 
             has_subagent_metadata = _has_subagent_user_metadata(msg)
