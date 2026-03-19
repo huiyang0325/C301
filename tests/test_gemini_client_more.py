@@ -201,8 +201,7 @@ class TestGeminiClientMore:
 
     @pytest.mark.asyncio
     async def test_rate_limiter_and_shared_limiter(self, monkeypatch):
-        limiter = RateLimiter({"m": 1})
-        monkeypatch.setenv("GEMINI_REQUEST_GAP", "0")
+        limiter = RateLimiter({"m": 1}, request_gap=0)
         time_values = iter([0.0, 0.0, 61.0, 61.0])
         monkeypatch.setattr(gemini_module.time, "time", lambda: next(time_values))
         monkeypatch.setattr(gemini_module.time, "sleep", lambda _s: None)
@@ -210,9 +209,8 @@ class TestGeminiClientMore:
         limiter.acquire("m")
         assert len(limiter.request_logs["m"]) == 1
 
-        limiter2 = RateLimiter({"m": 2})
+        limiter2 = RateLimiter({"m": 2}, request_gap=1)
         limiter2.request_logs["m"] = deque([0.0])
-        monkeypatch.setenv("GEMINI_REQUEST_GAP", "1")
         async_time_values = iter([0.2, 1.2])
         monkeypatch.setattr(gemini_module.time, "time", lambda: next(async_time_values))
 
@@ -225,18 +223,14 @@ class TestGeminiClientMore:
         await limiter2.acquire_async("m")
         assert async_waits and async_waits[0] > 0
 
-        monkeypatch.setenv("GEMINI_IMAGE_RPM", "12")
-        monkeypatch.setenv("GEMINI_VIDEO_RPM", "8")
-        monkeypatch.delenv("GEMINI_IMAGE_MODEL", raising=False)
-        monkeypatch.delenv("GEMINI_VIDEO_MODEL", raising=False)
         gemini_module._shared_rate_limiter = None
-        shared_1 = get_shared_rate_limiter()
+        shared_1 = get_shared_rate_limiter(image_rpm=12, video_rpm=8)
         shared_2 = get_shared_rate_limiter()
         assert shared_1 is shared_2
         assert shared_1.limits[gemini_module._SHARED_IMAGE_MODEL_NAME] == 12
         assert shared_1.limits[gemini_module._SHARED_VIDEO_MODEL_NAME] == 8
 
-        monkeypatch.setenv("GEMINI_IMAGE_RPM", "bad")
+        # When no params passed, defaults are used (15 for image)
         gemini_module._shared_rate_limiter = None
         shared_3 = get_shared_rate_limiter()
         assert shared_3.limits[gemini_module._SHARED_IMAGE_MODEL_NAME] == 15

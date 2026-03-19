@@ -5,7 +5,7 @@ Task execution service for queued generation jobs.
 from __future__ import annotations
 
 import logging
-import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -45,56 +45,162 @@ _DEFAULT_VIDEO_RESOLUTION: dict[str, str] = {
     PROVIDER_GROK: "720p",
 }
 
+# 新 provider_id → 旧 backend registry name 的映射
+_PROVIDER_ID_TO_BACKEND: dict[str, str] = {
+    "gemini-aistudio": PROVIDER_GEMINI,
+    "gemini-vertex": PROVIDER_GEMINI,
+    PROVIDER_GEMINI: PROVIDER_GEMINI,
+    PROVIDER_SEEDANCE: PROVIDER_SEEDANCE,
+    PROVIDER_GROK: PROVIDER_GROK,
+}
+
 
 def get_project_manager() -> ProjectManager:
     return pm
 
 
-def _get_or_create_video_backend(provider_name: str, provider_settings: dict):
-    """获取或创建 VideoBackend 实例（带缓存）。"""
+def invalidate_backend_cache() -> None:
+    """清空 VideoBackend 实例缓存。在配置变更后调用。"""
+    _backend_cache.clear()
+
+
+@dataclass
+class _BulkConfig:
+    """单次 DB session 批量加载的配置快照。"""
+    provider_configs: dict[str, dict[str, str]]
+    default_image_backend: tuple[str, str]
+    default_video_backend: tuple[str, str]
+
+    def get_provider_config(self, provider_id: str) -> dict[str, str]:
+        return self.provider_configs.get(provider_id, {})
+
+
+async def _load_all_config() -> _BulkConfig:
+    """单次 DB session 批量加载所有供应商配置和系统设置。"""
+    from lib.db import async_session_factory
+    from lib.config.service import ConfigService
+
+    try:
+        async with async_session_factory() as session:
+            svc = ConfigService(session)
+            provider_configs = await svc.get_all_provider_configs()
+            image_backend = await svc.get_default_image_backend()
+            video_backend = await svc.get_default_video_backend()
+    except Exception:
+        logger.debug("从 DB 批量加载配置失败")
+        return _BulkConfig(
+            provider_configs={},
+            default_image_backend=("gemini-aistudio", ""),
+            default_video_backend=("gemini-aistudio", ""),
+        )
+
+    return _BulkConfig(
+        provider_configs=provider_configs,
+        default_image_backend=image_backend,
+        default_video_backend=video_backend,
+    )
+
+
+def _get_or_create_video_backend(
+    provider_name: str, provider_settings: dict, bulk: _BulkConfig,
+):
+    """获取或创建 VideoBackend 实例（带缓存）。
+
+    provider_name 可以是旧格式（gemini/seedance/grok）或新格式（gemini-aistudio/gemini-vertex）。
+    使用预加载的 bulk 配置，避免额外 DB 查询。
+    """
     from lib.video_backends import create_backend
 
     cache_key = (provider_name, provider_settings.get("model"))
     if cache_key in _backend_cache:
         return _backend_cache[cache_key]
 
+    # 解析 provider_id → backend registry name
+    backend_name = _PROVIDER_ID_TO_BACKEND.get(provider_name, provider_name)
+
     kwargs: dict = {}
-    if provider_name == PROVIDER_GEMINI:
-        kwargs["backend_type"] = (os.environ.get("GEMINI_VIDEO_BACKEND") or "aistudio").strip().lower()
-        kwargs["api_key"] = os.environ.get("GEMINI_API_KEY")
+    if backend_name == PROVIDER_GEMINI:
+        # 确定 backend_type（aistudio 或 vertex）
+        if provider_name == "gemini-vertex":
+            kwargs["backend_type"] = "vertex"
+        elif provider_name == "gemini-aistudio":
+            kwargs["backend_type"] = "aistudio"
+        else:
+            kwargs["backend_type"] = "aistudio"
+
+        config_provider_id = "gemini-vertex" if kwargs["backend_type"] == "vertex" else "gemini-aistudio"
+        db_config = bulk.get_provider_config(config_provider_id)
+        kwargs["api_key"] = db_config.get("api_key")
         kwargs["rate_limiter"] = rate_limiter
-        kwargs["video_model"] = os.environ.get("GEMINI_VIDEO_MODEL")
-    elif provider_name == PROVIDER_SEEDANCE:
-        kwargs["api_key"] = os.environ.get("ARK_API_KEY")
-        kwargs["file_service_base_url"] = os.environ.get("FILE_SERVICE_BASE_URL", "")
+        kwargs["video_model"] = provider_settings.get("model")
+    elif backend_name == PROVIDER_SEEDANCE:
+        db_config = bulk.get_provider_config("seedance")
+        kwargs["api_key"] = db_config.get("api_key")
+        kwargs["file_service_base_url"] = db_config.get("file_service_base_url", "")
         kwargs["model"] = provider_settings.get("model")
-    elif provider_name == PROVIDER_GROK:
-        kwargs["api_key"] = os.environ.get("XAI_API_KEY")
+    elif backend_name == PROVIDER_GROK:
+        db_config = bulk.get_provider_config("grok")
+        kwargs["api_key"] = db_config.get("api_key")
         kwargs["model"] = provider_settings.get("model")
 
-    backend = create_backend(provider_name, **kwargs)
+    backend = create_backend(backend_name, **kwargs)
     _backend_cache[cache_key] = backend
     return backend
 
 
-def get_media_generator(project_name: str, payload: dict | None = None) -> MediaGenerator:
-    """创建 MediaGenerator。仅当 payload 包含视频配置时才初始化视频后端。"""
+async def get_media_generator(project_name: str, payload: dict | None = None) -> MediaGenerator:
+    """创建 MediaGenerator。仅当 payload 包含视频配置时才初始化视频后端。
+
+    通过单次 DB session 批量加载所有供应商配置和系统设置。
+    """
     project_path = get_project_manager().get_project_path(project_name)
+
+    # 单次 DB 查询加载所有配置
+    bulk = await _load_all_config()
+
+    # 解析图片后端
+    image_provider_id, image_model = bulk.default_image_backend
+    if image_provider_id == "gemini-vertex":
+        image_backend_type = "vertex"
+        gemini_config_id = "gemini-vertex"
+    else:
+        image_backend_type = "aistudio"
+        gemini_config_id = "gemini-aistudio"
+
+    gemini_config = bulk.get_provider_config(gemini_config_id)
+    gemini_api_key = gemini_config.get("api_key")
+    gemini_base_url = gemini_config.get("base_url")
 
     # 仅在有 payload（即视频任务）时创建 VideoBackend，避免图片任务因视频配置缺失而报错
     video_backend = None
+    video_backend_type = "aistudio"
     if payload and payload.get("video_provider"):
         provider_name = payload["video_provider"]
         provider_settings = payload.get("video_provider_settings", {})
-        video_backend = _get_or_create_video_backend(provider_name, provider_settings)
+        video_backend = _get_or_create_video_backend(provider_name, provider_settings, bulk)
     elif payload:
-        # payload 存在但无 video_provider → 从 project.json / env 读取
+        # payload 存在但无 video_provider → 从 project.json / DB / env 读取
         project = get_project_manager().load_project(project_name)
-        provider_name = project.get("video_provider") or os.environ.get("DEFAULT_VIDEO_PROVIDER", PROVIDER_GEMINI)
+        provider_name = project.get("video_provider")
+        if not provider_name:
+            default_video_provider_id, _ = bulk.default_video_backend
+            # 将新 provider_id 映射到旧 provider_name 以兼容 project.json 格式
+            provider_name = _PROVIDER_ID_TO_BACKEND.get(default_video_provider_id, default_video_provider_id)
+            if provider_name == PROVIDER_GEMINI:
+                video_backend_type = "vertex" if default_video_provider_id == "gemini-vertex" else "aistudio"
         provider_settings = project.get("video_provider_settings", {}).get(provider_name, {})
-        video_backend = _get_or_create_video_backend(provider_name, provider_settings)
+        video_backend = _get_or_create_video_backend(provider_name, provider_settings, bulk)
 
-    return MediaGenerator(project_path, rate_limiter=rate_limiter, video_backend=video_backend)
+    return MediaGenerator(
+        project_path,
+        rate_limiter=rate_limiter,
+        video_backend=video_backend,
+        image_backend_type=image_backend_type,
+        video_backend_type=video_backend_type,
+        gemini_api_key=gemini_api_key,
+        gemini_base_url=gemini_base_url,
+        gemini_image_model=image_model or None,
+    )
 
 
 def get_aspect_ratio(project: dict, resource_type: str) -> str:
@@ -362,7 +468,7 @@ async def execute_storyboard_task(project_name: str, resource_id: str, payload: 
         previous_storyboard_path=previous_storyboard_path,
     )
 
-    generator = get_media_generator(project_name)
+    generator = await get_media_generator(project_name)
     aspect_ratio = get_aspect_ratio(project, "storyboards")
 
     _, version = await generator.generate_image_async(
@@ -406,7 +512,7 @@ async def execute_video_task(project_name: str, resource_id: str, payload: Dict[
 
     project = get_project_manager().load_project(project_name)
     project_path = get_project_manager().get_project_path(project_name)
-    generator = get_media_generator(project_name, payload=payload)
+    generator = await get_media_generator(project_name, payload=payload)
 
     storyboard_file = project_path / "storyboards" / f"scene_{resource_id}.png"
     if not storyboard_file.exists():
@@ -419,12 +525,18 @@ async def execute_video_task(project_name: str, resource_id: str, payload: Dict[
     service_tier = payload.get("video_provider_settings", {}).get("service_tier", "default")
 
     # 模型级分辨率：从 video_model_settings.{model}.resolution 读取
-    provider_name = payload.get("video_provider") or project.get("video_provider") or os.environ.get("DEFAULT_VIDEO_PROVIDER", PROVIDER_GEMINI)
+    provider_name = payload.get("video_provider") or project.get("video_provider")
+    if not provider_name:
+        bulk = await _load_all_config()
+        default_provider_id, _ = bulk.default_video_backend
+        provider_name = _PROVIDER_ID_TO_BACKEND.get(default_provider_id, default_provider_id)
+    # 将新 provider_id 映射为旧名称以查找分辨率
+    resolution_key = _PROVIDER_ID_TO_BACKEND.get(provider_name, provider_name)
     provider_settings = payload.get("video_provider_settings", {})
     model_name = provider_settings.get("model")
     video_model_settings = project.get("video_model_settings", {})
     model_settings = video_model_settings.get(model_name, {}) if model_name else {}
-    resolution = model_settings.get("resolution") or _DEFAULT_VIDEO_RESOLUTION.get(provider_name, "1080p")
+    resolution = model_settings.get("resolution") or _DEFAULT_VIDEO_RESOLUTION.get(resolution_key, "1080p")
 
     _, version, _, video_uri = await generator.generate_video_async(
         prompt=prompt_text,
@@ -507,7 +619,7 @@ async def execute_character_task(project_name: str, resource_id: str, payload: D
         if full_ref.exists():
             reference_images = [full_ref]
 
-    generator = get_media_generator(project_name)
+    generator = await get_media_generator(project_name)
     aspect_ratio = get_aspect_ratio(project, "characters")
 
     _, version = await generator.generate_image_async(
@@ -551,7 +663,7 @@ async def execute_clue_task(project_name: str, resource_id: str, payload: Dict[s
     clue_type = clue_data.get("type", "prop")
     full_prompt = build_clue_prompt(resource_id, prompt, clue_type, style, style_description)
 
-    generator = get_media_generator(project_name)
+    generator = await get_media_generator(project_name)
     aspect_ratio = get_aspect_ratio(project, "clues")
 
     _, version = await generator.generate_image_async(

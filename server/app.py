@@ -18,7 +18,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from lib import PROJECT_ROOT
-from lib.db import init_db, close_db
+from lib.db import init_db, close_db, async_session_factory
 from lib.logging_config import setup_logging
 
 from lib.generation_worker import GenerationWorker
@@ -31,6 +31,7 @@ from server.routers import (
     files,
     generate,
     project_events,
+    providers,
     versions,
     usage,
     tasks,
@@ -53,6 +54,15 @@ async def lifespan(app: FastAPI):
 
     # Run Alembic migrations (auto-creates tables on first start)
     await init_db()
+
+    # Migrate legacy .system_config.json → DB (no-op if file doesn't exist or already migrated)
+    try:
+        from lib.config.migration import migrate_json_to_db
+        json_path = PROJECT_ROOT / "projects" / ".system_config.json"
+        async with async_session_factory() as session:
+            await migrate_json_to_db(session, json_path)
+    except Exception as exc:
+        logger.warning("JSON→DB config migration failed (non-fatal): %s", exc)
 
     # 修复存量项目的 agent_runtime 软连接
     from lib.project_manager import ProjectManager
@@ -152,6 +162,7 @@ app.include_router(usage.router, prefix="/api/v1", tags=["费用统计"])
 app.include_router(assistant.router, prefix="/api/v1/projects/{project_name}/assistant", tags=["助手会话"])
 app.include_router(tasks.router, prefix="/api/v1", tags=["任务队列"])
 app.include_router(project_events.router, prefix="/api/v1", tags=["项目变更流"])
+app.include_router(providers.router, prefix="/api/v1", tags=["供应商管理"])
 app.include_router(system_config.router, prefix="/api/v1", tags=["系统配置"])
 app.include_router(api_keys.router, prefix="/api/v1", tags=["API Key 管理"])
 app.include_router(agent_chat.router, prefix="/api/v1", tags=["Agent 对话"])

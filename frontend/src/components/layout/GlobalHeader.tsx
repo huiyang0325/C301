@@ -338,13 +338,17 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
         {/* Settings (placeholder) */}
         <button
           type="button"
-          onClick={() => setLocation("/app/settings")}
+          onClick={() => setLocation(
+            currentProjectName
+              ? `~/app/projects/${encodeURIComponent(currentProjectName)}/settings`
+              : "~/app/settings"
+          )}
           className="relative rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-800 hover:text-gray-200"
           title="设置"
           aria-label="设置"
         >
           <Settings className="h-4 w-4" />
-          {!isConfigComplete && (
+          {!isConfigComplete && !currentProjectName && (
             <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-rose-500" aria-label="配置不完整" />
           )}
         </button>
