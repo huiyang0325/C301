@@ -71,6 +71,9 @@ frontend/.vite/
 # Git worktrees
 .worktrees/
 
+# Superpowers (Claude Code plugin cache)
+.superpowers/
+
 # Test coverage
 htmlcov/
 .coverage
