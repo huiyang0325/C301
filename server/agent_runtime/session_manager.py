@@ -26,6 +26,10 @@ try:
         from claude_agent_sdk.types import PermissionResultDeny
     except ImportError:
         PermissionResultDeny = None
+    try:
+        from claude_agent_sdk import tag_session
+    except ImportError:
+        tag_session = None
 
     SDK_AVAILABLE = True
 except ImportError:
@@ -34,6 +38,7 @@ except ImportError:
     HookMatcher = None
     PermissionResultAllow = None
     PermissionResultDeny = None
+    tag_session = None
     SDK_AVAILABLE = False
 
 
@@ -53,10 +58,12 @@ class PendingQuestion:
 @dataclass
 class ManagedSession:
     """A managed ClaudeSDKClient session."""
-    session_id: str
+    session_id: str  # sdk_session_id（已有会话）或临时 UUID（新会话等待中）
     client: Any  # ClaudeSDKClient
-    sdk_session_id: Optional[str] = None
     status: SessionStatus = "idle"
+    project_name: str = ""  # 用于 _register_new_session
+    sdk_id_event: asyncio.Event = field(default_factory=asyncio.Event)
+    resolved_sdk_id: Optional[str] = None  # consumer 设置，send_new_session 读取
     message_buffer: list[dict[str, Any]] = field(default_factory=list)
     subscribers: set[asyncio.Queue] = field(default_factory=set)
     consumer_task: Optional[asyncio.Task] = None
@@ -600,10 +607,80 @@ class SessionManager:
             raise FileNotFoundError(f"project not found: {project_name}")
         return project_cwd
 
-    async def create_session(self, project_name: str, title: str = "") -> SessionMeta:
-        """Create a new session."""
-        meta = await self.meta_store.create(project_name, title)
-        return meta
+    async def send_new_session(
+        self,
+        project_name: str,
+        prompt: Union[str, AsyncIterable[dict]],
+        *,
+        echo_text: Optional[str] = None,
+        echo_content: Optional[list[dict[str, Any]]] = None,
+    ) -> str:
+        """Create a new session via send-first: connect SDK, send message, wait for sdk_session_id."""
+        if not SDK_AVAILABLE or ClaudeSDKClient is None:
+            raise RuntimeError("claude_agent_sdk is not installed")
+
+        temp_id = uuid4().hex
+        managed_ref: list[Optional[ManagedSession]] = [None]
+
+        options = self._build_options(
+            project_name,
+            resume_id=None,
+            can_use_tool=await self._build_can_use_tool_callback(temp_id, managed_ref),
+        )
+        client = ClaudeSDKClient(options=options)
+        await client.connect()
+
+        managed = ManagedSession(
+            session_id=temp_id,
+            client=client,
+            status="running",
+            project_name=project_name,
+        )
+        managed_ref[0] = managed
+        self.sessions[temp_id] = managed
+
+        # Echo user message
+        display_text = echo_text or (prompt if isinstance(prompt, str) else "")
+        dedup_key = display_text or (self._IMAGE_ONLY_SENTINEL if echo_content else "")
+        if dedup_key:
+            managed.pending_user_echoes.append(dedup_key)
+        managed.add_message(self._build_user_echo_message(display_text, echo_content))
+
+        try:
+            await managed.client.query(prompt)
+        except Exception:
+            logger.exception("新会话消息发送失败")
+            del self.sessions[temp_id]
+            try:
+                await client.disconnect()
+            except Exception as disconnect_err:
+                logger.warning("新会话断开连接失败: %s", disconnect_err)
+            raise
+
+        managed.consumer_task = asyncio.create_task(self._consume_messages(managed))
+
+        # Wait for sdk_session_id with timeout
+        try:
+            await asyncio.wait_for(managed.sdk_id_event.wait(), timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.error("等待 sdk_session_id 超时 temp_id=%s", temp_id)
+            managed.cancel_pending_questions("session creation timed out")
+            if managed.consumer_task and not managed.consumer_task.done():
+                managed.consumer_task.cancel()
+                await asyncio.gather(managed.consumer_task, return_exceptions=True)
+            del self.sessions[temp_id]
+            try:
+                await client.disconnect()
+            except Exception as disconnect_err:
+                logger.warning("超时清理断开连接失败: %s", disconnect_err)
+            raise TimeoutError("SDK 会话创建超时")
+
+        sdk_id = managed.resolved_sdk_id
+        assert sdk_id is not None
+        # Key swap already done in _on_sdk_session_id_received
+        assert managed.session_id == sdk_id
+
+        return sdk_id
 
     async def get_or_connect(self, session_id: str, *, meta: Optional["SessionMeta"] = None) -> ManagedSession:
         """Get existing managed session or create new connection."""
@@ -630,18 +707,20 @@ class SessionManager:
 
             options = self._build_options(
                 meta.project_name,
-                meta.sdk_session_id,
+                meta.id,  # SessionMeta.id 就是 sdk_session_id
                 can_use_tool=await self._build_can_use_tool_callback(session_id),
             )
             client = ClaudeSDKClient(options=options)
             await client.connect()
 
             managed = ManagedSession(
-                session_id=session_id,
+                session_id=meta.id,  # 现在就是 sdk_session_id
                 client=client,
-                sdk_session_id=meta.sdk_session_id,
                 status=meta.status if meta.status != "idle" else "idle",
+                project_name=meta.project_name,
+                resolved_sdk_id=meta.id,  # 标记为已注册，防止重复创建 DB 记录
             )
+            managed.sdk_id_event.set()  # 已有会话不需要等待
             self.sessions[session_id] = managed
             return managed
 
@@ -740,12 +819,12 @@ class SessionManager:
                     continue
 
                 if self._is_duplicate_user_echo(managed, msg_dict):
-                    await self._maybe_update_sdk_session_id(managed, message, msg_dict)
+                    await self._on_sdk_session_id_received(managed, message, msg_dict)
                     continue
 
                 self._handle_special_message(managed, msg_dict)
                 managed.add_message(msg_dict)
-                await self._maybe_update_sdk_session_id(managed, message, msg_dict)
+                await self._on_sdk_session_id_received(managed, message, msg_dict)
 
                 if msg_dict.get("type") != "result":
                     continue
@@ -795,6 +874,8 @@ class SessionManager:
         await self.meta_store.update_status(managed.session_id, final_status)
         managed.interrupt_requested = False
         self._prune_transient_buffer(managed)
+        if final_status not in ("idle", "running"):
+            self._schedule_session_cleanup(managed.session_id)
 
     async def _mark_session_terminal(
         self, managed: ManagedSession, status: SessionStatus, reason: str
@@ -828,6 +909,29 @@ class SessionManager:
             "status": status,
             "reason": reason,
         })
+        self._schedule_session_cleanup(managed.session_id)
+
+    _SESSION_CLEANUP_DELAY = 300  # seconds before evicting terminal sessions
+
+    def _schedule_session_cleanup(self, session_id: str) -> None:
+        """Schedule deferred cleanup for a terminal session."""
+        async def _cleanup() -> None:
+            await asyncio.sleep(self._SESSION_CLEANUP_DELAY)
+            managed = self.sessions.get(session_id)
+            if managed is None:
+                return
+            if managed.status in ("idle", "running"):
+                return  # session was resumed, skip cleanup
+            managed.clear_buffer()
+            try:
+                await managed.client.disconnect()
+            except Exception:
+                logger.debug("会话断开过程中出现非致命错误 session_id=%s", session_id, exc_info=True)
+            self.sessions.pop(session_id, None)
+            self._connect_locks.pop(session_id, None)
+            logger.debug("已清理终态会话 session_id=%s", session_id)
+
+        asyncio.create_task(_cleanup())
 
     @staticmethod
     def _resolve_result_status(
@@ -918,12 +1022,11 @@ class SessionManager:
 
     async def _handle_ask_user_question(
         self,
-        session_id: str,
+        managed: Optional["ManagedSession"],
         tool_name: str,
         input_data: dict[str, Any],
     ) -> Any:
         """Handle AskUserQuestion tool invocation within can_use_tool callback."""
-        managed = self.sessions.get(session_id)
         if managed is None:
             return PermissionResultAllow(updated_input=input_data)
 
@@ -952,7 +1055,11 @@ class SessionManager:
         merged_input["answers"] = answers
         return PermissionResultAllow(updated_input=merged_input)
 
-    async def _build_can_use_tool_callback(self, session_id: str):
+    async def _build_can_use_tool_callback(
+        self,
+        session_id: str,
+        managed_ref: Optional[list[Optional["ManagedSession"]]] = None,
+    ):
         """Create per-session can_use_tool callback (default-deny).
 
         This is step 5 (final fallback) in the SDK permission chain:
@@ -965,6 +1072,13 @@ class SessionManager:
 
         This callback handles AskUserQuestion (async user interaction) and
         denies everything else as a whitelist fallback.
+
+        Args:
+            session_id: Initial session ID (may be temp_id for new sessions).
+            managed_ref: Mutable single-element list holding the ManagedSession.
+                When provided, the callback resolves the session via this
+                reference instead of looking up session_id in self.sessions,
+                so it survives the temp_id → sdk_id key swap.
         """
 
         async def _can_use_tool(
@@ -978,8 +1092,9 @@ class SessionManager:
             normalized_tool = str(tool_name or "").strip().lower()
 
             if normalized_tool == "askuserquestion":
+                managed = managed_ref[0] if managed_ref else self.sessions.get(session_id)
                 return await self._handle_ask_user_question(
-                    session_id, tool_name, input_data,
+                    managed, tool_name, input_data,
                 )
 
             # Whitelist fallback: deny any tool that was not pre-approved
@@ -1103,18 +1218,47 @@ class SessionManager:
         managed.pending_user_echoes.pop(0)
         return True
 
-    async def _maybe_update_sdk_session_id(
+    async def _on_sdk_session_id_received(
         self,
         managed: ManagedSession,
         message: Any,
         msg_dict: dict[str, Any],
     ) -> None:
-        """Persist SDK session id as soon as it appears in stream messages."""
+        """Handle sdk_session_id from stream. For new sessions: create DB record + signal event."""
         sdk_id = self._extract_sdk_session_id(message, msg_dict)
-        if not sdk_id or sdk_id == managed.sdk_session_id:
+        if not sdk_id:
             return
-        managed.sdk_session_id = sdk_id
-        await self.meta_store.update_sdk_session_id(managed.session_id, sdk_id)
+        if managed.resolved_sdk_id is not None:
+            return  # Already registered
+
+        managed.resolved_sdk_id = sdk_id
+
+        # Only create DB record for new sessions (no existing meta)
+        if not managed.sdk_id_event.is_set():
+            # Run DB create and SDK tag in parallel (tag is independent file I/O)
+            tag_coro = None
+            if tag_session is not None:
+                async def _tag() -> None:
+                    try:
+                        await asyncio.to_thread(tag_session, sdk_id, f"project:{managed.project_name}")
+                    except Exception:
+                        logger.warning("tag_session failed for %s", sdk_id, exc_info=True)
+                tag_coro = _tag()
+            await asyncio.gather(
+                self.meta_store.create(managed.project_name, sdk_id),
+                *([] if tag_coro is None else [tag_coro]),
+            )
+            await self.meta_store.update_status(sdk_id, "running")
+            # Key swap: replace temp_id with real sdk_id in sessions dict
+            # BEFORE signaling the event. This prevents _finalize_turn from
+            # using the stale temp_id if it runs before send_new_session
+            # completes its own key swap.
+            old_id = managed.session_id
+            if old_id != sdk_id and old_id in self.sessions:
+                del self.sessions[old_id]
+                managed.session_id = sdk_id
+                self.sessions[sdk_id] = managed
+            managed.sdk_id_event.set()
 
     @staticmethod
     def _extract_sdk_session_id(
