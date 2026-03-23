@@ -27,6 +27,8 @@
   <img src="https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-191919?logo=anthropic&logoColor=white" alt="Claude Agent SDK">
   <img src="https://img.shields.io/badge/Nano_Banana_2-Image_AI-886FBF?logo=googlegemini&logoColor=white" alt="Nano Banana 2">
   <img src="https://img.shields.io/badge/Veo_3.1-Video_AI-EA4335?logo=google&logoColor=white" alt="Veo 3.1">
+  <img src="https://img.shields.io/badge/Seedance_1.5-Video_AI-FF6A00?logo=data:image/svg+xml;base64,..." alt="Seedance">
+  <img src="https://img.shields.io/badge/Grok-Video_AI-000000?logo=x&logoColor=white" alt="Grok">
 </p>
 
 <p align="center">
@@ -41,15 +43,15 @@
 <tr>
 <td width="20%" align="center">
 <h3>🤖 AI Agent 工作流</h3>
-基于 <strong>Claude Agent SDK</strong>，Skill + Subagent 多智能体协作，自动完成从剧本创作到视频合成的完整流水线
+基于 <strong>Claude Agent SDK</strong>，编排 Skill + 聚焦 Subagent 多智能体协作，自动完成从剧本创作到视频合成的完整流水线
 </td>
 <td width="20%" align="center">
 <h3>🎨 Nano Banana 2 图像生成</h3>
 Gemini 最新图像模型驱动，人物设计图确保角色一致性，线索追踪保证道具/场景跨镜连贯
 </td>
 <td width="20%" align="center">
-<h3>🎬 Veo 3.1 视频生成</h3>
-Google 最新视频模型，以分镜图作为起始帧生成 4-8 秒视频片段，再由 FFmpeg 合成完整作品
+<h3>🎬 多供应商视频生成</h3>
+支持 <strong>Veo 3.1</strong>、<strong>Seedance</strong>、<strong>Grok</strong> 三大视频供应商，可按视频项目切换
 </td>
 <td width="20%" align="center">
 <h3>⚡ 异步任务队列</h3>
@@ -78,12 +80,18 @@ graph TD
 ## 功能特性
 
 - **完整生产流水线** — 小说 → 剧本 → 人物设计 → 分镜图片 → 视频片段 → 成片，一键编排
-- **多智能体架构** — Skills 处理单步任务（生成人物/分镜/视频），Subagent 处理复杂多步骤推理（剧本创作）
+- **多智能体架构** — 编排 Skill 检测项目状态并自动调度聚焦 Subagent，每个 Subagent 独立完成一项任务后返回摘要
+- **多视频供应商** — 支持 Gemini (Veo 3.1)、Seedance 1.5 (火山方舟)、Grok (xAI) 三大视频生成后端，全局/视频项目级可切换
+- **两种内容模式** — 说书模式（narration）按朗读节奏拆分片段，剧集动画模式（drama）按场景/对话结构组织
+- **渐进式分集规划** — 人机协作切分长篇小说：peek 脚本探测切分点上下文 → Agent 建议自然断点 → 用户确认 → 物理切分为单集文件，按需制作、无需一次规划全部集数
+- **风格参考图** — 上传一张风格图，AI 自动分析生成风格描述，后续所有内容生成（人物/线索/分镜）统一使用该风格，确保全项目视觉一致
 - **人物一致性** — AI 先生成人物设计图，后续所有分镜和视频均参考该设计
 - **场景连贯** — 分镜图自动参考上一张生成，确保相邻场景画面衔接自然
 - **线索追踪** — 关键道具、场景元素标记为"线索"，跨镜头保持视觉连贯
 - **版本历史** — 每次重新生成自动保存历史版本，支持一键回滚
-- **费用统计** — 自动记录 API 调用次数与费用，精确到每个任务
+- **多供应商费用追踪** — 按供应商分策略计费（Gemini 按分辨率×时长 USD、Seedance 按 token 用量 CNY、Grok 按秒 USD），不同币种分别统计
+- **用户认证** — JWT 登录 + API Key 认证双模式，支持外部平台集成
+- **OpenClaw 集成** — 提供 AgentSkill 定义文件与同步对话端点，可通过 OpenClaw 等外部 AI Agent 平台调用 ArcReel 能力
 - **项目导入/导出** — 整个项目打包归档，方便备份和迁移
 - **竖屏优化** — 默认 9:16 比例，适合短视频平台发布
 
@@ -116,20 +124,74 @@ cp .env.example .env
 docker compose up -d
 ```
 
-首次启动后，前往 **设置页**（`/settings`）配置 Gemini API Key 等参数即可开始使用。
+首次启动后，前往 **设置页**（`/settings`）完成以下配置即可开始使用：
 
-> **部署提示**：若使用 Seedance (火山方舟) 作为视频供应商，部署环境必须是公网可访问的，因为 Seedance 图片上传需要在公网地址上进行访问。
+1. **ArcReel 智能体** — 配置 Anthropic API Key（驱动 AI 助手）
+2. **AI 生图/生视频** — 配置至少一个视频供应商的 API Key（Gemini / Seedance / Grok）
+
+> **部署提示**：若使用 Seedance（火山方舟）作为视频供应商，部署环境必须公网可访问，因为 Seedance 图片上传需要通过公网地址访问。需在 `.env` 中配置 `FILE_SERVICE_BASE_URL`。
+
+## 视频供应商
+
+ArcReel 通过统一的 `VideoBackend` 协议，支持多个视频生成供应商，可在全局或项目级别切换：
+
+| 供应商 | 模型 | 能力 | 计费方式 |
+|--------|------|------|----------|
+| **Gemini** (Google) | Veo 3.1 | 文生视频、图生视频、视频延展、负面提示词 | 按分辨率 × 时长查表 (USD) |
+| **Seedance** (火山方舟) | Seedance 1.5 Pro | 文生视频、图生视频、音频生成、种子控制、离线推理 | 按 token 用量 (CNY) |
+| **Grok** (xAI) | grok-imagine-video | 文生视频、图生视频 | 按秒计费 (USD) |
+
+供应商选择优先级：项目级设置 > 全局默认。切换供应商时通用设置（分辨率、宽高比、音频等）直接沿用，供应商特有参数保留。
+
+## AI 助手架构
+
+ArcReel 的 AI 助手基于 Claude Agent SDK 构建，采用**编排 Skill + 聚焦 Subagent** 的多智能体架构：
+
+```mermaid
+flowchart TD
+    User["用户对话"] --> Main["主 Agent"]
+    Main --> MW["manga-workflow<br/>编排 Skill"]
+    MW -->|"状态检测"| PJ["读取 project.json<br/>+ 文件系统"]
+    MW -->|"dispatch"| SA1["analyze-characters-clues<br/>全局角色/线索提取"]
+    MW -->|"dispatch"| SA2["split-narration-segments<br/>说书模式片段拆分"]
+    MW -->|"dispatch"| SA3["normalize-drama-script<br/>剧集动画规范化"]
+    MW -->|"dispatch"| SA4["create-episode-script<br/>JSON 剧本生成"]
+    MW -->|"dispatch"| SA5["资产生成 Subagent<br/>人物/线索/分镜/视频"]
+    SA1 -->|"摘要"| Main
+    SA4 -->|"摘要"| Main
+    Main -->|"展示结果<br/>等待确认"| User
+```
+
+**核心设计原则**：
+
+- **编排 Skill（manga-workflow）** — 具备状态检测能力，自动判断项目当前阶段（角色设计 / 分集规划 / 预处理 / 剧本生成 / 资产生成），dispatch 对应的 Subagent，支持从任意阶段进入和中断恢复
+- **聚焦 Subagent** — 每个 Subagent 只完成一项任务后返回，小说原文等大量上下文留在 Subagent 内部，主 Agent 只收到精炼摘要，保护上下文空间
+- **Skill vs Subagent 边界** — Skill 负责确定性脚本执行（API 调用、文件生成），Subagent 负责需要推理分析的任务（角色提取、剧本规范化）
+- **阶段间确认** — 每个 Subagent 返回后，主 Agent 向用户展示结果摘要并等待确认，确认后才进入下一阶段
+
+## OpenClaw 集成
+
+ArcReel 支持通过 [OpenClaw](https://openclaw.ai) 等外部 AI Agent 平台调用，实现自然语言驱动的视频创作：
+
+1. 在 ArcReel 设置页生成 API Key（`arc-` 前缀）
+2. 在 OpenClaw 中加载 ArcReel 的 Skill 定义（访问 `http://your-domain/skill.md` 自动获取）
+3. 通过 OpenClaw 对话即可创建项目、生成剧本、制作视频
+
+技术实现：API Key 认证（Bearer Token）+ 同步 Agent 对话端点（`POST /api/v1/agent/chat`），内部对接 SSE 流式助手并收集完整响应返回。
 
 ## 使用方式
 
 通过 Web UI 工作台完成所有操作：
 
 - **项目管理** — 创建项目、上传小说、管理多剧集
-- **AI 助手** — 内置 AI 助手（Claude Agent SDK 驱动），对话式引导完成剧本创作、人物设计等
+- **AI 助手** — 内置 AI 助手，对话式引导完成剧本创作、人物设计、分集规划等
+- **分集规划** — 长篇小说渐进式切分：peek 探测 → Agent 建议断点 → 用户确认 → 物理切分
+- **风格参考图** — 上传风格图 → AI 自动分析生成风格描述 → 统一应用到所有图片生成
 - **素材预览** — 人物图、分镜图、视频片段全屏预览
 - **任务监控** — 实时查看生成任务进度（SSE 推送）
 - **版本管理** — 每次重新生成自动保存历史，支持一键回滚
-- **参数配置** — API Key、模型选择、速率限制等均可在页面配置
+- **费用统计** — 按供应商、按任务类型精确统计 API 调用费用
+- **参数配置** — 供应商管理、API Key、模型选择、速率限制等均可在页面配置
 
 ## 技术架构
 
@@ -140,14 +202,21 @@ flowchart TB
     end
 
     subgraph Server["FastAPI Server"]
-        S1["REST API<br/>路由分发"] ~~~ S2["Agent Runtime<br/>Claude Agent SDK"] ~~~ S3["SSE Stream<br/>实时状态推送"]
+        S1["REST API<br/>路由分发"] ~~~ S2["Agent Runtime<br/>Claude Agent SDK"]
+        S3["SSE Stream<br/>实时状态推送"] ~~~ S4["Auth<br/>JWT + API Key"]
     end
 
     subgraph Core["Core Library"]
-        C1["GeminiClient<br/>Nano Banana 2 + Veo 3.1"] ~~~ C2["GenerationQueue<br/>RPM 限速 · Image/Video 通道"] ~~~ C3["ProjectManager<br/>文件系统 + 版本管理"]
+        C1["VideoBackend 抽象层<br/>Gemini · Seedance · Grok"] ~~~ C2["GeminiClient<br/>图像生成"]
+        C3["GenerationQueue<br/>RPM 限速 · Image/Video 通道"] ~~~ C4["ProjectManager<br/>文件系统 + 版本管理"]
     end
 
-    UI --> Server --> Core
+    subgraph Data["数据层"]
+        D1["SQLAlchemy 2.0 Async ORM"] ~~~ D2["SQLite / PostgreSQL"]
+        D3["Alembic 迁移"] ~~~ D4["UsageTracker<br/>多供应商费用追踪"]
+    end
+
+    UI --> Server --> Core --> Data
 ```
 
 ## 技术栈
@@ -155,15 +224,19 @@ flowchart TB
 | 层级 | 技术 |
 |------|------|
 | **前端** | React 19, TypeScript, Tailwind CSS 4, wouter, zustand, Framer Motion, Vite |
-| **后端** | FastAPI, Python 3.12+, SQLAlchemy 2.0 (async), Alembic, uvicorn, Pydantic 2 |
-| **AI & 媒体** | Claude Agent SDK, Gemini API (Nano Banana 2 + Veo 3.1), FFmpeg, Pillow |
-| **数据库** | SQLite (默认) / PostgreSQL (生产) |
+| **后端** | FastAPI, Python 3.12+, uvicorn, Pydantic 2 |
+| **AI 智能体** | Claude Agent SDK (Skill + Subagent 多智能体架构) |
+| **图像生成** | Google Gemini API (Nano Banana 2) |
+| **视频生成** | Google Veo 3.1 (`google-genai`), Seedance 1.5 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`) |
+| **媒体处理** | FFmpeg, Pillow |
+| **ORM & 数据库** | SQLAlchemy 2.0 (async), Alembic, aiosqlite, asyncpg — SQLite (默认) / PostgreSQL (生产) |
+| **认证** | JWT (`pyjwt`), API Key (SHA-256 哈希), Argon2 密码哈希 (`pwdlib`) |
 | **部署** | Docker, Docker Compose（`deploy/` 默认, `deploy/production/` 含 PostgreSQL） |
 
 ## 文档
 
 - 📖 [完整入门教程](docs/getting-started.md) — 从零开始的手把手指南
-- 💰 [Google GenAI费用说明](docs/Google视频&图片生成费用参考.md) — API 调用费用参考
+- 💰 [Google GenAI 费用说明](docs/Google视频&图片生成费用参考.md) — API 调用费用参考
 
 ## 贡献
 
