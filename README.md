@@ -131,6 +131,14 @@ docker compose up -d
 
 > **部署提示**：若使用 Seedance（火山方舟）作为视频供应商，部署环境必须公网可访问，因为 Seedance 图片上传需要通过公网地址访问。需在 `.env` 中配置 `FILE_SERVICE_BASE_URL`。
 
+## 交流群
+
+扫码加入飞书交流群，获取帮助和最新动态：
+
+<p align="center">
+  <img src="docs/assets/feishu-qr.png" alt="飞书交流群二维码" width="280">
+</p>
+
 ## 视频供应商
 
 ArcReel 通过统一的 `VideoBackend` 协议，支持多个视频生成供应商，可在全局或项目级别切换：
