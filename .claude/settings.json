@@ -12,6 +12,7 @@
       "Bash(uv sync:*)",
       "Bash(pnpm build:*)",
       "Bash(pnpm test:*)",
+      "Bash(pnpm check:*)",
       "Bash(pnpm typecheck:*)",
       "Bash(pnpm install:*)",
       "Bash(git status:*)",
