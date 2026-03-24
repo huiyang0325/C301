@@ -6,11 +6,11 @@
 """
 
 import logging
-from typing import Annotated, Optional, Union
+from typing import Optional, Union
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from lib import PROJECT_ROOT
@@ -24,7 +24,7 @@ from lib.storyboard_sequence import (
     find_storyboard_item,
     get_storyboard_items,
 )
-from server.auth import get_current_user
+from server.auth import CurrentUser
 
 router = APIRouter()
 
@@ -97,7 +97,7 @@ def _snapshot_image_backend(project_name: str) -> dict:
 @router.post("/projects/{project_name}/generate/storyboard/{segment_id}")
 async def generate_storyboard(
     project_name: str, segment_id: str, req: GenerateStoryboardRequest,
-    _user: Annotated[dict, Depends(get_current_user)],
+    _user: CurrentUser,
 ):
     """
     提交分镜图生成任务到队列，立即返回 task_id。
@@ -144,6 +144,7 @@ async def generate_storyboard(
                 **image_snapshot,
             },
             source="webui",
+            user_id=_user.id,
         )
 
         return {
@@ -165,7 +166,7 @@ async def generate_storyboard(
 
 
 @router.post("/projects/{project_name}/generate/video/{segment_id}")
-async def generate_video(project_name: str, segment_id: str, req: GenerateVideoRequest, _user: Annotated[dict, Depends(get_current_user)]):
+async def generate_video(project_name: str, segment_id: str, req: GenerateVideoRequest, _user: CurrentUser):
     """
     提交视频生成任务到队列，立即返回 task_id。
 
@@ -232,6 +233,7 @@ async def generate_video(project_name: str, segment_id: str, req: GenerateVideoR
                 "video_provider_settings": video_provider_settings,
             },
             source="webui",
+            user_id=_user.id,
         )
 
         return {
@@ -255,7 +257,7 @@ async def generate_video(project_name: str, segment_id: str, req: GenerateVideoR
 @router.post("/projects/{project_name}/generate/character/{char_name}")
 async def generate_character(
     project_name: str, char_name: str, req: GenerateCharacterRequest,
-    _user: Annotated[dict, Depends(get_current_user)],
+    _user: CurrentUser,
 ):
     """
     提交人物设计图生成任务到队列，立即返回 task_id。
@@ -280,6 +282,7 @@ async def generate_character(
                 **image_snapshot,
             },
             source="webui",
+            user_id=_user.id,
         )
 
         return {
@@ -301,7 +304,7 @@ async def generate_character(
 
 
 @router.post("/projects/{project_name}/generate/clue/{clue_name}")
-async def generate_clue(project_name: str, clue_name: str, req: GenerateClueRequest, _user: Annotated[dict, Depends(get_current_user)]):
+async def generate_clue(project_name: str, clue_name: str, req: GenerateClueRequest, _user: CurrentUser):
     """
     提交线索设计图生成任务到队列，立即返回 task_id。
     """
@@ -325,6 +328,7 @@ async def generate_clue(project_name: str, clue_name: str, req: GenerateClueRequ
                 **image_snapshot,
             },
             source="webui",
+            user_id=_user.id,
         )
 
         return {

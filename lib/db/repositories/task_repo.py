@@ -6,22 +6,19 @@ import json
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import delete as sa_delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.db.base import DEFAULT_USER_ID, dt_to_iso, utc_now
 from lib.db.models.task import Task, TaskEvent, WorkerLease
+from lib.db.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 ACTIVE_TASK_STATUSES = ("queued", "running")
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _json_dumps(value: Any) -> str:
@@ -35,11 +32,6 @@ def _json_loads(value: Optional[str], default: Any) -> Any:
         return json.loads(value)
     except Exception:
         return default
-
-
-def _dt_to_iso(val: Optional[datetime]) -> Optional[str]:
-    """Convert datetime to ISO string for JSON serialization."""
-    return val.isoformat() if val else None
 
 
 def _task_to_dict(row: Task) -> dict[str, Any]:
@@ -58,10 +50,11 @@ def _task_to_dict(row: Task) -> dict[str, Any]:
         "dependency_task_id": row.dependency_task_id,
         "dependency_group": row.dependency_group,
         "dependency_index": row.dependency_index,
-        "queued_at": _dt_to_iso(row.queued_at),
-        "started_at": _dt_to_iso(row.started_at),
-        "finished_at": _dt_to_iso(row.finished_at),
-        "updated_at": _dt_to_iso(row.updated_at),
+        "queued_at": dt_to_iso(row.queued_at),
+        "started_at": dt_to_iso(row.started_at),
+        "finished_at": dt_to_iso(row.finished_at),
+        "updated_at": dt_to_iso(row.updated_at),
+        "user_id": row.user_id,
     }
 
 
@@ -73,13 +66,11 @@ def _event_to_dict(row: TaskEvent) -> dict[str, Any]:
         "event_type": row.event_type,
         "status": row.status,
         "data": _json_loads(row.data_json, {}),
-        "created_at": _dt_to_iso(row.created_at),
+        "created_at": dt_to_iso(row.created_at),
     }
 
 
-class TaskRepository:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+class TaskRepository(BaseRepository):
 
     async def _append_event(
         self,
@@ -90,7 +81,7 @@ class TaskRepository:
         status: str,
         data: Optional[dict] = None,
     ) -> int:
-        now = _utc_now()
+        now = utc_now()
         event = TaskEvent(
             task_id=task_id,
             project_name=project_name,
@@ -116,8 +107,9 @@ class TaskRepository:
         dependency_task_id: Optional[str] = None,
         dependency_group: Optional[str] = None,
         dependency_index: Optional[int] = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any]:
-        now = _utc_now()
+        now = utc_now()
 
         task_id = uuid.uuid4().hex
         task = Task(
@@ -135,6 +127,7 @@ class TaskRepository:
             dependency_index=dependency_index,
             queued_at=now,
             updated_at=now,
+            user_id=user_id,
         )
         self.session.add(task)
         try:
@@ -179,8 +172,9 @@ class TaskRepository:
             "existing_task_id": None,
         }
 
+    # NOTE: In multi-user mode, override this method to add user_id filtering
     async def claim_next(self, media_type: str) -> Optional[dict[str, Any]]:
-        now = _utc_now()
+        now = utc_now()
 
         # Use raw SQL for the dependency join (clearer than ORM for self-join)
         raw_stmt = text("""
@@ -241,7 +235,7 @@ class TaskRepository:
     async def mark_succeeded(
         self, task_id: str, result: Optional[dict[str, Any]] = None
     ) -> Optional[dict[str, Any]]:
-        now = _utc_now()
+        now = utc_now()
 
         await self.session.execute(
             update(Task)
@@ -311,7 +305,7 @@ class TaskRepository:
         if task.status not in allowed_statuses:
             return _task_to_dict(task), False
 
-        now = _utc_now()
+        now = utc_now()
         await self.session.execute(
             update(Task)
             .where(Task.task_id == task_id)
@@ -372,7 +366,7 @@ class TaskRepository:
         return cascaded
 
     async def requeue_running(self, *, limit: int = 1000) -> int:
-        now = _utc_now()
+        now = utc_now()
         limit = max(1, min(5000, limit))
 
         # Step 1: collect task_ids to requeue
@@ -408,7 +402,7 @@ class TaskRepository:
         requeued_tasks = rows.scalars().all()
 
         # Step 4: bulk-insert all requeue events
-        event_now = _utc_now()
+        event_now = utc_now()
         events = [
             TaskEvent(
                 task_id=t.task_id,
@@ -425,9 +419,9 @@ class TaskRepository:
         return len(requeued_tasks)
 
     async def get(self, task_id: str) -> Optional[dict[str, Any]]:
-        result = await self.session.execute(
-            select(Task).where(Task.task_id == task_id)
-        )
+        stmt = select(Task).where(Task.task_id == task_id)
+        stmt = self._scope_query(stmt, Task)
+        result = await self.session.execute(stmt)
         task = result.scalar_one_or_none()
         return _task_to_dict(task) if task else None
 
@@ -456,6 +450,7 @@ class TaskRepository:
             filters.append(Task.source == source)
 
         count_stmt = select(func.count()).select_from(Task).where(*filters)
+        count_stmt = self._scope_query(count_stmt, Task)
         total = (await self.session.execute(count_stmt)).scalar() or 0
 
         items_stmt = (
@@ -465,6 +460,7 @@ class TaskRepository:
             .limit(page_size)
             .offset(offset)
         )
+        items_stmt = self._scope_query(items_stmt, Task)
         result = await self.session.execute(items_stmt)
         items = [_task_to_dict(t) for t in result.scalars().all()]
 
@@ -488,6 +484,7 @@ class TaskRepository:
             .where(*filters)
             .group_by(Task.status)
         )
+        stmt = self._scope_query(stmt, Task)
         result = await self.session.execute(stmt)
 
         stats = {"queued": 0, "running": 0, "succeeded": 0, "failed": 0, "total": 0}
@@ -511,10 +508,12 @@ class TaskRepository:
         if project_name:
             stmt = stmt.where(Task.project_name == project_name)
         stmt = stmt.order_by(Task.updated_at.desc()).limit(limit)
+        stmt = self._scope_query(stmt, Task)
 
         result = await self.session.execute(stmt)
         return [_task_to_dict(t) for t in result.scalars().all()]
 
+    # NOTE: In multi-user mode, override this method to filter by user via JOIN Task
     async def get_events_since(
         self,
         *,
@@ -531,6 +530,7 @@ class TaskRepository:
         result = await self.session.execute(stmt)
         return [_event_to_dict(e) for e in result.scalars().all()]
 
+    # NOTE: In multi-user mode, override this method to filter by user via JOIN Task
     async def get_latest_event_id(
         self, *, project_name: Optional[str] = None
     ) -> int:
@@ -551,7 +551,7 @@ class TaskRepository:
     ) -> bool:
         now_epoch = time.time()
         lease_until = now_epoch + max(1.0, float(ttl))
-        updated_at = _utc_now()
+        updated_at = utc_now()
 
         # Fast path: renew existing lease only when we own it or it's expired.
         update_result = await self.session.execute(
@@ -618,6 +618,6 @@ class TaskRepository:
             "name": row.name,
             "owner_id": row.owner_id,
             "lease_until": row.lease_until,
-            "updated_at": _dt_to_iso(row.updated_at),
+            "updated_at": dt_to_iso(row.updated_at),
             "is_online": row.lease_until > time.time(),
         }

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional, List, Union, Tuple
 from PIL import Image
 
+from lib.db.base import DEFAULT_USER_ID
 from lib.gemini_client import GeminiClient, RateLimiter, ReferenceImageInput
 from lib.version_manager import VersionManager
 from lib.usage_tracker import UsageTracker
@@ -52,6 +53,7 @@ class MediaGenerator:
         gemini_base_url: Optional[str] = None,
         gemini_image_model: Optional[str] = None,
         gemini_video_model: Optional[str] = None,
+        user_id: str = DEFAULT_USER_ID,
     ):
         """
         初始化 MediaGenerator
@@ -85,6 +87,7 @@ class MediaGenerator:
         self._gemini_image_model = gemini_image_model
         self._gemini_video_model = gemini_video_model
         self._video_backend = video_backend
+        self._user_id = user_id
         self._gemini_image: Optional[GeminiClient] = None
         self._gemini_video: Optional[GeminiClient] = None
         self.versions = VersionManager(project_path)
@@ -221,6 +224,7 @@ class MediaGenerator:
             prompt=prompt,
             resolution=image_size,
             aspect_ratio=aspect_ratio,
+            user_id=self._user_id,
         ))
 
         try:
@@ -309,6 +313,7 @@ class MediaGenerator:
             prompt=prompt,
             resolution=image_size,
             aspect_ratio=aspect_ratio,
+            user_id=self._user_id,
         )
 
         try:
@@ -421,6 +426,7 @@ class MediaGenerator:
             aspect_ratio=aspect_ratio,
             generate_audio=effective_generate_audio,
             provider=provider_name,
+            user_id=self._user_id,
         ))
 
         try:
@@ -567,6 +573,7 @@ class MediaGenerator:
             aspect_ratio=aspect_ratio,
             generate_audio=effective_generate_audio,
             provider=provider_name,
+            user_id=self._user_id,
         )
 
         try:

@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from lib.db.base import Base
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+from lib.db.base import Base, utc_now
 
 
 class ProviderConfig(Base):
@@ -27,7 +23,7 @@ class ProviderConfig(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     is_secret: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
 
 
@@ -38,5 +34,5 @@ class SystemSetting(Base):
     key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )

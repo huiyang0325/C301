@@ -9,17 +9,10 @@ from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.cost_calculator import cost_calculator
+from lib.db.base import DEFAULT_USER_ID, dt_to_iso, utc_now
 from lib.db.models.api_call import ApiCall
+from lib.db.repositories.base import BaseRepository
 from lib.video_backends.base import PROVIDER_GEMINI, PROVIDER_GROK, PROVIDER_SEEDANCE
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _dt_to_iso(val: Optional[datetime]) -> Optional[str]:
-    """Convert datetime to ISO string for JSON serialization."""
-    return val.isoformat() if val else None
 
 
 def _row_to_dict(row: ApiCall) -> dict[str, Any]:
@@ -36,21 +29,19 @@ def _row_to_dict(row: ApiCall) -> dict[str, Any]:
         "status": row.status,
         "error_message": row.error_message,
         "output_path": row.output_path,
-        "started_at": _dt_to_iso(row.started_at),
-        "finished_at": _dt_to_iso(row.finished_at),
+        "started_at": dt_to_iso(row.started_at),
+        "finished_at": dt_to_iso(row.finished_at),
         "duration_ms": row.duration_ms,
         "retry_count": row.retry_count,
         "cost_amount": row.cost_amount,
         "currency": row.currency,
         "provider": row.provider,
         "usage_tokens": row.usage_tokens,
-        "created_at": _dt_to_iso(row.created_at),
+        "created_at": dt_to_iso(row.created_at),
     }
 
 
-class UsageRepository:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+class UsageRepository(BaseRepository):
 
     async def start_call(
         self,
@@ -64,8 +55,9 @@ class UsageRepository:
         aspect_ratio: Optional[str] = None,
         generate_audio: bool = True,
         provider: str = PROVIDER_GEMINI,
+        user_id: str = DEFAULT_USER_ID,
     ) -> int:
-        now = _utc_now()
+        now = utc_now()
         prompt_truncated = prompt[:500] if prompt else None
 
         row = ApiCall(
@@ -80,6 +72,7 @@ class UsageRepository:
             status="pending",
             started_at=now,
             provider=provider,
+            user_id=user_id,
         )
         self.session.add(row)
         await self.session.commit()
@@ -97,7 +90,7 @@ class UsageRepository:
         usage_tokens: Optional[int] = None,
         service_tier: str = "default",
     ) -> None:
-        finished_at = _utc_now()
+        finished_at = utc_now()
 
         result = await self.session.execute(
             select(ApiCall).where(ApiCall.id == call_id)
@@ -189,25 +182,25 @@ class UsageRepository:
         filters = _base_filters()
 
         # Main aggregation query
-        row = (await self.session.execute(
-            select(
-                func.coalesce(func.sum(
-                    case((ApiCall.currency == "USD", ApiCall.cost_amount), else_=0)
-                ), 0).label("total_cost_usd"),
-                func.count(case((ApiCall.call_type == "image", 1))).label("image_count"),
-                func.count(case((ApiCall.call_type == "video", 1))).label("video_count"),
-                func.count(case((ApiCall.status == "failed", 1))).label("failed_count"),
-                func.count().label("total_count"),
-            ).select_from(ApiCall).where(*filters)
-        )).one()
+        main_stmt = select(
+            func.coalesce(func.sum(
+                case((ApiCall.currency == "USD", ApiCall.cost_amount), else_=0)
+            ), 0).label("total_cost_usd"),
+            func.count(case((ApiCall.call_type == "image", 1))).label("image_count"),
+            func.count(case((ApiCall.call_type == "video", 1))).label("video_count"),
+            func.count(case((ApiCall.status == "failed", 1))).label("failed_count"),
+            func.count().label("total_count"),
+        ).select_from(ApiCall).where(*filters)
+        main_stmt = self._scope_query(main_stmt, ApiCall)
+        row = (await self.session.execute(main_stmt)).one()
 
         # Cost by currency
-        currency_rows = (await self.session.execute(
-            select(
-                ApiCall.currency,
-                func.coalesce(func.sum(ApiCall.cost_amount), 0).label("total"),
-            ).select_from(ApiCall).where(*filters).group_by(ApiCall.currency)
-        )).all()
+        currency_stmt = select(
+            ApiCall.currency,
+            func.coalesce(func.sum(ApiCall.cost_amount), 0).label("total"),
+        ).select_from(ApiCall).where(*filters).group_by(ApiCall.currency)
+        currency_stmt = self._scope_query(currency_stmt, ApiCall)
+        currency_rows = (await self.session.execute(currency_stmt)).all()
 
         cost_by_currency = {r.currency: round(r.total, 4) for r in currency_rows}
 
@@ -256,6 +249,7 @@ class UsageRepository:
             .group_by(ApiCall.provider, ApiCall.call_type)
             .order_by(ApiCall.provider, ApiCall.call_type)
         )
+        stmt = self._scope_query(stmt, ApiCall)
         rows = (await self.session.execute(stmt)).all()
 
         stats = [
@@ -309,11 +303,13 @@ class UsageRepository:
 
         # Total count
         count_stmt = select(func.count()).select_from(ApiCall).where(*filters)
+        count_stmt = self._scope_query(count_stmt, ApiCall)
         total = (await self.session.execute(count_stmt)).scalar() or 0
 
         # Paginated items
         offset = (page - 1) * page_size
         items_stmt = select(ApiCall).where(*filters).order_by(ApiCall.started_at.desc()).limit(page_size).offset(offset)
+        items_stmt = self._scope_query(items_stmt, ApiCall)
         result = await self.session.execute(items_stmt)
         items = [_row_to_dict(row) for row in result.scalars().all()]
 
@@ -325,9 +321,11 @@ class UsageRepository:
         }
 
     async def get_projects_list(self) -> list[str]:
-        result = await self.session.execute(
+        stmt = (
             select(ApiCall.project_name)
             .distinct()
             .order_by(ApiCall.project_name)
         )
+        stmt = self._scope_query(stmt, ApiCall)
+        result = await self.session.execute(stmt)
         return [row[0] for row in result.all()]

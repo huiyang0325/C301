@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import delete as sa_delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.db.base import DEFAULT_USER_ID, utc_now
 from lib.db.models.api_key import ApiKey
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+from lib.db.repositories.base import BaseRepository
 
 
 def _to_iso(dt: Optional[datetime]) -> Optional[str]:
@@ -32,9 +30,7 @@ def _row_to_dict(row: ApiKey) -> dict[str, Any]:
     }
 
 
-class ApiKeyRepository:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+class ApiKeyRepository(BaseRepository):
 
     async def create(
         self,
@@ -43,14 +39,16 @@ class ApiKeyRepository:
         key_hash: str,
         key_prefix: str,
         expires_at: Optional[datetime] = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any]:
         """Create a new API key record."""
         row = ApiKey(
             name=name,
             key_hash=key_hash,
             key_prefix=key_prefix,
-            created_at=_utc_now(),
+            created_at=utc_now(),
             expires_at=expires_at,
+            user_id=user_id,
         )
         self.session.add(row)
         await self.session.flush()
@@ -59,16 +57,16 @@ class ApiKeyRepository:
 
     async def list_all(self) -> list[dict[str, Any]]:
         """Return all API keys (metadata only, no hashes)."""
-        result = await self.session.execute(
-            select(ApiKey).order_by(ApiKey.created_at.desc())
-        )
+        stmt = select(ApiKey).order_by(ApiKey.created_at.desc())
+        stmt = self._scope_query(stmt, ApiKey)
+        result = await self.session.execute(stmt)
         return [_row_to_dict(r) for r in result.scalars()]
 
     async def get_by_hash(self, key_hash: str) -> Optional[dict[str, Any]]:
         """Look up a key by its SHA-256 hash. Returns full row including hash."""
-        result = await self.session.execute(
-            select(ApiKey).where(ApiKey.key_hash == key_hash)
-        )
+        stmt = select(ApiKey).where(ApiKey.key_hash == key_hash)
+        stmt = self._scope_query(stmt, ApiKey)
+        result = await self.session.execute(stmt)
         row = result.scalar_one_or_none()
         if row is None:
             return None
@@ -84,9 +82,9 @@ class ApiKeyRepository:
 
     async def get_by_id(self, key_id: int) -> Optional[dict[str, Any]]:
         """Look up a key by its primary key ID. Includes key_hash for cache invalidation."""
-        result = await self.session.execute(
-            select(ApiKey).where(ApiKey.id == key_id)
-        )
+        stmt = select(ApiKey).where(ApiKey.id == key_id)
+        stmt = self._scope_query(stmt, ApiKey)
+        result = await self.session.execute(stmt)
         row = result.scalar_one_or_none()
         if row is None:
             return None
@@ -106,5 +104,5 @@ class ApiKeyRepository:
         await self.session.execute(
             update(ApiKey)
             .where(ApiKey.key_hash == key_hash)
-            .values(last_used_at=_utc_now())
+            .values(last_used_at=utc_now())
         )
