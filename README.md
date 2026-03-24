@@ -75,6 +75,7 @@ graph TD
     D --> E
     E --> F["🎬 生成视频片段"]
     F --> G["🎞️ FFmpeg 合成最终视频"]
+    F --> H["📦 导出剪映草稿"]
 ```
 
 ## 功能特性
@@ -92,6 +93,7 @@ graph TD
 - **多供应商费用追踪** — 按供应商分策略计费（Gemini 按分辨率×时长 USD、Seedance 按 token 用量 CNY、Grok 按秒 USD），不同币种分别统计
 - **用户认证** — JWT 登录 + API Key 认证双模式，支持外部平台集成
 - **OpenClaw 集成** — 提供 AgentSkill 定义文件与同步对话端点，可通过 OpenClaw 等外部 AI Agent 平台调用 ArcReel 能力
+- **剪映草稿导出** — 按集导出为剪映（JianYing）草稿 ZIP，解压即可在剪映桌面版中二次编辑（调节奏、加字幕、转场、配音），说书模式自动附带字幕轨，支持剪映 5.x / 6+（[操作指南](docs/jianying-export-guide.md)）
 - **项目导入/导出** — 整个项目打包归档，方便备份和迁移
 - **竖屏优化** — 默认 9:16 比例，适合短视频平台发布
 
@@ -244,7 +246,9 @@ flowchart TB
 ## 文档
 
 - 📖 [完整入门教程](docs/getting-started.md) — 从零开始的手把手指南
-- 💰 [Google GenAI 费用说明](docs/Google视频&图片生成费用参考.md) — API 调用费用参考
+- 📦 [剪映草稿导出指南](docs/jianying-export-guide.md) — 将视频片段导入剪映桌面版进行二次编辑
+- 💰 [Google GenAI 费用说明](docs/Google视频&图片生成费用参考.md) — Gemini 图像 / Veo 视频生成费用参考
+- 💰 [火山方舟费用说明](docs/火山方舟视频&图片生成费用参考.md) — Seedance 视频生成费用参考
 
 ## 贡献
 
