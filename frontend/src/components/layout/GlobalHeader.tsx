@@ -10,9 +10,19 @@ import { TaskHud } from "@/components/task-hud/TaskHud";
 import { UsageDrawer } from "./UsageDrawer";
 import { WorkspaceNotificationsDrawer } from "./WorkspaceNotificationsDrawer";
 import { ExportScopeDialog } from "./ExportScopeDialog";
-import type { ExportScope } from "./ExportScopeDialog";
+
 import { API } from "@/api";
 import type { WorkspaceNotification } from "@/types";
+
+/** 通过隐藏 <a> 触发浏览器下载，避免 window.open 产生空白标签页 */
+function triggerBrowserDownload(url: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 // ---------------------------------------------------------------------------
 // Phase definitions
@@ -103,6 +113,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [exportingProject, setExportingProject] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [jianyingExporting, setJianyingExporting] = useState(false);
   const usageAnchorRef = useRef<HTMLDivElement>(null);
   const notificationAnchorRef = useRef<HTMLDivElement>(null);
   const taskHudAnchorRef = useRef<HTMLDivElement>(null);
@@ -166,7 +177,26 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
     });
   };
 
-  const handleExportProject = async (scope: ExportScope) => {
+  const handleJianyingExport = async (episode: number, draftPath: string, jianyingVersion: string) => {
+    if (!currentProjectName || jianyingExporting) return;
+
+    setJianyingExporting(true);
+    try {
+      const { download_token } = await API.requestExportToken(currentProjectName, "current");
+      const url = API.getJianyingDraftDownloadUrl(
+        currentProjectName, episode, draftPath, download_token, jianyingVersion,
+      );
+      triggerBrowserDownload(url);
+      setExportDialogOpen(false);
+      useAppStore.getState().pushToast("剪映草稿导出已开始，请将下载的 ZIP 解压到剪映草稿目录中", "success");
+    } catch (err) {
+      useAppStore.getState().pushToast(`剪映草稿导出失败: ${(err as Error).message}`, "error");
+    } finally {
+      setJianyingExporting(false);
+    }
+  };
+
+  const handleExportProject = async (scope: "current" | "full") => {
     if (!currentProjectName || exportingProject) return;
 
     setExportDialogOpen(false);
@@ -174,7 +204,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
     try {
       const { download_token, diagnostics } = await API.requestExportToken(currentProjectName, scope);
       const url = API.getExportDownloadUrl(currentProjectName, download_token, scope);
-      window.open(url, "_blank");
+      triggerBrowserDownload(url);
       const diagnosticCount =
         diagnostics.blocking.length + diagnostics.auto_fixed.length + diagnostics.warnings.length;
       useAppStore.getState().pushToast(
@@ -331,8 +361,11 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
           <ExportScopeDialog
             open={exportDialogOpen}
             onClose={() => setExportDialogOpen(false)}
-            onSelect={(scope) => void handleExportProject(scope)}
+            onSelect={(scope) => { if (scope !== "jianying-draft") void handleExportProject(scope); }}
             anchorRef={exportAnchorRef}
+            episodes={currentProjectData?.episodes ?? []}
+            onJianyingExport={handleJianyingExport}
+            jianyingExporting={jianyingExporting}
           />
         </div>
 

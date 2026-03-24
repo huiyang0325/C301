@@ -32,6 +32,9 @@ vi.mock("./ExportScopeDialog", () => ({
     onClose: () => void;
     onSelect: (scope: "current" | "full") => void;
     anchorRef: React.RefObject<HTMLElement | null>;
+    episodes?: unknown[];
+    onJianyingExport?: (episode: number, draftPath: string, jianyingVersion: string) => void;
+    jianyingExporting?: boolean;
   }) =>
     open ? (
       <div data-testid="export-scope-dialog">
@@ -139,7 +142,7 @@ describe("GlobalHeader", () => {
         warnings: [],
       },
     });
-    const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null);
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
     useProjectsStore.setState({
       currentProjectName: "demo",
@@ -164,10 +167,7 @@ describe("GlobalHeader", () => {
     await waitFor(() => {
       expect(API.requestExportToken).toHaveBeenCalledWith("demo", "current");
     });
-    expect(windowOpen).toHaveBeenCalledWith(
-      expect.stringContaining("download_token=test-download-token"),
-      "_blank",
-    );
+    expect(anchorClick).toHaveBeenCalled();
     expect(useAppStore.getState().toast?.text).toContain("包含 1 条诊断");
   });
 
