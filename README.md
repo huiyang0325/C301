@@ -25,10 +25,9 @@
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-191919?logo=anthropic&logoColor=white" alt="Claude Agent SDK">
-  <img src="https://img.shields.io/badge/Nano_Banana_2-Image_AI-886FBF?logo=googlegemini&logoColor=white" alt="Nano Banana 2">
-  <img src="https://img.shields.io/badge/Veo_3.1-Video_AI-EA4335?logo=google&logoColor=white" alt="Veo 3.1">
-  <img src="https://img.shields.io/badge/Seedance_1.5-Video_AI-FF6A00?logo=data:image/svg+xml;base64,..." alt="Seedance">
-  <img src="https://img.shields.io/badge/Grok-Video_AI-000000?logo=x&logoColor=white" alt="Grok">
+  <img src="https://img.shields.io/badge/Gemini-Image_&_Video-886FBF?logo=googlegemini&logoColor=white" alt="Gemini">
+  <img src="https://img.shields.io/badge/火山方舟-Image_&_Video-FF6A00?logo=bytedance&logoColor=white" alt="火山方舟">
+  <img src="https://img.shields.io/badge/Grok-Image_&_Video-000000?logo=x&logoColor=white" alt="Grok">
 </p>
 
 <p align="center">
@@ -46,12 +45,12 @@
 基于 <strong>Claude Agent SDK</strong>，编排 Skill + 聚焦 Subagent 多智能体协作，自动完成从剧本创作到视频合成的完整流水线
 </td>
 <td width="20%" align="center">
-<h3>🎨 Nano Banana 2 图像生成</h3>
-Gemini 最新图像模型驱动，人物设计图确保角色一致性，线索追踪保证道具/场景跨镜连贯
+<h3>🎨 多供应商图像生成</h3>
+支持 <strong>Gemini</strong>、<strong>火山方舟</strong>、<strong>Grok</strong> 三大图像供应商，人物设计图确保角色一致性，线索追踪保证道具/场景跨镜连贯
 </td>
 <td width="20%" align="center">
 <h3>🎬 多供应商视频生成</h3>
-支持 <strong>Veo 3.1</strong>、<strong>Seedance</strong>、<strong>Grok</strong> 三大视频供应商，可按视频项目切换
+支持 <strong>Veo 3.1</strong>、<strong>Seedance</strong>、<strong>Grok</strong> 三大视频供应商，全局/项目级可切换
 </td>
 <td width="20%" align="center">
 <h3>⚡ 异步任务队列</h3>
@@ -82,7 +81,8 @@ graph TD
 
 - **完整生产流水线** — 小说 → 剧本 → 人物设计 → 分镜图片 → 视频片段 → 成片，一键编排
 - **多智能体架构** — 编排 Skill 检测项目状态并自动调度聚焦 Subagent，每个 Subagent 独立完成一项任务后返回摘要
-- **多视频供应商** — 支持 Gemini (Veo 3.1)、Seedance 1.5 (火山方舟)、Grok (xAI) 三大视频生成后端，全局/视频项目级可切换
+- **多图片供应商** — 支持 Gemini (Nano Banana 2)、火山方舟 (Seedream 5)、Grok 三大图片生成后端，全局/项目级可切换
+- **多视频供应商** — 支持 Gemini (Veo 3.1)、火山方舟 (Seedance 1.5 Pro)、Grok (xAI) 三大视频生成后端，全局/项目级可切换
 - **两种内容模式** — 说书模式（narration）按朗读节奏拆分片段，剧集动画模式（drama）按场景/对话结构组织
 - **渐进式分集规划** — 人机协作切分长篇小说：peek 脚本探测切分点上下文 → Agent 建议自然断点 → 用户确认 → 物理切分为单集文件，按需制作、无需一次规划全部集数
 - **风格参考图** — 上传一张风格图，AI 自动分析生成风格描述，后续所有内容生成（人物/线索/分镜）统一使用该风格，确保全项目视觉一致
@@ -90,7 +90,7 @@ graph TD
 - **场景连贯** — 分镜图自动参考上一张生成，确保相邻场景画面衔接自然
 - **线索追踪** — 关键道具、场景元素标记为"线索"，跨镜头保持视觉连贯
 - **版本历史** — 每次重新生成自动保存历史版本，支持一键回滚
-- **多供应商费用追踪** — 按供应商分策略计费（Gemini 按分辨率×时长 USD、Seedance 按 token 用量 CNY、Grok 按秒 USD），不同币种分别统计
+- **多供应商费用追踪** — 按供应商分策略计费（Gemini 按分辨率×时长 USD、火山方舟按 token 用量 CNY、Grok 按秒 USD），不同币种分别统计
 - **用户认证** — JWT 登录 + API Key 认证双模式，支持外部平台集成
 - **OpenClaw 集成** — 提供 AgentSkill 定义文件与同步对话端点，可通过 OpenClaw 等外部 AI Agent 平台调用 ArcReel 能力
 - **剪映草稿导出** — 按集导出为剪映（JianYing）草稿 ZIP，解压即可在剪映桌面版中二次编辑（调节奏、加字幕、转场、配音），说书模式自动附带字幕轨，支持剪映 5.x / 6+（[操作指南](docs/jianying-export-guide.md)）
@@ -129,9 +129,7 @@ docker compose up -d
 首次启动后，前往 **设置页**（`/settings`）完成以下配置即可开始使用：
 
 1. **ArcReel 智能体** — 配置 Anthropic API Key（驱动 AI 助手）
-2. **AI 生图/生视频** — 配置至少一个视频供应商的 API Key（Gemini / Seedance / Grok）
-
-> **部署提示**：若使用 Seedance（火山方舟）作为视频供应商，部署环境必须公网可访问，因为 Seedance 图片上传需要通过公网地址访问。需在 `.env` 中配置 `FILE_SERVICE_BASE_URL`。
+2. **AI 生图/生视频** — 配置至少一个供应商的 API Key（Gemini / 火山方舟 / Grok）
 
 ## 交流群
 
@@ -141,14 +139,24 @@ docker compose up -d
   <img src="docs/assets/feishu-qr.png" alt="飞书交流群二维码" width="280">
 </p>
 
-## 视频供应商
+## 供应商支持
 
-ArcReel 通过统一的 `VideoBackend` 协议，支持多个视频生成供应商，可在全局或项目级别切换：
+ArcReel 通过统一的 `ImageBackend` / `VideoBackend` 协议，支持多个图片和视频生成供应商，可在全局或项目级别切换：
 
-| 供应商 | 模型 | 能力 | 计费方式 |
-|--------|------|------|----------|
-| **Gemini** (Google) | Veo 3.1 | 文生视频、图生视频、视频延展、负面提示词 | 按分辨率 × 时长查表 (USD) |
-| **Seedance** (火山方舟) | Seedance 1.5 Pro | 文生视频、图生视频、音频生成、种子控制、离线推理 | 按 token 用量 (CNY) |
+### 图片供应商
+
+| 供应商 | 可用模型 | 能力 | 计费方式 |
+|--------|----------|------|----------|
+| **Gemini** (Google) | Nano Banana 2 (gemini-3.1-flash-image-preview), Nano Banana Pro (gemini-3-pro-image-preview) | 文生图、图生图（多参考图） | 按分辨率查表 (USD) |
+| **火山方舟** | Seedream 5、Seedream 5 Lite、Seedream 4.5、Seedream 4 | 文生图、图生图 | 按张计费 (CNY) |
+| **Grok** (xAI) | grok-imagine-image, grok-imagine-image-pro | 文生图、图生图 | 按张计费 (USD) |
+
+### 视频供应商
+
+| 供应商 | 可用模型 | 能力 | 计费方式 |
+|--------|----------|------|----------|
+| **Gemini** (Google) | veo-3.1-generate, veo-3.1-fast-generate | 文生视频、图生视频、视频延展、负面提示词 | 按分辨率 × 时长查表 (USD) |
+| **火山方舟** | Seedance 1.5 Pro | 文生视频、图生视频、音频生成、种子控制、离线推理 | 按 token 用量 (CNY) |
 | **Grok** (xAI) | grok-imagine-video | 文生视频、图生视频 | 按秒计费 (USD) |
 
 供应商选择优先级：项目级设置 > 全局默认。切换供应商时通用设置（分辨率、宽高比、音频等）直接沿用，供应商特有参数保留。
@@ -217,7 +225,7 @@ flowchart TB
     end
 
     subgraph Core["Core Library"]
-        C1["VideoBackend 抽象层<br/>Gemini · Seedance · Grok"] ~~~ C2["GeminiClient<br/>图像生成"]
+        C1["VideoBackend 抽象层<br/>Gemini · 火山方舟 · Grok"] ~~~ C2["ImageBackend 抽象层<br/>Gemini · 火山方舟 · Grok"]
         C3["GenerationQueue<br/>RPM 限速 · Image/Video 通道"] ~~~ C4["ProjectManager<br/>文件系统 + 版本管理"]
     end
 
@@ -236,8 +244,8 @@ flowchart TB
 | **前端** | React 19, TypeScript, Tailwind CSS 4, wouter, zustand, Framer Motion, Vite |
 | **后端** | FastAPI, Python 3.12+, uvicorn, Pydantic 2 |
 | **AI 智能体** | Claude Agent SDK (Skill + Subagent 多智能体架构) |
-| **图像生成** | Google Gemini API (Nano Banana 2) |
-| **视频生成** | Google Veo 3.1 (`google-genai`), Seedance 1.5 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`) |
+| **图像生成** | Gemini Nano Banana 2 (`google-genai`), 火山方舟 Seedream 5 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`) |
+| **视频生成** | Gemini Veo 3.1 (`google-genai`), 火山方舟 Seedance 1.5 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`) |
 | **媒体处理** | FFmpeg, Pillow |
 | **ORM & 数据库** | SQLAlchemy 2.0 (async), Alembic, aiosqlite, asyncpg — SQLite (默认) / PostgreSQL (生产) |
 | **认证** | JWT (`pyjwt`), API Key (SHA-256 哈希), Argon2 密码哈希 (`pwdlib`) |
@@ -248,7 +256,7 @@ flowchart TB
 - 📖 [完整入门教程](docs/getting-started.md) — 从零开始的手把手指南
 - 📦 [剪映草稿导出指南](docs/jianying-export-guide.md) — 将视频片段导入剪映桌面版进行二次编辑
 - 💰 [Google GenAI 费用说明](docs/Google视频&图片生成费用参考.md) — Gemini 图像 / Veo 视频生成费用参考
-- 💰 [火山方舟费用说明](docs/火山方舟视频&图片生成费用参考.md) — Seedance 视频生成费用参考
+- 💰 [火山方舟费用说明](docs/火山方舟视频&图片生成费用参考.md) — 火山方舟图片 / 视频生成费用参考
 
 ## 贡献
 
