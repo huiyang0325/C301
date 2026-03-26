@@ -12,7 +12,7 @@ from lib.cost_calculator import cost_calculator
 from lib.db.base import DEFAULT_USER_ID, dt_to_iso, utc_now
 from lib.db.models.api_call import ApiCall
 from lib.db.repositories.base import BaseRepository
-from lib.video_backends.base import PROVIDER_GEMINI, PROVIDER_GROK, PROVIDER_SEEDANCE
+from lib.providers import PROVIDER_ARK, PROVIDER_GEMINI, PROVIDER_GROK
 
 
 def _row_to_dict(row: ApiCall) -> dict[str, Any]:
@@ -116,24 +116,32 @@ class UsageRepository(BaseRepository):
         effective_provider = row.provider or PROVIDER_GEMINI
 
         if status == "success":
-            if effective_provider == PROVIDER_SEEDANCE and row.call_type == "video":
-                cost_amount, currency = cost_calculator.calculate_seedance_video_cost(
+            if effective_provider == PROVIDER_ARK and row.call_type == "video":
+                cost_amount, currency = cost_calculator.calculate_ark_video_cost(
                     usage_tokens=usage_tokens or 0,
                     service_tier=service_tier,
                     generate_audio=bool(row.generate_audio),
                     model=row.model,
                 )
             elif effective_provider == PROVIDER_GROK and row.call_type == "video":
-                cost_amount = cost_calculator.calculate_grok_video_cost(
+                cost_amount, currency = cost_calculator.calculate_grok_video_cost(
                     duration_seconds=row.duration_seconds or 8,
                     model=row.model,
                 )
-                currency = "USD"
             elif row.call_type == "image":
-                cost_amount = cost_calculator.calculate_image_cost(
-                    row.resolution or "1K", model=row.model
-                )
-                currency = "USD"
+                if effective_provider == PROVIDER_ARK:
+                    cost_amount, currency = cost_calculator.calculate_ark_image_cost(
+                        model=row.model
+                    )
+                elif effective_provider == PROVIDER_GROK:
+                    cost_amount, currency = cost_calculator.calculate_grok_image_cost(
+                        model=row.model
+                    )
+                else:  # gemini
+                    cost_amount = cost_calculator.calculate_image_cost(
+                        row.resolution or "1K", model=row.model
+                    )
+                    currency = "USD"
             elif row.call_type == "video":
                 cost_amount = cost_calculator.calculate_video_cost(
                     duration_seconds=row.duration_seconds or 8,

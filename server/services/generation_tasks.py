@@ -28,20 +28,20 @@ from lib.storyboard_sequence import (
     resolve_previous_storyboard_path,
 )
 from lib.thumbnail import extract_video_thumbnail
-from lib.video_backends.base import PROVIDER_GEMINI, PROVIDER_GROK, PROVIDER_SEEDANCE
+from lib.providers import PROVIDER_ARK, PROVIDER_GEMINI, PROVIDER_GROK
 
 
 pm = ProjectManager(PROJECT_ROOT / "projects")
 rate_limiter = get_shared_rate_limiter()
 logger = logging.getLogger(__name__)
 
-# 按 (provider_name, model) 缓存 VideoBackend 实例，避免每次任务重建 API 客户端
-_backend_cache: dict[tuple[str, str | None], Any] = {}
+# 按 (channel, provider_name, model) 缓存 Backend 实例，避免每次任务重建 API 客户端
+_backend_cache: dict[tuple[str, ...], Any] = {}
 
 # 各供应商默认视频分辨率
 _DEFAULT_VIDEO_RESOLUTION: dict[str, str] = {
     PROVIDER_GEMINI: "1080p",
-    PROVIDER_SEEDANCE: "720p",
+    PROVIDER_ARK: "720p",
     PROVIDER_GROK: "720p",
 }
 
@@ -50,7 +50,7 @@ _PROVIDER_ID_TO_BACKEND: dict[str, str] = {
     "gemini-aistudio": PROVIDER_GEMINI,
     "gemini-vertex": PROVIDER_GEMINI,
     PROVIDER_GEMINI: PROVIDER_GEMINI,
-    PROVIDER_SEEDANCE: PROVIDER_SEEDANCE,
+    PROVIDER_ARK: PROVIDER_ARK,
     PROVIDER_GROK: PROVIDER_GROK,
 }
 
@@ -81,7 +81,7 @@ async def _get_or_create_video_backend(
     from lib.video_backends import create_backend
 
     effective_model = provider_settings.get("model") or default_video_model or None
-    cache_key = (provider_name, effective_model)
+    cache_key = ("video", provider_name, effective_model)
     if cache_key in _backend_cache:
         return _backend_cache[cache_key]
 
@@ -103,8 +103,8 @@ async def _get_or_create_video_backend(
         kwargs["api_key"] = db_config.get("api_key")
         kwargs["rate_limiter"] = rate_limiter
         kwargs["video_model"] = effective_model
-    elif backend_name == PROVIDER_SEEDANCE:
-        db_config = await resolver.provider_config("seedance")
+    elif backend_name == PROVIDER_ARK:
+        db_config = await resolver.provider_config("ark")
         kwargs["api_key"] = db_config.get("api_key")
         kwargs["file_service_base_url"] = db_config.get("file_service_base_url", "")
         kwargs["model"] = effective_model
@@ -118,20 +118,47 @@ async def _get_or_create_video_backend(
     return backend
 
 
-async def _resolve_image_backend(
-    resolver: "ConfigResolver", payload: dict | None,
-) -> tuple[str, str, str]:
-    """解析图片后端，返回 (backend_type, gemini_config_id, image_model)。
+async def _get_or_create_image_backend(
+    provider_name: str,
+    provider_settings: dict,
+    resolver: "ConfigResolver",
+    *,
+    default_image_model: str | None = None,
+):
+    """获取或创建 ImageBackend 实例（带缓存）。"""
+    from lib.image_backends import create_backend
 
-    优先级：payload 中的项目级配置 > 全局默认。
-    """
-    image_provider_id, image_model = await resolver.default_image_backend()
-    if payload and payload.get("image_provider"):
-        image_provider_id = payload["image_provider"]
-        image_model = payload.get("image_model", "") or image_model
-    if image_provider_id == "gemini-vertex":
-        return "vertex", "gemini-vertex", image_model
-    return "aistudio", "gemini-aistudio", image_model
+    effective_model = provider_settings.get("model") or default_image_model or None
+    cache_key = ("image", provider_name, effective_model)
+    if cache_key in _backend_cache:
+        return _backend_cache[cache_key]
+
+    backend_name = _PROVIDER_ID_TO_BACKEND.get(provider_name, provider_name)
+
+    kwargs: dict = {}
+    if backend_name == PROVIDER_GEMINI:
+        if provider_name == "gemini-vertex":
+            kwargs["backend_type"] = "vertex"
+        else:
+            kwargs["backend_type"] = "aistudio"
+        config_id = "gemini-vertex" if kwargs["backend_type"] == "vertex" else "gemini-aistudio"
+        db_config = await resolver.provider_config(config_id)
+        kwargs["api_key"] = db_config.get("api_key")
+        kwargs["base_url"] = db_config.get("base_url")
+        kwargs["rate_limiter"] = rate_limiter
+        kwargs["image_model"] = effective_model
+    elif backend_name == PROVIDER_ARK:
+        db_config = await resolver.provider_config("ark")
+        kwargs["api_key"] = db_config.get("api_key")
+        kwargs["model"] = effective_model
+    elif backend_name == PROVIDER_GROK:
+        db_config = await resolver.provider_config("grok")
+        kwargs["api_key"] = db_config.get("api_key")
+        kwargs["model"] = effective_model
+
+    backend = create_backend(backend_name, **kwargs)
+    _backend_cache[cache_key] = backend
+    return backend
 
 
 async def _resolve_video_backend(
@@ -164,29 +191,41 @@ async def _resolve_video_backend(
     return video_backend, video_backend_type, video_model
 
 
-async def get_media_generator(project_name: str, payload: dict | None = None, *, user_id: str = DEFAULT_USER_ID) -> MediaGenerator:
-    """创建 MediaGenerator。仅当 payload 包含视频配置时才初始化视频后端。"""
+async def get_media_generator(
+    project_name: str,
+    payload: dict | None = None,
+    *,
+    user_id: str = DEFAULT_USER_ID,
+    require_image_backend: bool = True,
+) -> MediaGenerator:
+    """创建 MediaGenerator。仅按调用场景初始化所需的 backend。"""
     from lib.config.resolver import ConfigResolver
     from lib.db import async_session_factory
 
     project_path = get_project_manager().get_project_path(project_name)
     resolver = ConfigResolver(async_session_factory)
 
-    image_backend_type, gemini_config_id, image_model = await _resolve_image_backend(resolver, payload)
-    gemini_config = await resolver.provider_config(gemini_config_id)
-    video_backend, video_backend_type, video_model = await _resolve_video_backend(project_name, resolver, payload)
+    image_backend = None
+    if require_image_backend:
+        image_provider_id, image_model = await resolver.default_image_backend()
+        if payload and payload.get("image_provider"):
+            image_provider_id = payload["image_provider"]
+            image_model = payload.get("image_model", "") or image_model
+        image_backend = await _get_or_create_image_backend(
+            image_provider_id, {}, resolver, default_image_model=image_model,
+        )
+
+    # 解析 video backend（保持现有逻辑）
+    video_backend, _, _ = await _resolve_video_backend(
+        project_name, resolver, payload,
+    )
 
     return MediaGenerator(
         project_path,
         rate_limiter=rate_limiter,
+        image_backend=image_backend,
         video_backend=video_backend,
         config_resolver=resolver,
-        image_backend_type=image_backend_type,
-        video_backend_type=video_backend_type,
-        gemini_api_key=gemini_config.get("api_key"),
-        gemini_base_url=gemini_config.get("base_url"),
-        gemini_image_model=image_model or None,
-        gemini_video_model=video_model or None,
         user_id=user_id,
     )
 
@@ -456,7 +495,11 @@ async def execute_storyboard_task(project_name: str, resource_id: str, payload: 
         previous_storyboard_path=previous_storyboard_path,
     )
 
-    generator = await get_media_generator(project_name, payload=payload, user_id=user_id)
+    generator = await get_media_generator(
+        project_name,
+        payload=payload,
+        user_id=user_id,
+    )
     aspect_ratio = get_aspect_ratio(project, "storyboards")
 
     _, version = await generator.generate_image_async(

@@ -42,10 +42,10 @@ class TestCostCalculator:
         assert isinstance(cost_calculator, CostCalculator)
 
 
-class TestSeedanceCost:
+class TestArkCost:
     def test_online_with_audio(self):
         calculator = CostCalculator()
-        amount, currency = calculator.calculate_seedance_video_cost(
+        amount, currency = calculator.calculate_ark_video_cost(
             usage_tokens=246840,
             service_tier="default",
             generate_audio=True,
@@ -56,7 +56,7 @@ class TestSeedanceCost:
 
     def test_online_no_audio(self):
         calculator = CostCalculator()
-        amount, currency = calculator.calculate_seedance_video_cost(
+        amount, currency = calculator.calculate_ark_video_cost(
             usage_tokens=246840,
             service_tier="default",
             generate_audio=False,
@@ -66,7 +66,7 @@ class TestSeedanceCost:
 
     def test_flex_with_audio(self):
         calculator = CostCalculator()
-        amount, currency = calculator.calculate_seedance_video_cost(
+        amount, currency = calculator.calculate_ark_video_cost(
             usage_tokens=246840,
             service_tier="flex",
             generate_audio=True,
@@ -76,7 +76,7 @@ class TestSeedanceCost:
 
     def test_flex_no_audio(self):
         calculator = CostCalculator()
-        amount, currency = calculator.calculate_seedance_video_cost(
+        amount, currency = calculator.calculate_ark_video_cost(
             usage_tokens=246840,
             service_tier="flex",
             generate_audio=False,
@@ -86,7 +86,7 @@ class TestSeedanceCost:
 
     def test_zero_tokens(self):
         calculator = CostCalculator()
-        amount, currency = calculator.calculate_seedance_video_cost(
+        amount, currency = calculator.calculate_ark_video_cost(
             usage_tokens=0,
             service_tier="default",
             generate_audio=True,
@@ -96,7 +96,7 @@ class TestSeedanceCost:
 
     def test_unknown_model_uses_default(self):
         calculator = CostCalculator()
-        amount, currency = calculator.calculate_seedance_video_cost(
+        amount, currency = calculator.calculate_ark_video_cost(
             usage_tokens=1_000_000,
             service_tier="default",
             generate_audio=True,
@@ -109,23 +109,25 @@ class TestSeedanceCost:
 class TestGrokCost:
     def test_default_model_per_second(self):
         calculator = CostCalculator()
-        cost = calculator.calculate_grok_video_cost(
+        cost, currency = calculator.calculate_grok_video_cost(
             duration_seconds=10,
             model="grok-imagine-video",
         )
         assert cost == pytest.approx(0.50)
+        assert currency == "USD"
 
     def test_short_video(self):
         calculator = CostCalculator()
-        cost = calculator.calculate_grok_video_cost(
+        cost, currency = calculator.calculate_grok_video_cost(
             duration_seconds=1,
             model="grok-imagine-video",
         )
         assert cost == pytest.approx(0.050)
+        assert currency == "USD"
 
     def test_max_duration(self):
         calculator = CostCalculator()
-        cost = calculator.calculate_grok_video_cost(
+        cost, _ = calculator.calculate_grok_video_cost(
             duration_seconds=15,
             model="grok-imagine-video",
         )
@@ -133,7 +135,7 @@ class TestGrokCost:
 
     def test_zero_duration(self):
         calculator = CostCalculator()
-        cost = calculator.calculate_grok_video_cost(
+        cost, _ = calculator.calculate_grok_video_cost(
             duration_seconds=0,
             model="grok-imagine-video",
         )
@@ -141,8 +143,49 @@ class TestGrokCost:
 
     def test_unknown_model_uses_default(self):
         calculator = CostCalculator()
-        cost = calculator.calculate_grok_video_cost(
+        cost, _ = calculator.calculate_grok_video_cost(
             duration_seconds=10,
             model="unknown-grok-model",
         )
         assert cost == pytest.approx(0.50)
+
+
+class TestArkImageCost:
+    def test_ark_image_cost_default(self):
+        cost, currency = cost_calculator.calculate_ark_image_cost()
+        assert currency == "CNY"
+        assert cost == pytest.approx(0.22)
+
+    def test_ark_image_cost_by_model(self):
+        cost, _ = cost_calculator.calculate_ark_image_cost(model="doubao-seedream-4-5-251128")
+        assert cost == pytest.approx(0.25)
+
+    def test_ark_image_cost_n_images(self):
+        cost, _ = cost_calculator.calculate_ark_image_cost(n=3)
+        assert cost == pytest.approx(0.22 * 3)
+
+    def test_ark_image_cost_unknown_model(self):
+        cost, currency = cost_calculator.calculate_ark_image_cost(model="unknown-model")
+        assert currency == "CNY"
+        assert cost == pytest.approx(0.22)
+
+
+class TestGrokImageCost:
+    def test_grok_image_cost_default(self):
+        cost, currency = cost_calculator.calculate_grok_image_cost()
+        assert cost == pytest.approx(0.02)
+        assert currency == "USD"
+
+    def test_grok_image_cost_pro(self):
+        cost, currency = cost_calculator.calculate_grok_image_cost(model="grok-imagine-image-pro")
+        assert cost == pytest.approx(0.07)
+        assert currency == "USD"
+
+    def test_grok_image_cost_n_images(self):
+        cost, _ = cost_calculator.calculate_grok_image_cost(n=4)
+        assert cost == pytest.approx(0.02 * 4)
+
+    def test_grok_image_cost_unknown_model(self):
+        cost, currency = cost_calculator.calculate_grok_image_cost(model="unknown-model")
+        assert cost == pytest.approx(0.02)
+        assert currency == "USD"
