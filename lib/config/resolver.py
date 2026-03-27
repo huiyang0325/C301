@@ -12,8 +12,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from lib.config.service import ConfigService, _DEFAULT_TEXT_BACKEND
 from lib.config.registry import PROVIDER_REGISTRY
+from lib.db.repositories.credential_repository import CredentialRepository
 from lib.project_manager import ProjectManager
 from lib.env_init import PROJECT_ROOT
 from lib.text_backends.base import TextTaskType
@@ -89,13 +92,13 @@ class ConfigResolver:
         """获取单个供应商配置。"""
         async with self._session_factory() as session:
             svc = ConfigService(session)
-            return await self._resolve_provider_config(svc, provider_id)
+            return await self._resolve_provider_config(svc, session, provider_id)
 
     async def all_provider_configs(self) -> dict[str, dict[str, str]]:
         """批量获取所有供应商配置。"""
         async with self._session_factory() as session:
             svc = ConfigService(session)
-            return await self._resolve_all_provider_configs(svc)
+            return await self._resolve_all_provider_configs(svc, session)
 
     # ── 内部解析方法（可独立测试，接收已创建的 svc） ──
 
@@ -122,11 +125,26 @@ class ConfigResolver:
     async def _resolve_default_image_backend(self, svc: ConfigService) -> tuple[str, str]:
         return await svc.get_default_image_backend()
 
-    async def _resolve_provider_config(self, svc: ConfigService, provider_id: str) -> dict[str, str]:
-        return await svc.get_provider_config(provider_id)
+    async def _resolve_provider_config(
+        self, svc: ConfigService, session: AsyncSession, provider_id: str,
+    ) -> dict[str, str]:
+        config = await svc.get_provider_config(provider_id)
+        cred_repo = CredentialRepository(session)
+        active = await cred_repo.get_active(provider_id)
+        if active:
+            active.overlay_config(config)
+        return config
 
-    async def _resolve_all_provider_configs(self, svc: ConfigService) -> dict[str, dict[str, str]]:
-        return await svc.get_all_provider_configs()
+    async def _resolve_all_provider_configs(
+        self, svc: ConfigService, session: AsyncSession,
+    ) -> dict[str, dict[str, str]]:
+        configs = await svc.get_all_provider_configs()
+        cred_repo = CredentialRepository(session)
+        active_creds = await cred_repo.get_active_credentials_bulk()
+        for provider_id, cred in active_creds.items():
+            cfg = configs.setdefault(provider_id, {})
+            cred.overlay_config(cfg)
+        return configs
 
     async def default_text_backend(self) -> tuple[str, str]:
         """返回 (provider_id, model_id)。"""
