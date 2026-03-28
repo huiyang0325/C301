@@ -60,6 +60,8 @@ class UsageTracker:
         usage_tokens: Optional[int] = None,
         service_tier: str = "default",
         generate_audio: Optional[bool] = None,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
     ) -> None:
 
         async with self._session_factory() as session:
@@ -73,6 +75,8 @@ class UsageTracker:
                 usage_tokens=usage_tokens,
                 service_tier=service_tier,
                 generate_audio=generate_audio,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
 
     async def get_stats(

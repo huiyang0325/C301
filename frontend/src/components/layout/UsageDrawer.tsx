@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, type RefObject } from "react";
-import { X, Image, Video, AlertCircle, DollarSign, ChevronLeft, ChevronRight } from "lucide-react";
-import { useUsageStore } from "@/stores/usage-store";
+import { X, Image, Video, FileText, AlertCircle, DollarSign, ChevronLeft, ChevronRight } from "lucide-react";
+import { useUsageStore, type UsageStats, type UsageCall } from "@/stores/usage-store";
 import { API } from "@/api";
 import { Popover } from "@/components/ui/Popover";
 
@@ -15,23 +15,12 @@ interface UsageDrawerProps {
   anchorRef: RefObject<HTMLElement | null>;
 }
 
-interface UsageCall {
-  id: string;
-  project_name: string;
-  call_type: string;
-  model: string;
-  status: string;
-  cost_amount: number;
-  currency: string;
-  provider: string;
-  output_path: string | null;
-  resolution: string | null;
-  duration_seconds: number | null;
-  duration_ms: number | null;
-  error_message: string | null;
-  started_at: string;
-  created_at: string;
-}
+const CALL_TYPE_CONFIG: Record<string, { icon: typeof Image; color: string; label: string }> = {
+  video: { icon: Video, color: "text-purple-400", label: "视频" },
+  text: { icon: FileText, color: "text-green-400", label: "文本" },
+  image: { icon: Image, color: "text-blue-400", label: "图片" },
+};
+
 
 export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDrawerProps) {
   const { stats, calls, total, page, pageSize, setStats, setCalls, setPage, setLoading } = useUsageStore();
@@ -43,14 +32,7 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
     setLoading(true);
     API.getUsageStats(projectName ? { projectName } : {})
       .then((res) => {
-        setStats(res as {
-          total_cost: number;
-          cost_by_currency: Record<string, number>;
-          image_count: number;
-          video_count: number;
-          failed_count: number;
-          total_count: number;
-        });
+        setStats(res as unknown as UsageStats);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -107,7 +89,7 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
       </div>
 
       {/* Stats summary */}
-      <div className="grid grid-cols-4 gap-2 border-b border-gray-800 px-4 py-3">
+      <div className="grid grid-cols-5 gap-2 border-b border-gray-800 px-4 py-3">
         <StatBlock
           label="总费用"
           value={
@@ -119,6 +101,7 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
         />
         <StatBlock label="图片" value={String(stats?.image_count ?? 0)} icon={<Image className="h-3 w-3 text-blue-400" />} />
         <StatBlock label="视频" value={String(stats?.video_count ?? 0)} icon={<Video className="h-3 w-3 text-purple-400" />} />
+        <StatBlock label="文本" value={String(stats?.text_count ?? 0)} icon={<FileText className="h-3 w-3 text-green-400" />} />
         <StatBlock label="失败" value={String(stats?.failed_count ?? 0)} icon={<AlertCircle className="h-3 w-3 text-red-400" />} />
       </div>
 
@@ -132,7 +115,8 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
           <ul className="divide-y divide-gray-800">
             {calls.map((call) => {
               const filename = extractFilename(call.output_path);
-              const typeLabel = call.call_type === "video" ? "视频" : "图片";
+              const cfg = CALL_TYPE_CONFIG[call.call_type] ?? CALL_TYPE_CONFIG.image;
+              const TypeIcon = cfg.icon;
               const durationInfo = call.duration_ms
                 ? `${(call.duration_ms / 1000).toFixed(1)}s`
                 : null;
@@ -142,14 +126,10 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
                   {/* Row 1: type + filename + status + cost */}
                   <div className="flex items-center gap-2">
                     <span className="shrink-0">
-                      {call.call_type === "video" ? (
-                        <Video className="h-3.5 w-3.5 text-purple-400" />
-                      ) : (
-                        <Image className="h-3.5 w-3.5 text-blue-400" />
-                      )}
+                      <TypeIcon className={`h-3.5 w-3.5 ${cfg.color}`} />
                     </span>
                     <span className="flex-1 truncate text-xs text-gray-200" title={call.output_path ?? undefined}>
-                      {filename || typeLabel}
+                      {filename || cfg.label}
                     </span>
                     <StatusBadge status={call.status} />
                     <span className={`shrink-0 text-xs font-mono ${call.cost_amount > 0 ? "text-gray-200" : "text-gray-500"}`}>
@@ -159,8 +139,17 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
                   {/* Row 2: model + resolution + duration + time */}
                   <div className="mt-0.5 flex items-center gap-2 pl-5.5 text-[10px] text-gray-500">
                     <span className="truncate">{call.model}</span>
-                    {call.resolution && <span>{call.resolution}</span>}
-                    {durationInfo && <span>{durationInfo}</span>}
+                    {call.call_type === "text" ? (
+                      <>
+                        {call.input_tokens != null && <span>输入 {call.input_tokens.toLocaleString()}</span>}
+                        {call.output_tokens != null && <span>输出 {call.output_tokens.toLocaleString()} tokens</span>}
+                      </>
+                    ) : (
+                      <>
+                        {call.resolution && <span>{call.resolution}</span>}
+                        {durationInfo && <span>{durationInfo}</span>}
+                      </>
+                    )}
                     <span className="ml-auto shrink-0">{formatDateTime(call.started_at || call.created_at)}</span>
                   </div>
                   {/* Row 3: error message (if failed) */}
