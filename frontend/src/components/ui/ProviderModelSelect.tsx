@@ -9,8 +9,10 @@ interface ProviderModelSelectProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
-  /** If true, adds "跟随全局默认" option that returns empty string */
+  /** If true, adds a default option that returns empty string */
   allowDefault?: boolean;
+  /** Label for the default option (defaults to "跟随全局默认") */
+  defaultLabel?: string;
   defaultHint?: string; // "当前: gemini-aistudio/veo-3.1-generate-001"
   /** Accessible label for the trigger button */
   "aria-label"?: string;
@@ -19,7 +21,6 @@ interface ProviderModelSelectProps {
 interface FlatOption {
   type: "default" | "option";
   fullValue: string;
-  label: string;
 }
 
 function groupByProvider(options: string[]): Record<string, string[]> {
@@ -45,6 +46,7 @@ export function ProviderModelSelect({
   placeholder = "选择模型…",
   className,
   allowDefault,
+  defaultLabel,
   defaultHint,
   "aria-label": ariaLabel,
 }: ProviderModelSelectProps) {
@@ -60,14 +62,13 @@ export function ProviderModelSelect({
   const flatOptions = useMemo(() => {
     const list: FlatOption[] = [];
     if (allowDefault) {
-      list.push({ type: "default", fullValue: "", label: "跟随全局默认" });
+      list.push({ type: "default", fullValue: "" });
     }
     for (const [providerId, models] of Object.entries(grouped)) {
       for (const model of models) {
         list.push({
           type: "option",
           fullValue: `${providerId}/${model}`,
-          label: model,
         });
       }
     }
@@ -214,7 +215,7 @@ export function ProviderModelSelect({
                 activeIndex === 0 ? "bg-gray-800 text-white" : "text-gray-300 hover:bg-gray-800/50"
               }`}
             >
-              <span>跟随全局默认</span>
+              <span>{defaultLabel ?? "跟随全局默认"}</span>
               {defaultHint && (
                 <span className="ml-auto text-xs text-gray-500">{defaultHint}</span>
               )}
