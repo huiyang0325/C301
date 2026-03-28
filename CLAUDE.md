@@ -55,22 +55,35 @@ cd frontend && pnpm test:watch                         # vitest watch 模式
 - `usage.py` — API 用量统计
 - `auth.py` / `api_keys.py` — 认证与 API 密钥管理
 - `system_config.py` — 系统配置
+- `providers.py` — 供应商配置管理（列表、读写、连接测试）
 
 ### lib/ 核心模块
 
-- **GeminiClient** (`gemini_client.py`) — Gemini API 统一封装，含速率限制和重试
-- **MediaGenerator** (`media_generator.py`) — 组合 GeminiClient + VersionManager + UsageTracker
+- **gemini_shared** (`gemini_shared.py`) — 共享工具（RateLimiter、重试装饰器、Vertex AI scopes）
+- **image_backends/** — 多供应商图片生成后端（gemini/ark/grok），Registry 模式
+- **video_backends/** — 多供应商视频生成后端（gemini/ark/grok），Registry 模式
+- **MediaGenerator** (`media_generator.py`) — 组合后端 + VersionManager + UsageTracker
 - **GenerationQueue** (`generation_queue.py`) — 异步任务队列，SQLAlchemy ORM 后端，lease-based 并发控制
 - **GenerationWorker** (`generation_worker.py`) — 后台 Worker，分 image/video 两条并发通道
 - **ProjectManager** (`project_manager.py`) — 项目文件系统操作和数据管理
 - **StatusCalculator** (`status_calculator.py`) — 读时计算状态字段，不存储冗余状态
+- **UsageTracker** (`usage_tracker.py`) — API 用量追踪
+- **CostCalculator** (`cost_calculator.py`) — 费用计算
+- **TextGenerator** (`text_generator.py`) — 文本生成任务
+
+### lib/config/ — 供应商配置系统
+
+- `registry.py` — 供应商注册表（PROVIDER_REGISTRY）
+- `service.py` — ConfigService，供应商配置读写
+- `repository.py` — 配置持久化 + 密钥脱敏
+- `resolver.py` — 配置解析
 
 ### lib/db/ — SQLAlchemy Async ORM 层
 
 - `engine.py` — 异步引擎 + session factory；`DATABASE_URL` 环境变量控制后端（默认 `sqlite+aiosqlite`）
 - `base.py` — `DeclarativeBase`
-- `models/` — ORM 模型：`Task`、`TaskEvent`、`WorkerLease`、`ApiCall`、`ApiKey`、`AgentSession`
-- `repositories/` — 异步 Repository：`TaskRepository`、`UsageRepository`、`SessionRepository`、`ApiKeyRepository`
+- `models/` — ORM 模型：`Task`、`ApiCall`、`ApiKey`、`AgentSession`、`Config`、`Credential`、`User`
+- `repositories/` — 异步 Repository：`TaskRepository`、`UsageRepository`、`SessionRepository`、`ApiKeyRepository`、`CredentialRepository`
 
 数据库文件：`projects/.arcreel.db`（开发 SQLite）
 
@@ -137,7 +150,8 @@ PYTHONPATH=~/.claude/plugins/cache/claude-plugins-official/skill-creator/*/skill
 
 ## 环境配置
 
-复制 `.env.example` 到 `.env`，设置 `GEMINI_API_KEY` 和 `ANTHROPIC_API_KEY`。
+复制 `.env.example` 到 `.env`，设置认证参数（`AUTH_USERNAME`/`AUTH_PASSWORD`/`AUTH_TOKEN_SECRET`）。
+API Key、后端选择、模型配置等通过 WebUI 配置页（`/settings`）管理。
 外部工具依赖：`ffmpeg`（视频拼接与后期处理）。
 
 ### pytest 配置

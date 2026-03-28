@@ -25,9 +25,9 @@
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React">
   <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-191919?logo=anthropic&logoColor=white" alt="Claude Agent SDK">
-  <img src="https://img.shields.io/badge/Gemini-Image_&_Video-886FBF?logo=googlegemini&logoColor=white" alt="Gemini">
-  <img src="https://img.shields.io/badge/火山方舟-Image_&_Video-FF6A00?logo=bytedance&logoColor=white" alt="火山方舟">
-  <img src="https://img.shields.io/badge/Grok-Image_&_Video-000000?logo=x&logoColor=white" alt="Grok">
+  <img src="https://img.shields.io/badge/Gemini-Image_&_Video_&_Text-886FBF?logo=googlegemini&logoColor=white" alt="Gemini">
+  <img src="https://img.shields.io/badge/火山方舟-Image_&_Video_&_Text-FF6A00?logo=bytedance&logoColor=white" alt="火山方舟">
+  <img src="https://img.shields.io/badge/Grok-Image_&_Video_&_Text-000000?logo=x&logoColor=white" alt="Grok">
 </p>
 
 <p align="center">
@@ -83,6 +83,7 @@ graph TD
 - **多智能体架构** — 编排 Skill 检测项目状态并自动调度聚焦 Subagent，每个 Subagent 独立完成一项任务后返回摘要
 - **多图片供应商** — 支持 Gemini (Nano Banana 2)、火山方舟 (Seedream 5)、Grok 三大图片生成后端，全局/项目级可切换
 - **多视频供应商** — 支持 Gemini (Veo 3.1)、火山方舟 (Seedance 1.5 Pro)、Grok (xAI) 三大视频生成后端，全局/项目级可切换
+- **多文本供应商** — 支持 Gemini、火山方舟、Grok 文本生成后端，剧本生成/概述/风格分析等文本任务统一调度
 - **两种内容模式** — 说书模式（narration）按朗读节奏拆分片段，剧集动画模式（drama）按场景/对话结构组织
 - **渐进式分集规划** — 人机协作切分长篇小说：peek 脚本探测切分点上下文 → Agent 建议自然断点 → 用户确认 → 物理切分为单集文件，按需制作、无需一次规划全部集数
 - **风格参考图** — 上传一张风格图，AI 自动分析生成风格描述，后续所有内容生成（角色/线索/分镜）统一使用该风格，确保全项目视觉一致
@@ -90,7 +91,7 @@ graph TD
 - **场景连贯** — 分镜图自动参考上一张生成，确保相邻场景画面衔接自然
 - **线索追踪** — 关键道具、场景元素标记为"线索"，跨镜头保持视觉连贯
 - **版本历史** — 每次重新生成自动保存历史版本，支持一键回滚
-- **多供应商费用追踪** — 按供应商分策略计费（Gemini 按分辨率×时长 USD、火山方舟按 token 用量 CNY、Grok 按秒 USD），不同币种分别统计
+- **多供应商费用追踪** — 图片/视频/文本生成全部纳入费用计算与使用记录，按供应商分策略计费（Gemini 按分辨率×时长 USD、火山方舟按 token 用量 CNY、Grok 按秒 USD），不同币种分别统计
 - **用户认证** — JWT 登录 + API Key 认证双模式，支持外部平台集成
 - **OpenClaw 集成** — 提供 AgentSkill 定义文件与同步对话端点，可通过 OpenClaw 等外部 AI Agent 平台调用 ArcReel 能力
 - **剪映草稿导出** — 按集导出为剪映（JianYing）草稿 ZIP，解压即可在剪映桌面版中二次编辑（调节奏、加字幕、转场、配音），说书模式自动附带字幕轨，支持剪映 5.x / 6+（[操作指南](docs/jianying-export-guide.md)）
@@ -159,6 +160,14 @@ ArcReel 通过统一的 `ImageBackend` / `VideoBackend` 协议，支持多个图
 | **火山方舟** | Seedance 1.5 Pro | 文生视频、图生视频、音频生成、种子控制、离线推理 | 按 token 用量 (CNY) |
 | **Grok** (xAI) | grok-imagine-video | 文生视频、图生视频 | 按秒计费 (USD) |
 
+### 文本供应商
+
+| 供应商 | 可用模型 | 能力 | 计费方式 |
+|--------|----------|------|----------|
+| **Gemini** (Google) | gemini-3-flash-preview（默认） | 文本生成、结构化输出、视觉理解 | 按 token 用量 (USD) |
+| **火山方舟** | doubao-seed-2-0-lite-260215（默认） | 文本生成、结构化输出、视觉理解 | 按 token 用量 (CNY) |
+| **Grok** (xAI) | grok-4-1-fast-reasoning（默认） | 文本生成、结构化输出、视觉理解 | 按 token 用量 (USD) |
+
 供应商选择优先级：项目级设置 > 全局默认。切换供应商时通用设置（分辨率、宽高比、音频等）直接沿用，供应商特有参数保留。
 
 ## AI 助手架构
@@ -226,7 +235,8 @@ flowchart TB
 
     subgraph Core["Core Library"]
         C1["VideoBackend 抽象层<br/>Gemini · 火山方舟 · Grok"] ~~~ C2["ImageBackend 抽象层<br/>Gemini · 火山方舟 · Grok"]
-        C3["GenerationQueue<br/>RPM 限速 · Image/Video 通道"] ~~~ C4["ProjectManager<br/>文件系统 + 版本管理"]
+        C5["TextBackend 抽象层<br/>Gemini · 火山方舟 · Grok"] ~~~ C3["GenerationQueue<br/>RPM 限速 · Image/Video 通道"]
+        C4["ProjectManager<br/>文件系统 + 版本管理"]
     end
 
     subgraph Data["数据层"]
@@ -246,6 +256,7 @@ flowchart TB
 | **AI 智能体** | Claude Agent SDK (Skill + Subagent 多智能体架构) |
 | **图像生成** | Gemini Nano Banana 2 (`google-genai`), 火山方舟 Seedream 5 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`) |
 | **视频生成** | Gemini Veo 3.1 (`google-genai`), 火山方舟 Seedance 1.5 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`) |
+| **文本生成** | Gemini (`google-genai`), 火山方舟 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`) |
 | **媒体处理** | FFmpeg, Pillow |
 | **ORM & 数据库** | SQLAlchemy 2.0 (async), Alembic, aiosqlite, asyncpg — SQLite (默认) / PostgreSQL (生产) |
 | **认证** | JWT (`pyjwt`), API Key (SHA-256 哈希), Argon2 密码哈希 (`pwdlib`) |
