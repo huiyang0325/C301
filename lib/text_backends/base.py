@@ -32,7 +32,7 @@ class ImageInput:
 class TextGenerationRequest:
     """通用文本生成请求。各 Backend 忽略不支持的字段。"""
     prompt: str
-    response_schema: dict | None = None
+    response_schema: dict | type | None = None
     images: list[ImageInput] | None = None
     system_prompt: str | None = None
 
@@ -45,6 +45,38 @@ class TextGenerationResult:
     model: str
     input_tokens: int | None = None
     output_tokens: int | None = None
+
+
+def resolve_schema(schema: dict | type) -> dict:
+    """将 response_schema 转为无 $ref 的纯 JSON Schema dict。
+
+    - type (Pydantic 类): 调用 model_json_schema() 后内联 $ref
+    - dict: 直接内联 $ref（如果有）
+    """
+    if isinstance(schema, type):
+        schema = schema.model_json_schema()
+
+    defs = schema.get("$defs", {})
+    if not defs:
+        return schema
+
+    def _inline(obj, visited_refs=frozenset()):
+        if isinstance(obj, dict):
+            if "$ref" in obj:
+                ref_name = obj["$ref"].split("/")[-1]
+                if ref_name in visited_refs:
+                    raise ValueError(f"检测到 schema 中的循环引用: {ref_name}")
+                resolved = _inline(defs[ref_name], visited_refs | {ref_name})
+                extra = {k: v for k, v in obj.items() if k != "$ref"}
+                return {**resolved, **extra} if extra else resolved
+            return {k: _inline(v, visited_refs) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_inline(item, visited_refs) for item in obj]
+        return obj
+
+    result = _inline(schema)
+    result.pop("$defs", None)
+    return result
 
 
 class TextBackend(Protocol):
