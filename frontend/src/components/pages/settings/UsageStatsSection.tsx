@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { API } from "@/api";
 import type { UsageStat } from "@/types";
 
+const currencyFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const percentFmt = new Intl.NumberFormat("zh-CN", { style: "percent", maximumFractionDigits: 0 });
+
 const TIME_RANGES = [
   { label: "最近 7 天", days: 7 },
   { label: "最近 30 天", days: 30 },
@@ -52,8 +55,9 @@ export function UsageStatsSection() {
         {TIME_RANGES.map((r) => (
           <button
             key={r.days}
+            type="button"
             onClick={() => setTimeRange(r.days)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${
+            className={`rounded-lg px-3 py-1.5 text-sm focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:outline-none ${
               timeRange === r.days
                 ? "bg-indigo-600 text-white"
                 : "border border-gray-700 text-gray-400 hover:text-gray-200"
@@ -66,7 +70,8 @@ export function UsageStatsSection() {
           <select
             value={providerFilter}
             onChange={(e) => setProviderFilter(e.target.value)}
-            className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-300 focus:border-indigo-500/60 focus:outline-none"
+            aria-label="按供应商筛选"
+            className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-1.5 text-sm text-gray-300 focus:border-indigo-500/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60"
           >
             <option value="">全部供应商</option>
             {providers.map((p) => (
@@ -80,7 +85,7 @@ export function UsageStatsSection() {
 
       {/* Stats */}
       {loading ? (
-        <div className="text-sm text-gray-500">加载中...</div>
+        <div className="text-sm text-gray-500">加载中…</div>
       ) : stats.length === 0 ? (
         <div className="text-sm text-gray-500">暂无数据</div>
       ) : (
@@ -92,7 +97,9 @@ export function UsageStatsSection() {
                   <span className="text-sm font-medium text-gray-100">{s.provider}</span>
                   <span className="ml-2 text-xs text-gray-500">{s.call_type}</span>
                 </div>
-                <span className="text-sm text-gray-300">${s.total_cost_usd.toFixed(2)}</span>
+                <span className="text-sm text-gray-300">
+                  {currencyFmt.format(s.total_cost_usd)}
+                </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-6 text-xs text-gray-400">
                 <span>调用: {s.total_calls}</span>
@@ -100,9 +107,8 @@ export function UsageStatsSection() {
                 <span>
                   成功率:{" "}
                   {s.total_calls > 0
-                    ? ((s.success_calls / s.total_calls) * 100).toFixed(0)
-                    : 0}
-                  %
+                    ? percentFmt.format(s.success_calls / s.total_calls)
+                    : "0%"}
                 </span>
                 {s.call_type === "text" ? (
                   s.total_calls > 0 && <span>类型: 文本生成</span>
