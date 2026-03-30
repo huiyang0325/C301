@@ -33,11 +33,20 @@ class ArkTextBackend:
             api_key=self._api_key,
         )
         self._model = model or DEFAULT_MODEL
-        self._capabilities: Set[TextCapability] = {
-            TextCapability.TEXT_GENERATION,
-            TextCapability.STRUCTURED_OUTPUT,
-            TextCapability.VISION,
-        }
+        self._capabilities: Set[TextCapability] = self._resolve_capabilities()
+
+    def _resolve_capabilities(self) -> Set[TextCapability]:
+        """根据 PROVIDER_REGISTRY 中的模型声明构建能力集合。"""
+        from lib.config.registry import PROVIDER_REGISTRY
+
+        base = {TextCapability.TEXT_GENERATION, TextCapability.VISION}
+        provider_meta = PROVIDER_REGISTRY.get("ark")
+        if provider_meta:
+            model_info = provider_meta.models.get(self._model)
+            if model_info and TextCapability.STRUCTURED_OUTPUT in model_info.capabilities:
+                base.add(TextCapability.STRUCTURED_OUTPUT)
+        # 未注册模型不加 STRUCTURED_OUTPUT：宁可走 Instructor 降级也不调用会报错的原生 API
+        return base
 
     @property
     def name(self) -> str:
@@ -68,20 +77,44 @@ class ArkTextBackend:
         return self._parse_chat_response(response)
 
     async def _generate_structured(self, request: TextGenerationRequest) -> TextGenerationResult:
-        from lib.text_backends.base import resolve_schema
+        if TextCapability.STRUCTURED_OUTPUT in self._capabilities:
+            from lib.text_backends.base import resolve_schema
 
-        messages = self._build_messages(request)
-        schema = resolve_schema(request.response_schema)
-        response = await asyncio.to_thread(
-            self._client.chat.completions.create,
-            model=self._model,
-            messages=messages,
-            response_format={"type": "json_schema", "json_schema": {
-                "name": "response",
-                "schema": schema,
-            }},
-        )
-        return self._parse_chat_response(response)
+            messages = self._build_messages(request)
+            schema = resolve_schema(request.response_schema)
+            response = await asyncio.to_thread(
+                self._client.chat.completions.create,
+                model=self._model,
+                messages=messages,
+                response_format={"type": "json_schema", "json_schema": {
+                    "name": "response",
+                    "schema": schema,
+                }},
+            )
+            return self._parse_chat_response(response)
+        else:
+            if not isinstance(request.response_schema, type):
+                raise TypeError(
+                    f"Instructor 降级路径需要传入 Pydantic 模型类，"
+                    f"收到 {type(request.response_schema).__name__}"
+                )
+            from lib.text_backends.instructor_support import generate_structured_via_instructor
+
+            messages = self._build_messages(request)
+            json_text, input_tokens, output_tokens = await asyncio.to_thread(
+                generate_structured_via_instructor,
+                client=self._client,
+                model=self._model,
+                messages=messages,
+                response_model=request.response_schema,
+            )
+            return TextGenerationResult(
+                text=json_text,
+                provider=PROVIDER_ARK,
+                model=self._model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
 
     async def _generate_vision(self, request: TextGenerationRequest) -> TextGenerationResult:
         content: list[dict[str, Any]] = []
