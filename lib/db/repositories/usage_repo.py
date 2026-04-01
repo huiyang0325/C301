@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import case, func, select, update
 
 from lib.cost_calculator import cost_calculator
+from lib.custom_provider import is_custom_provider, parse_provider_id
 from lib.db.base import DEFAULT_USER_ID, dt_to_iso, utc_now
 from lib.db.models.api_call import ApiCall
 from lib.db.repositories.base import BaseRepository
@@ -92,6 +93,7 @@ class UsageRepository(BaseRepository):
         generate_audio: bool | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        quality: str | None = None,
     ) -> None:
         finished_at = utc_now()
 
@@ -115,6 +117,20 @@ class UsageRepository(BaseRepository):
         currency = row.currency or "USD"
         effective_provider = row.provider or PROVIDER_GEMINI
 
+        # Pre-query custom provider pricing (avoids sync-over-async in CostCalculator)
+        custom_price_input: float | None = None
+        custom_price_output: float | None = None
+        custom_currency: str | None = None
+        if status == "success" and is_custom_provider(effective_provider):
+            from lib.db.repositories.custom_provider_repo import CustomProviderRepository
+
+            repo = CustomProviderRepository(self.session)
+            price_model = await repo.get_model_by_ids(parse_provider_id(effective_provider), row.model or "")
+            if price_model:
+                custom_price_input = price_model.price_input
+                custom_price_output = price_model.price_output
+                custom_currency = price_model.currency
+
         if status == "success":
             cost_amount, currency = cost_calculator.calculate_cost(
                 provider=effective_provider,
@@ -127,6 +143,10 @@ class UsageRepository(BaseRepository):
                 service_tier=service_tier,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                quality=quality,
+                custom_price_input=custom_price_input,
+                custom_price_output=custom_price_output,
+                custom_currency=custom_currency,
             )
 
         error_truncated = error_message[:500] if error_message else None
@@ -280,6 +300,37 @@ class UsageRepository(BaseRepository):
             }
             for row in rows
         ]
+
+        # Enrich each stat entry with display_name (batch query for custom providers)
+        from lib.config.registry import PROVIDER_REGISTRY
+        from lib.db.models.custom_provider import CustomProvider
+
+        custom_ids = set()
+        for stat in stats:
+            p = stat["provider"]
+            if p and is_custom_provider(p):
+                try:
+                    custom_ids.add(parse_provider_id(p))
+                except ValueError:
+                    pass  # 防御畸形 provider 字符串（如 "custom-abc"）
+
+        custom_names: dict[int, str] = {}
+        if custom_ids:
+            cp_stmt = select(CustomProvider).where(CustomProvider.id.in_(custom_ids))
+            cp_rows = (await self.session.execute(cp_stmt)).scalars()
+            custom_names = {cp.id: cp.display_name for cp in cp_rows}
+
+        for stat in stats:
+            provider_str = stat["provider"]
+            if provider_str and is_custom_provider(provider_str):
+                try:
+                    db_id = parse_provider_id(provider_str)
+                    stat["display_name"] = custom_names.get(db_id, provider_str)
+                except ValueError:
+                    stat["display_name"] = provider_str
+            else:
+                meta = PROVIDER_REGISTRY.get(provider_str or "")
+                stat["display_name"] = meta.display_name if meta else provider_str
 
         period_start: str | None = None
         period_end: str | None = None

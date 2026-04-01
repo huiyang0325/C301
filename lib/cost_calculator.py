@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from lib.custom_provider import is_custom_provider
 from lib.providers import PROVIDER_ARK, PROVIDER_GROK, PROVIDER_OPENAI, CallType
 
 
@@ -365,8 +366,25 @@ class CostCalculator:
         output_tokens: int | None = None,
         quality: str | None = None,
         size: str | None = None,
+        custom_price_input: float | None = None,
+        custom_price_output: float | None = None,
+        custom_currency: str | None = None,
     ) -> tuple[float, str]:
-        """统一费用计算入口。按 (call_type, provider) 显式路由。返回 (amount, currency)。"""
+        """统一费用计算入口。按 (call_type, provider) 显式路由。返回 (amount, currency)。
+
+        自定义供应商的价格信息通过 custom_price_* 参数传入（调用方需预先查询 DB）。
+        """
+        if is_custom_provider(provider):
+            return self._calculate_custom_cost(
+                call_type,
+                price_input=custom_price_input,
+                price_output=custom_price_output,
+                currency=custom_currency,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                duration_seconds=duration_seconds,
+            )
+
         if call_type == "text":
             if input_tokens is None:
                 return 0.0, "USD"
@@ -413,6 +431,33 @@ class CostCalculator:
             ), "USD"
 
         return 0.0, "USD"
+
+    @staticmethod
+    def _calculate_custom_cost(
+        call_type: str,
+        *,
+        price_input: float | None = None,
+        price_output: float | None = None,
+        currency: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        duration_seconds: int | None = None,
+    ) -> tuple[float, str]:
+        """根据调用方预查的价格信息计算自定义供应商费用。"""
+        if price_input is None:
+            return 0.0, "USD"
+
+        cur = currency or "USD"
+
+        if call_type == "text":
+            inp = (input_tokens or 0) * price_input
+            out = (output_tokens or 0) * (price_output or 0)
+            return (inp + out) / 1_000_000, cur
+        elif call_type == "image":
+            return price_input, cur
+        elif call_type == "video":
+            return (duration_seconds or 8) * price_input, cur
+        return 0.0, cur
 
 
 # 单例实例，方便使用

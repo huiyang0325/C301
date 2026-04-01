@@ -9,7 +9,7 @@ is managed by the providers router.
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated, Any, TypedDict
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -35,31 +35,53 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 
-async def _build_options(svc: ConfigService) -> dict[str, list[str]]:
+class _OptionsDict(TypedDict):
+    video_backends: list[str]
+    image_backends: list[str]
+    text_backends: list[str]
+    provider_names: dict[str, str]
+
+
+async def _build_options(svc: ConfigService, session: AsyncSession) -> _OptionsDict:
     """Compute available backends from ready providers."""
     statuses = await svc.get_all_providers_status()
     ready_providers = {s.name for s in statuses if s.status == "ready"}
 
-    video_backends: list[str] = []
-    image_backends: list[str] = []
-    text_backends: list[str] = []
+    buckets: dict[str, list[str]] = {
+        "video_backends": [],
+        "image_backends": [],
+        "text_backends": [],
+    }
+    provider_names: dict[str, str] = {}
+    _MEDIA_TO_BUCKET = {"video": "video_backends", "image": "image_backends", "text": "text_backends"}
+
     for provider_id, meta in PROVIDER_REGISTRY.items():
         if provider_id not in ready_providers:
             continue
         for model_id, model_info in meta.models.items():
-            full = f"{provider_id}/{model_id}"
-            if model_info.media_type == "video":
-                video_backends.append(full)
-            elif model_info.media_type == "image":
-                image_backends.append(full)
-            elif model_info.media_type == "text":
-                text_backends.append(full)
+            bucket = _MEDIA_TO_BUCKET.get(model_info.media_type)
+            if bucket:
+                buckets[bucket].append(f"{provider_id}/{model_id}")
 
-    return {
-        "video_backends": video_backends,
-        "image_backends": image_backends,
-        "text_backends": text_backends,
-    }
+    from lib.custom_provider import make_provider_id
+    from lib.db.repositories.custom_provider_repo import CustomProviderRepository
+
+    try:
+        repo = CustomProviderRepository(session)
+        providers = await repo.list_providers()
+        provider_name_map = {p.id: p.display_name for p in providers}
+        enabled_models = await repo.list_all_enabled_models()
+        for model in enabled_models:
+            pid = make_provider_id(model.provider_id)
+            bucket = _MEDIA_TO_BUCKET.get(model.media_type)
+            if bucket:
+                buckets[bucket].append(f"{pid}/{model.model_id}")
+            if pid not in provider_names and model.provider_id in provider_name_map:
+                provider_names[pid] = provider_name_map[model.provider_id]
+    except Exception:
+        pass  # Non-fatal: custom providers unavailable shouldn't break the options endpoint
+
+    return {**buckets, "provider_names": provider_names}
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +131,7 @@ _STRING_SETTINGS = (
 async def get_system_config(
     _user: CurrentUser,
     svc: Annotated[ConfigService, Depends(get_config_service)],
+    session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
     # Read all settings in a single query
     all_s = await svc.get_all_settings()
@@ -138,7 +161,7 @@ async def get_system_config(
         "text_backend_style": all_s.get("text_backend_style") or "",
     }
 
-    options = await _build_options(svc)
+    options = await _build_options(svc, session)
 
     return {"settings": settings, "options": options}
 
