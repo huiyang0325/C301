@@ -20,24 +20,15 @@ frontend/ (React SPA)  →  server/ (FastAPI)  →  lib/ (核心库)
 
 ```bash
 # 后端
-uv run uvicorn server.app:app --reload --port 1241   # 启动开发服务器
-uv run python -m pytest                                # 全部测试
-uv run python -m pytest tests/test_generation_queue.py -v  # 单文件
-uv run python -m pytest -k "test_enqueue" -v           # 按关键字
-uv run python -m pytest --cov --cov-report=html        # 覆盖率
-uv run ruff check .                                    # lint 检查
-uv run ruff format .                                   # 代码格式化
-uv sync                                                # 安装依赖
-uv run alembic upgrade head                            # 数据库迁移
-uv run alembic revision --autogenerate -m "desc"       # 生成迁移
+uv run python -m pytest                              # 测试（-v 单文件 / -k 关键字 / --cov 覆盖率）
+uv run ruff check . && uv run ruff format .          # lint + format
+uv sync                                              # 安装依赖
+uv run alembic upgrade head                          # 数据库迁移
+uv run alembic revision --autogenerate -m "desc"     # 生成迁移
 
-# 前端
-cd frontend && pnpm dev                                # 开发服务器 (5173，代理 /api → 1241)
-cd frontend && pnpm build                              # 生产构建 (含 typecheck)
-cd frontend && pnpm test                               # vitest 测试
-cd frontend && pnpm typecheck                          # TypeScript 类型检查
-cd frontend && pnpm check                              # typecheck + test
-cd frontend && pnpm test:watch                         # vitest watch 模式
+# 前端（cd frontend &&）
+pnpm build       # 生产构建 (含 typecheck)
+pnpm check       # typecheck + test
 ```
 
 ## 架构要点
@@ -57,13 +48,21 @@ cd frontend && pnpm test:watch                         # vitest watch 模式
 - `usage.py` — API 用量统计
 - `auth.py` / `api_keys.py` — 认证与 API 密钥管理
 - `system_config.py` — 系统配置
-- `providers.py` — 供应商配置管理（列表、读写、连接测试）
+- `providers.py` — 预置供应商配置管理（列表、读写、连接测试）
+- `custom_providers.py` — 自定义供应商 CRUD、模型管理与发现、连接测试
+
+### server/services/ — 业务服务层
+
+- `generation_tasks.py` — 分镜/视频/角色/线索生成任务编排
+- `project_archive.py` — 项目导出（ZIP 打包）
+- `project_events.py` — 项目变更事件发布
+- `jianying_draft_service.py` — 剪映草稿导出
 
 ### lib/ 核心模块
 
-- **gemini_shared** (`gemini_shared.py`) — 共享工具（RateLimiter、重试装饰器、Vertex AI scopes）
-- **image_backends/** — 多供应商图片生成后端（gemini/ark/grok），Registry 模式
-- **video_backends/** — 多供应商视频生成后端（gemini/ark/grok），Registry 模式
+- **{gemini,ark,grok,openai}_shared** — 各供应商 SDK 工厂与共享工具
+- **image_backends/** / **video_backends/** / **text_backends/** — 多供应商媒体生成后端，Registry + Factory 模式（gemini/ark/grok/openai）
+- **custom_provider/** — 自定义供应商支持：后端包装、模型发现、工厂创建（OpenAI/Google 兼容）
 - **MediaGenerator** (`media_generator.py`) — 组合后端 + VersionManager + UsageTracker
 - **GenerationQueue** (`generation_queue.py`) — 异步任务队列，SQLAlchemy ORM 后端，lease-based 并发控制
 - **GenerationWorker** (`generation_worker.py`) — 后台 Worker，分 image/video 两条并发通道
@@ -75,17 +74,13 @@ cd frontend && pnpm test:watch                         # vitest watch 模式
 
 ### lib/config/ — 供应商配置系统
 
-- `registry.py` — 供应商注册表（PROVIDER_REGISTRY）
-- `service.py` — ConfigService，供应商配置读写
-- `repository.py` — 配置持久化 + 密钥脱敏
-- `resolver.py` — 配置解析
+ConfigService（`service.py`）→ Repository（持久化 + 密钥脱敏）→ Resolver（解析）。`registry.py` 维护预置供应商注册表（PROVIDER_REGISTRY）。
 
 ### lib/db/ — SQLAlchemy Async ORM 层
 
-- `engine.py` — 异步引擎 + session factory；`DATABASE_URL` 环境变量控制后端（默认 `sqlite+aiosqlite`）
-- `base.py` — `DeclarativeBase`
-- `models/` — ORM 模型：`Task`、`ApiCall`、`ApiKey`、`AgentSession`、`Config`、`Credential`、`User`
-- `repositories/` — 异步 Repository：`TaskRepository`、`UsageRepository`、`SessionRepository`、`ApiKeyRepository`、`CredentialRepository`
+- `engine.py` — 异步引擎 + session factory（`DATABASE_URL` 默认 `sqlite+aiosqlite`）
+- `models/` — ORM 模型：Task / ApiCall / ApiKey / AgentSession / Config / Credential / User / CustomProvider / CustomProviderModel
+- `repositories/` — 异步 Repository：Task / Usage / Session / ApiKey / Credential / CustomProvider
 
 数据库文件：`projects/.arcreel.db`（开发 SQLite）
 
@@ -106,11 +101,13 @@ cd frontend && pnpm test:watch                         # vitest watch 模式
 
 ## 关键设计模式
 
-### 数据分层：写时同步 vs 读时计算
+### 数据分层
 
-- 角色/线索**定义**只存 `project.json`，剧本中仅引用**名称**
-- `scenes_count`、`status`、`progress` 等统计字段由 `StatusCalculator` 读时注入，永不存储
-- 剧集元数据（episode/title/script_file）在剧本保存时写时同步
+| 数据类型 | 存储位置 | 策略 |
+|---------|---------|------|
+| 角色/线索定义 | `project.json` | 单一真相源，剧本中仅引用名称 |
+| 剧集元数据（episode/title/script_file） | `project.json` | 剧本保存时写时同步 |
+| 统计字段（scenes_count / status / progress） | 不存储 | `StatusCalculator` 读时计算注入 |
 
 ### 实时通信
 
@@ -146,9 +143,7 @@ PYTHONPATH=~/.claude/plugins/cache/claude-plugins-official/skill-creator/*/skill
 
 #### Gotchas
 
-- **SKILL.md 是规格文档**：compose-video 等 skill 的 SKILL.md 描述的 CLI 可能超前于脚本实现（如 `--episode`、`--fallback-mode` 等），修改脚本时需对照 SKILL.md 补齐
-- **触发率测试的局限**：`run_eval.py` 用 `claude -p` 跑独立查询（无对话历史），依赖上下文的短指令（如"继续"、"下一步"）在隔离测试中必然失败，不代表实际触发率
-- **CLI 接口一致性**：generate-characters 和 generate-clues 的脚本现在都支持 `--all`/`--list`/`--character|--clue` 三种模式，新增资产类 skill 应遵循此模式
+- **SKILL.md 与脚本同步**：修改 skill 脚本时需同步更新 SKILL.md，反之亦然，二者必须保持一致
 
 ## 环境配置
 
