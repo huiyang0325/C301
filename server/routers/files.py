@@ -14,7 +14,7 @@ from fastapi import APIRouter, Body, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from lib import PROJECT_ROOT
-from lib.image_utils import convert_image_bytes_to_png
+from lib.image_utils import normalize_uploaded_image
 from lib.project_change_hints import project_change_source
 from lib.project_manager import ProjectManager
 from server.auth import CurrentUser
@@ -127,16 +127,17 @@ async def upload_file(
             filename = file.filename
 
         target_dir.mkdir(parents=True, exist_ok=True)
-        target_path = target_dir / filename
 
-        # 保存文件（图片统一转 PNG）
+        # 保存文件（大于 2MB 时压缩为 JPEG，否则校验后原样保存）
         content = await file.read()
         if upload_type in ("character", "character_ref", "clue", "storyboard"):
             try:
-                content = convert_image_bytes_to_png(content)
+                content, ext = normalize_uploaded_image(content, Path(file.filename).suffix.lower())
             except ValueError:
                 raise HTTPException(status_code=400, detail="无效的图片文件，无法解析")
+            filename = Path(filename).with_suffix(ext).name
 
+        target_path = target_dir / filename
         with open(target_path, "wb") as f:
             f.write(content)
 
@@ -503,16 +504,17 @@ async def upload_style_image(project_name: str, _user: CurrentUser, file: Upload
     try:
         project_dir = get_project_manager().get_project_path(project_name)
 
-        # 保存图片（统一转换为 PNG）
+        # 保存图片（大于 2MB 时压缩为 JPEG，否则校验后原样保存）
         content = await file.read()
         try:
-            png_content = convert_image_bytes_to_png(content)
+            content, ext = normalize_uploaded_image(content, Path(file.filename).suffix.lower())
         except ValueError:
             raise HTTPException(status_code=400, detail="无效的图片文件，无法解析")
+        style_filename = f"style_reference{ext}"
 
-        output_path = project_dir / "style_reference.png"
+        output_path = project_dir / style_filename
         with open(output_path, "wb") as f:
-            f.write(png_content)
+            f.write(content)
 
         # 调用 TextGenerator 分析风格（自动追踪用量）
         from lib.text_backends.base import ImageInput, TextGenerationRequest, TextTaskType
@@ -528,16 +530,16 @@ async def upload_style_image(project_name: str, _user: CurrentUser, file: Upload
 
         # 更新 project.json
         project_data = get_project_manager().load_project(project_name)
-        project_data["style_image"] = "style_reference.png"
+        project_data["style_image"] = style_filename
         project_data["style_description"] = style_description
         with project_change_source("webui"):
             get_project_manager().save_project(project_name, project_data)
 
         return {
             "success": True,
-            "style_image": "style_reference.png",
+            "style_image": style_filename,
             "style_description": style_description,
-            "url": f"/api/v1/files/{project_name}/style_reference.png",
+            "url": f"/api/v1/files/{project_name}/{style_filename}",
         }
 
     except FileNotFoundError:
@@ -557,10 +559,11 @@ async def delete_style_image(project_name: str, _user: CurrentUser):
     try:
         project_dir = get_project_manager().get_project_path(project_name)
 
-        # 删除图片文件
-        image_path = project_dir / "style_reference.png"
-        if image_path.exists():
-            image_path.unlink()
+        # 删除图片文件（兼容所有可能的后缀）
+        for suffix in (".jpg", ".jpeg", ".png", ".webp"):
+            image_path = project_dir / f"style_reference{suffix}"
+            if image_path.exists():
+                image_path.unlink()
 
         # 清除 project.json 中的相关字段
         project_data = get_project_manager().load_project(project_name)

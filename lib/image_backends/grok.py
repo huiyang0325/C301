@@ -20,6 +20,30 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "grok-imagine-image"
 
+_SUPPORTED_ASPECT_RATIOS = {
+    "1:1",
+    "16:9",
+    "9:16",
+    "4:3",
+    "3:4",
+    "3:2",
+    "2:3",
+    "2:1",
+    "1:2",
+    "19.5:9",
+    "9:19.5",
+    "20:9",
+    "9:20",
+    "auto",
+}
+
+
+def _validate_aspect_ratio(aspect_ratio: str) -> str:
+    """校验 aspect_ratio 是否在 Grok 支持列表中，不支持则 warning 并透传。"""
+    if aspect_ratio not in _SUPPORTED_ASPECT_RATIOS:
+        logger.warning("Grok 可能不支持 aspect_ratio=%s，将透传给 API", aspect_ratio)
+    return aspect_ratio
+
 
 class GrokImageBackend:
     """xAI Grok (Aurora) 图片生成后端，支持 T2I 和 I2I。"""
@@ -54,17 +78,20 @@ class GrokImageBackend:
         generate_kwargs: dict = {
             "prompt": request.prompt,
             "model": self._model,
-            "aspect_ratio": request.aspect_ratio,
+            "aspect_ratio": _validate_aspect_ratio(request.aspect_ratio),
             "resolution": _map_image_size_to_resolution(request.image_size),
         }
 
-        # I2I：将第一张参考图转为 base64 data URI
+        # I2I：将所有参考图转为 base64 data URI 列表
         if request.reference_images:
-            ref_path = Path(request.reference_images[0].path)
-            if ref_path.exists():
-                data_uri = image_to_base64_data_uri(ref_path)
-                generate_kwargs["image_url"] = data_uri
-                logger.info("Grok I2I 模式: 参考图 %s", ref_path)
+            data_uris = []
+            for ref in request.reference_images:
+                ref_path = Path(ref.path)
+                if ref_path.exists():
+                    data_uris.append(image_to_base64_data_uri(ref_path))
+            if data_uris:
+                generate_kwargs["image_urls"] = data_uris
+                logger.info("Grok I2I 模式: %d 张参考图", len(data_uris))
 
         logger.info("Grok 图片生成开始: model=%s", self._model)
         response = await self._client.image.sample(**generate_kwargs)
