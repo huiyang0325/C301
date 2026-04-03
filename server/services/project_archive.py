@@ -324,13 +324,23 @@ class ProjectArchiveService:
         diagnostics = self._repair_project_tree(snapshot_dir)
         diagnostics.extend_validation(self.validator.validate_project_tree(snapshot_dir))
 
+        # 从源目录收集非标准顶层条目，记录到诊断中（即使已被过滤不导出）
+        excluded_entries = self._collect_pass_through_entries(source_dir)
+        for entry in excluded_entries:
+            diagnostics.add(
+                "warnings",
+                "non_standard_entry_excluded",
+                f"非标准顶层目录/文件 '{entry}' 未包含在导出中",
+                location=entry,
+            )
+
         snapshot_project = self._load_json_file(snapshot_dir / self.project_manager.PROJECT_FILE)
         manifest = self._build_archive_manifest(
             project_name,
             snapshot_project,
             scope=scope,
             diagnostics=diagnostics.to_export_payload(),
-            pass_through_entries=self._collect_pass_through_entries(snapshot_dir),
+            pass_through_entries=excluded_entries,
         )
         return temp_dir, snapshot_dir, manifest, diagnostics
 
@@ -453,6 +463,7 @@ class ProjectArchiveService:
                 if not name.startswith(".")
                 and not (current_path / name).is_symlink()
                 and not (is_root and name in self._AGENT_RUNTIME_EXCLUDES)
+                and not (is_root and name not in self._ROOT_VISIBLE_ENTRIES)
             ]
             relative_dir = current_path.relative_to(source_dir)
             destination_dir = target_dir / relative_dir
@@ -634,26 +645,27 @@ class ProjectArchiveService:
         project_changed = False
 
         novel = script_payload.get("novel")
-        if isinstance(novel, dict):
-            source_file = novel.get("source_file")
-            if isinstance(source_file, str) and source_file.strip():
-                repaired_source = self._repair_relative_reference(
-                    project_dir,
-                    source_file,
-                    default_dir="source",
-                    basename_index=basename_index,
-                    preferred_prefix="source/",
-                    allow_single_preferred_candidate=True,
+        if isinstance(novel, dict) and "source_file" in novel:
+            novel.pop("source_file")
+            script_changed = True
+            diagnostics.add(
+                "auto_fixed",
+                "deprecated_source_file_removed",
+                "novel.source_file 字段已废弃，已移除",
+                location=f"{script_path_rel}:novel.source_file",
+            )
+
+        # 剥离废弃的 episode 级聚合字段
+        for deprecated_field in ("characters_in_episode", "clues_in_episode"):
+            if deprecated_field in script_payload:
+                script_payload.pop(deprecated_field)
+                script_changed = True
+                diagnostics.add(
+                    "auto_fixed",
+                    "deprecated_field_removed",
+                    f"{deprecated_field} 字段已废弃（改为读时计算），已移除",
+                    location=f"{script_path_rel}:{deprecated_field}",
                 )
-                if repaired_source and repaired_source != source_file.replace("\\", "/"):
-                    novel["source_file"] = repaired_source
-                    script_changed = True
-                    diagnostics.add(
-                        "auto_fixed",
-                        "novel_source_repaired",
-                        f"novel.source_file: 自动修复为 {repaired_source}",
-                        location=f"{script_path_rel}:novel.source_file",
-                    )
 
         content_mode = str(script_payload.get("content_mode") or project_payload.get("content_mode") or "narration")
         items_key = "segments" if content_mode == "narration" else "scenes"
