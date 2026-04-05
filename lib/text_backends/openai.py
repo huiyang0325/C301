@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 
-import instructor
 from openai import AsyncOpenAI, BadRequestError
 
-from lib.openai_shared import create_openai_client
+from lib.openai_shared import OPENAI_RETRYABLE_ERRORS, create_openai_client
 from lib.providers import PROVIDER_OPENAI
+from lib.retry import with_retry_async
 from lib.text_backends.base import (
     TextCapability,
     TextGenerationRequest,
@@ -31,7 +31,8 @@ class OpenAITextBackend:
         model: str | None = None,
         base_url: str | None = None,
     ):
-        self._client = create_openai_client(api_key=api_key, base_url=base_url)
+        # 禁用 SDK 内置重试，由本层 generate() 统一管理重试策略
+        self._client = create_openai_client(api_key=api_key, base_url=base_url, max_retries=0)
         self._model = model or DEFAULT_MODEL
         self._capabilities: set[TextCapability] = {
             TextCapability.TEXT_GENERATION,
@@ -51,12 +52,16 @@ class OpenAITextBackend:
     def capabilities(self) -> set[TextCapability]:
         return self._capabilities
 
+    @with_retry_async(max_attempts=4, backoff_seconds=(2, 4, 8), retryable_errors=OPENAI_RETRYABLE_ERRORS)
     async def generate(self, request: TextGenerationRequest) -> TextGenerationResult:
         """生成文本回复。
 
-        当 response_schema 已设置且原生 response_format 调用抛出
-        BadRequestError（常见于 Ollama/vLLM 等 OpenAI 兼容服务），
-        自动降级到 Instructor 结构化输出。
+        单一重试循环包裹整个流程：
+        1. 尝试原生 response_format 调用
+        2. 若遇 schema 不兼容错误 → 本次 attempt 内降级到 Instructor
+        3. 若遇瞬态错误（429/500/503/网络）→ 由装饰器自动重试整个流程
+
+        这样无论是原生调用还是降级路径遇到瞬态错误，都统一由外层重试处理。
         """
         messages = _build_messages(request)
         kwargs: dict = {"model": self._model, "messages": messages}
@@ -119,9 +124,27 @@ def _build_messages(request: TextGenerationRequest) -> list[dict]:
     return messages
 
 
+_SCHEMA_ERROR_KEYWORDS = (
+    "response_schema",
+    "json_schema",
+    "Unknown name",
+    "Cannot find field",
+    "Invalid JSON payload",
+)
+
+
 def _is_schema_error(exc: BaseException) -> bool:
-    """判断异常是否为 JSON Schema 不兼容导致的错误。"""
-    return isinstance(exc, BadRequestError)
+    """判断异常是否为 JSON Schema 不兼容导致的错误。
+
+    除了标准的 400 BadRequestError，一些 OpenAI 兼容代理（如 Gemini
+    兼容端点）会将上游 schema 错误包装成其他状态码（如 429），
+    因此也检查错误信息中是否包含 schema 相关关键字。
+    """
+    if isinstance(exc, BadRequestError):
+        return True
+    # 代理可能把上游 schema 错误包装成非 400 状态码
+    error_str = str(exc)
+    return any(kw in error_str for kw in _SCHEMA_ERROR_KEYWORDS)
 
 
 async def _instructor_fallback(
@@ -132,24 +155,23 @@ async def _instructor_fallback(
 ) -> TextGenerationResult:
     """Instructor 降级：当原生 response_format 不可用时的备选路径。
 
+    本函数不做重试，瞬态错误会抛出到调用方的重试循环中统一处理。
+
     - response_schema 为 Pydantic 类：使用 instructor 的 create_with_completion
     - response_schema 为 dict：回退到无结构化输出的普通调用
     """
+    from lib.text_backends.instructor_support import (
+        generate_structured_via_instructor_async,
+        inject_json_instruction,
+    )
+
     if isinstance(request.response_schema, type):
-        # Pydantic 模型 — 用 Instructor 做 prompt 注入 + 解析 + 重试
-        patched = instructor.from_openai(client, mode=instructor.Mode.MD_JSON)
-        result, completion = await patched.chat.completions.create_with_completion(
+        json_text, input_tokens, output_tokens = await generate_structured_via_instructor_async(
+            client=client,
             model=model,
             messages=messages,
             response_model=request.response_schema,
-            max_retries=2,
         )
-        json_text = result.model_dump_json()
-        input_tokens = None
-        output_tokens = None
-        if completion.usage:
-            input_tokens = completion.usage.prompt_tokens
-            output_tokens = completion.usage.completion_tokens
         return TextGenerationResult(
             text=json_text,
             provider=PROVIDER_OPENAI,
@@ -158,18 +180,8 @@ async def _instructor_fallback(
             output_tokens=output_tokens,
         )
     else:
-        # dict schema — 无法用 Instructor（需要 Pydantic 类），
-        # 回退到 json_object 模式（比原生 json_schema 兼容性更广）
         logger.info("response_schema 为 dict，无法使用 Instructor，回退到 json_object 模式")
-        # OpenAI API 要求 prompt 中包含 "JSON" 关键字才能启用 json_object 模式
-        fb_messages = list(messages)
-        if not any("JSON" in (m.get("content") or "") for m in fb_messages):
-            sys_idx = next((i for i, m in enumerate(fb_messages) if m.get("role") == "system"), None)
-            if sys_idx is not None:
-                orig = fb_messages[sys_idx]
-                fb_messages[sys_idx] = {**orig, "content": (orig.get("content") or "") + "\nRespond in JSON format."}
-            else:
-                fb_messages.insert(0, {"role": "system", "content": "Respond in JSON format."})
+        fb_messages = inject_json_instruction(messages)
         response = await client.chat.completions.create(
             model=model,
             messages=fb_messages,

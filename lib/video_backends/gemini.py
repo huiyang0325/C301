@@ -8,12 +8,14 @@ import logging
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 from PIL import Image
 
 from lib.config.url_utils import normalize_base_url
 from lib.gemini_shared import VERTEX_SCOPES, RateLimiter, get_shared_rate_limiter, with_retry_async
 from lib.providers import PROVIDER_GEMINI
+from lib.retry import BASE_RETRYABLE_ERRORS, _should_retry
 from lib.system_config import resolve_vertex_credentials_path
 from lib.video_backends.base import (
     VideoCapability,
@@ -112,9 +114,14 @@ class GeminiVideoBackend:
             return "6"
         return "8"
 
-    @with_retry_async(max_attempts=3, backoff_seconds=(2, 4, 8))
     async def generate(self, request: VideoGenerationRequest) -> VideoGenerationResult:
-        """生成视频（仅生成模式，不含延长模式）。"""
+        """生成视频。任务创建和轮询阶段分离重试，避免瞬态错误导致重建任务。"""
+        operation = await self._create_task(request)
+        return await self._poll_until_done(operation, request)
+
+    @with_retry_async()
+    async def _create_task(self, request: VideoGenerationRequest) -> Any:
+        """创建 Gemini 视频生成任务（带重试保护）。"""
         # 1. 限流
         if self._rate_limiter:
             await self._rate_limiter.acquire_async(self._video_model)
@@ -139,10 +146,14 @@ class GeminiVideoBackend:
 
         # 5. 调用 API
         operation = await self._client.aio.models.generate_videos(model=self._video_model, source=source, config=config)
-
-        # 6. 轮询等待完成
         op_name = getattr(operation, "name", "unknown")
-        logger.info("视频生成已提交, operation=%s, 开始轮询...", op_name)
+        logger.info("视频生成已提交, operation=%s", op_name)
+        return operation
+
+    async def _poll_until_done(self, operation: Any, request: VideoGenerationRequest) -> VideoGenerationResult:
+        """轮询任务状态直到完成，瞬态错误仅重试当次轮询请求。"""
+        op_name = getattr(operation, "name", "unknown")
+        logger.info("开始轮询 operation=%s ...", op_name)
 
         start_time = time.monotonic()
         poll_interval = 20  # 与 Google 官方推荐一致
@@ -152,7 +163,13 @@ class GeminiVideoBackend:
             if elapsed >= max_wait_time:
                 raise TimeoutError(f"视频生成超时（{max_wait_time}秒）")
             await asyncio.sleep(poll_interval)
-            operation = await self._client.aio.operations.get(operation)
+            try:
+                operation = await self._client.aio.operations.get(operation)
+            except Exception as e:
+                if _should_retry(e, BASE_RETRYABLE_ERRORS):
+                    logger.warning("Gemini 轮询异常（将重试）: %s - %s", type(e).__name__, str(e)[:200])
+                    continue
+                raise
             if not operation.done:
                 elapsed = time.monotonic() - start_time
                 logger.info(
@@ -164,7 +181,7 @@ class GeminiVideoBackend:
         total_elapsed = time.monotonic() - start_time
         logger.info("视频生成完成, 总耗时 %.0f 秒, operation=%s", total_elapsed, op_name)
 
-        # 7. 检查结果
+        # 检查结果
         if not operation.response or not operation.response.generated_videos:
             error_detail = getattr(operation, "error", None)
             metadata = getattr(operation, "metadata", None)
@@ -179,13 +196,13 @@ class GeminiVideoBackend:
                 raise RuntimeError(f"视频生成失败: {error_detail}")
             raise RuntimeError("视频生成失败: API 返回空结果")
 
-        # 8. 提取并下载视频
+        # 提取并下载视频
         generated_video = operation.response.generated_videos[0]
         video_ref = generated_video.video
         video_uri = video_ref.uri if video_ref else None
 
         request.output_path.parent.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(self._download_video, video_ref, request.output_path)
+        await self._download_video_with_retry(video_ref, request.output_path)
 
         return VideoGenerationResult(
             video_path=request.output_path,
@@ -227,6 +244,11 @@ class GeminiVideoBackend:
             return self._types.Image(image_bytes=image_bytes, mime_type=mime_type_png)
         else:
             return image
+
+    @with_retry_async()
+    async def _download_video_with_retry(self, video_ref, output_path: Path) -> None:
+        """下载视频（含瞬态错误重试）。"""
+        await asyncio.to_thread(self._download_video, video_ref, output_path)
 
     def _download_video(self, video_ref, output_path: Path) -> None:
         """下载视频到本地文件 — 提取自 GeminiClient。"""
