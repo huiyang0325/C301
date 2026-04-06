@@ -29,6 +29,7 @@ def _row_to_dict(row: ApiCall) -> dict[str, Any]:
         "status": row.status,
         "error_message": row.error_message,
         "output_path": row.output_path,
+        "segment_id": row.segment_id,
         "started_at": dt_to_iso(row.started_at),
         "finished_at": dt_to_iso(row.finished_at),
         "duration_ms": row.duration_ms,
@@ -57,6 +58,7 @@ class UsageRepository(BaseRepository):
         generate_audio: bool = True,
         provider: str = PROVIDER_GEMINI,
         user_id: str = DEFAULT_USER_ID,
+        segment_id: str | None = None,
     ) -> int:
         now = utc_now()
         prompt_truncated = prompt[:500] if prompt else None
@@ -74,6 +76,7 @@ class UsageRepository(BaseRepository):
             started_at=now,
             provider=provider,
             user_id=user_id,
+            segment_id=segment_id,
         )
         self.session.add(row)
         await self.session.commit()
@@ -381,6 +384,39 @@ class UsageRepository(BaseRepository):
             "page": page,
             "page_size": page_size,
         }
+
+    async def get_actual_costs_by_segment(
+        self,
+        project_name: str,
+    ) -> dict[str, dict[str, dict[str, float]]]:
+        """按 segment_id + call_type + currency 汇总实际费用。
+
+        Returns:
+            {segment_id: {call_type: {currency: total_amount}}}
+            segment_id 为 None 的记录归入 "__project__" 键。
+        """
+        stmt = (
+            select(
+                ApiCall.segment_id,
+                ApiCall.call_type,
+                ApiCall.currency,
+                func.sum(ApiCall.cost_amount).label("total"),
+            )
+            .where(
+                ApiCall.project_name == project_name,
+                ApiCall.status == "success",
+                ApiCall.cost_amount > 0,
+            )
+            .group_by(ApiCall.segment_id, ApiCall.call_type, ApiCall.currency)
+        )
+        stmt = self._scope_query(stmt, ApiCall)
+        rows = (await self.session.execute(stmt)).all()
+
+        result: dict[str, dict[str, dict[str, float]]] = {}
+        for seg_id, call_type, currency, total in rows:
+            key = seg_id if seg_id is not None else "__project__"
+            result.setdefault(key, {}).setdefault(call_type, {})[currency] = round(total, 6)
+        return result
 
     async def get_projects_list(self) -> list[str]:
         stmt = select(ApiCall.project_name).distinct().order_by(ApiCall.project_name)

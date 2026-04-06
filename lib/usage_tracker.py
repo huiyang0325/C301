@@ -33,6 +33,7 @@ class UsageTracker:
         generate_audio: bool = True,
         provider: str = PROVIDER_GEMINI,
         user_id: str = DEFAULT_USER_ID,
+        segment_id: str | None = None,
     ) -> int:
 
         async with self._session_factory() as session:
@@ -48,6 +49,7 @@ class UsageTracker:
                 generate_audio=generate_audio,
                 provider=provider,
                 user_id=user_id,
+                segment_id=segment_id,
             )
 
     async def finish_call(
@@ -137,6 +139,11 @@ class UsageTracker:
                 page=page,
                 page_size=page_size,
             )
+
+    async def get_actual_costs_by_segment(self, project_name: str) -> dict:
+        async with self._session_factory() as session:
+            repo = UsageRepository(session)
+            return await repo.get_actual_costs_by_segment(project_name)
 
     async def get_projects_list(self) -> list[str]:
 
