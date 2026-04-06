@@ -331,9 +331,15 @@ export function StudioCanvasRouter() {
             ? (currentScripts[scriptFile] ?? null)
             : null;
 
+          const hasDraft = episode?.script_status === "segmented" || episode?.script_status === "generated";
+
           return (
             <TimelineCanvas
+              key={epNum}
               projectName={currentProjectName}
+              episode={epNum}
+              episodeTitle={episode?.title}
+              hasDraft={hasDraft}
               episodeScript={script}
               scriptFile={scriptFile ?? undefined}
               projectData={currentProjectData}

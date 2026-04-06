@@ -289,6 +289,17 @@ class TestFilesRouter:
             missing_step = client.delete("/api/v1/projects/demo/drafts/2/step9")
             assert missing_step.status_code == 400
 
+            # step2 and step3 should now be invalid
+            step2_resp = client.get("/api/v1/projects/demo/drafts/1/step2")
+            assert step2_resp.status_code == 400
+
+            step3_resp = client.put(
+                "/api/v1/projects/demo/drafts/1/step3",
+                content="test",
+                headers={"content-type": "text/plain"},
+            )
+            assert step3_resp.status_code == 400
+
             unknown_draft = client.delete("/api/v1/projects/demo/drafts/9/step1")
             assert unknown_draft.status_code == 404
 
@@ -332,12 +343,50 @@ class TestFilesRouter:
     def test_files_helper_functions(self, tmp_path):
         assert files._extract_step_number("step12_x.md") == 12
         assert files._extract_step_number("not-match.md") == 0
-        assert files._get_step_files("narration")[1] == "step1_segments.md"
-        assert files._get_step_files("drama")[2] == "step2_shot_budget.md"
-        assert files._get_step_title("step2_grid_plan.md") == "宫格切分规划"
+        assert files._get_step_files("narration") == {1: "step1_segments.md"}
+        assert files._get_step_files("drama") == {1: "step1_normalized_script.md"}
+        assert files._get_step_title("step1_segments.md") == "片段拆分"
+        assert files._get_step_title("step1_normalized_script.md") == "规范化剧本"
         assert files._get_step_title("unknown.md") == "unknown.md"
 
         assert files._get_content_mode(tmp_path) == "drama"
         project_json = tmp_path / "project.json"
         project_json.write_text('{"content_mode":"narration"}', encoding="utf-8")
         assert files._get_content_mode(tmp_path) == "narration"
+
+    def test_draft_event_emission(self, tmp_path, monkeypatch):
+        """PUT drafts 端点应发射 draft:created/updated 事件"""
+        from unittest.mock import patch
+
+        client, _ = _client(monkeypatch, tmp_path)
+
+        with client, patch("server.routers.files.emit_project_change_batch") as mock_emit:
+            # 首次创建 → action="created", important=True
+            resp = client.put(
+                "/api/v1/projects/demo/drafts/1/step1",
+                content="new draft",
+                headers={"content-type": "text/plain"},
+            )
+            assert resp.status_code == 200
+            mock_emit.assert_called_once()
+            args = mock_emit.call_args
+            change = args[0][1][0]  # second positional arg, first item in list
+            assert change["entity_type"] == "draft"
+            assert change["action"] == "created"
+            assert change["episode"] == 1
+            assert change["important"] is True
+            assert "片段拆分" in change["label"]
+
+            mock_emit.reset_mock()
+
+            # 再次更新 → action="updated", important=False
+            resp2 = client.put(
+                "/api/v1/projects/demo/drafts/1/step1",
+                content="updated draft",
+                headers={"content-type": "text/plain"},
+            )
+            assert resp2.status_code == 200
+            mock_emit.assert_called_once()
+            change2 = mock_emit.call_args[0][1][0]
+            assert change2["action"] == "updated"
+            assert change2["important"] is False
