@@ -86,7 +86,7 @@ class OpenAIVideoBackend:
             video_path=request.output_path,
             provider=PROVIDER_OPENAI,
             model=self._model,
-            duration_seconds=int(video.seconds),
+            duration_seconds=int(video.seconds if video.seconds is not None else kwargs["seconds"]),
             task_id=video.id,
         )
 
