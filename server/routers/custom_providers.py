@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -50,12 +51,21 @@ class ModelInput(BaseModel):
     price_input: float | None = None
     price_output: float | None = None
     currency: str | None = None
+    supported_durations: list[int] | None = None
 
     @model_validator(mode="after")
     def _check_price_consistency(self):
         if self.price_output is not None and self.price_input is None:
             raise ValueError("设置 price_output 时必须同时设置 price_input")
         return self
+
+    def to_db_dict(self) -> dict:
+        """返回适合写入数据库的字典（supported_durations 序列化为 JSON 字符串）。"""
+        d = self.model_dump()
+        d["supported_durations"] = (
+            json.dumps(self.supported_durations) if self.supported_durations is not None else None
+        )
+        return d
 
 
 class CreateProviderRequest(BaseModel):
@@ -102,6 +112,7 @@ class ModelResponse(BaseModel):
     price_input: float | None = None
     price_output: float | None = None
     currency: str | None = None
+    supported_durations: list[int] | None = None
 
 
 class ProviderResponse(BaseModel):
@@ -130,6 +141,7 @@ class DiscoverResponse(BaseModel):
 
 
 def _model_to_response(m) -> ModelResponse:
+    durations = json.loads(m.supported_durations) if m.supported_durations else None
     return ModelResponse(
         id=m.id,
         model_id=m.model_id,
@@ -141,6 +153,7 @@ def _model_to_response(m) -> ModelResponse:
         price_input=m.price_input,
         price_output=m.price_output,
         currency=m.currency,
+        supported_durations=durations,
     )
 
 
@@ -240,7 +253,7 @@ async def create_provider(
         _check_duplicate_model_ids(body.models)
         _check_unique_defaults(body.models)
     repo = CustomProviderRepository(session)
-    model_dicts = [m.model_dump() for m in body.models] if body.models else None
+    model_dicts = [m.to_db_dict() for m in body.models] if body.models else None
     provider = await repo.create_provider(
         display_name=body.display_name,
         api_format=body.api_format,
@@ -320,7 +333,7 @@ async def full_update_provider(
     provider = await repo.update_provider(provider_id, **kwargs)
     if provider is None:
         raise HTTPException(status_code=404, detail="供应商不存在")
-    model_dicts = [m.model_dump() for m in body.models]
+    model_dicts = [m.to_db_dict() for m in body.models]
     await repo.replace_models(provider_id, model_dicts)
     await session.commit()
     await _invalidate_caches(request)
@@ -383,7 +396,7 @@ async def replace_models(
     new_model_ids = {m.model_id for m in body.models}
     deleted_model_ids = old_model_ids - new_model_ids
 
-    model_dicts = [m.model_dump() for m in body.models]
+    model_dicts = [m.to_db_dict() for m in body.models]
     new_models = await repo.replace_models(provider_id, model_dicts)
 
     # 清理引用已删除模型的全局配置

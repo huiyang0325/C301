@@ -1,3 +1,12 @@
+export interface ModelInfoResponse {
+  display_name: string;
+  media_type: string;
+  capabilities: string[];
+  default: boolean;
+  supported_durations: number[];
+  duration_resolution_constraints: Record<string, number[]>;
+}
+
 export interface ProviderInfo {
   id: string;
   display_name: string;
@@ -7,6 +16,7 @@ export interface ProviderInfo {
   capabilities: string[];
   configured_keys: string[];
   missing_keys: string[];
+  models: Record<string, ModelInfoResponse>;
 }
 
 export interface ProviderField {

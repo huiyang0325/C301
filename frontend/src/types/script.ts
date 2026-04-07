@@ -33,7 +33,7 @@ export const CAMERA_MOTIONS = [
 export type CameraMotion = (typeof CAMERA_MOTIONS)[number];
 
 export type TransitionType = "cut" | "fade" | "dissolve";
-export type DurationSeconds = 4 | 6 | 8;
+export type DurationSeconds = number;
 export type AssetStatus = "pending" | "storyboard_ready" | "completed";
 
 export interface Dialogue {

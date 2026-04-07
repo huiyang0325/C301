@@ -101,6 +101,7 @@ class TestCustomProviderModelTable:
             "price_input",
             "price_output",
             "currency",
+            "supported_durations",
             "created_at",
             "updated_at",
         }

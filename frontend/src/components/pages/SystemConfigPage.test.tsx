@@ -54,6 +54,7 @@ function makeProviders(overrides?: Partial<ProviderInfo>): { providers: Provider
         capabilities: [],
         configured_keys: ["api_key"],
         missing_keys: [],
+        models: {},
         ...overrides,
       },
     ],

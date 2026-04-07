@@ -193,6 +193,8 @@ describe("API", () => {
           title: "Demo",
           style: "",
           content_mode: "narration",
+          aspect_ratio: "9:16",
+          default_duration: null,
         }),
       });
       expect(requestSpy).toHaveBeenCalledWith("/projects", {
@@ -201,6 +203,8 @@ describe("API", () => {
           title: "Untitled",
           style: "",
           content_mode: "narration",
+          aspect_ratio: "9:16",
+          default_duration: null,
         }),
       });
       expect(requestSpy).toHaveBeenCalledWith("/projects/a%20b");
@@ -261,11 +265,19 @@ describe("API", () => {
 
       await expect(
         API.updateProject("demo", { content_mode: "drama" } as never),
-      ).rejects.toThrow("项目创建后不支持修改 content_mode 或 aspect_ratio");
-      await expect(
-        API.updateProject("demo", { aspect_ratio: { video: "16:9" } } as never),
-      ).rejects.toThrow("项目创建后不支持修改 content_mode 或 aspect_ratio");
+      ).rejects.toThrow("项目创建后不支持修改 content_mode");
       expect(requestSpy).not.toHaveBeenCalled();
+    });
+
+    it("allows aspect_ratio updates via updateProject", async () => {
+      const requestSpy = vi
+        .spyOn(API, "request")
+        .mockResolvedValue({ success: true } as never);
+
+      await expect(
+        API.updateProject("demo", { aspect_ratio: "16:9" }),
+      ).resolves.not.toThrow();
+      expect(requestSpy).toHaveBeenCalledOnce();
     });
 
     it("covers task, assistant, version and usage query builders", async () => {

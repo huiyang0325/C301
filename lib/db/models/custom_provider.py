@@ -48,3 +48,4 @@ class CustomProviderModel(TimestampMixin, Base):
     price_input: Mapped[float | None] = mapped_column(Float, nullable=True)
     price_output: Mapped[float | None] = mapped_column(Float, nullable=True)  # only for text
     currency: Mapped[str | None] = mapped_column(String(8), nullable=True)  # "USD" | "CNY"
+    supported_durations: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list[int]

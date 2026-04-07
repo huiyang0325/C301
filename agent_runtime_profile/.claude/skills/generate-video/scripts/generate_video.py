@@ -98,26 +98,50 @@ def parse_scene_ids(scenes_arg: str) -> list:
     return [s.strip() for s in scenes_arg.split(",") if s.strip()]
 
 
-def validate_duration(duration: int) -> str:
-    """
-    验证并返回有效的时长参数
+DEFAULT_DURATIONS_FALLBACK = [4, 8]
 
-    Veo API 仅支持 4s/6s/8s
+
+def get_supported_durations(project: dict) -> list[int]:
+    """从项目配置或 registry 获取当前视频模型支持的时长列表。"""
+    durations = project.get("_supported_durations")
+    if durations and isinstance(durations, list):
+        return durations
+    # Resolve from registry via project's video_backend
+    video_backend = project.get("video_backend")
+    if video_backend and isinstance(video_backend, str) and "/" in video_backend:
+        try:
+            from lib.config.registry import PROVIDER_REGISTRY
+
+            provider_id, model_id = video_backend.split("/", 1)
+            provider_meta = PROVIDER_REGISTRY.get(provider_id)
+            if provider_meta:
+                model_info = provider_meta.models.get(model_id)
+                if model_info and model_info.supported_durations:
+                    return list(model_info.supported_durations)
+        except ImportError:
+            pass  # registry 不可用时（如独立运行），回退到 DEFAULT_DURATIONS_FALLBACK
+    return DEFAULT_DURATIONS_FALLBACK
+
+
+def validate_duration(duration: int, supported_durations: list[int] | None = None) -> str:
+    """
+    验证并返回有效的时长参数。
 
     Args:
         duration: 输入的时长（秒）
+        supported_durations: 当前视频模型支持的时长列表
 
     Returns:
         有效的时长字符串
     """
-    valid_durations = [4, 6, 8]
-    if duration in valid_durations:
+    valid = supported_durations or DEFAULT_DURATIONS_FALLBACK
+    if duration in valid:
         return str(duration)
     # 向上取整到最近的有效值
-    for d in valid_durations:
+    for d in sorted(valid):
         if d >= duration:
             return str(d)
-    return "8"  # 最大值
+    return str(max(valid))
 
 
 # ============================================================================
@@ -220,6 +244,7 @@ def _build_video_specs(
     content_mode: str,
     script_filename: str,
     project_dir: Path,
+    project: dict | None = None,
     skip_ids: list[str] | None = None,
 ) -> tuple[list[BatchTaskSpec], dict[str, int]]:
     """
@@ -230,8 +255,10 @@ def _build_video_specs(
     Returns:
         (specs, order_map)  order_map: resource_id -> 原始 items 中的索引
     """
+    _project = project or {}
     item_type = "片段" if content_mode == "narration" else "场景"
-    default_duration = 4 if content_mode == "narration" else 8
+    default_duration = _project.get("default_duration") or (4 if content_mode == "narration" else 8)
+    supported = get_supported_durations(_project)
     skip_set = set(skip_ids or [])
 
     specs: list[BatchTaskSpec] = []
@@ -259,7 +286,7 @@ def _build_video_specs(
             continue
 
         duration = item.get("duration_seconds", default_duration)
-        duration_str = validate_duration(duration)
+        duration_str = validate_duration(duration, supported)
 
         specs.append(
             BatchTaskSpec(
@@ -361,6 +388,7 @@ def generate_episode_video(
     """
     pm, project_name = ProjectManager.from_cwd()
     project_dir = pm.get_project_path(project_name)
+    project = pm.load_project(project_name)
     script = pm.load_script(project_name, script_filename)
     content_mode = script.get("content_mode", "narration")
     all_items, id_field, _, _ = get_items_from_script(script)
@@ -400,6 +428,7 @@ def generate_episode_video(
         content_mode=content_mode,
         script_filename=script_filename,
         project_dir=project_dir,
+        project=project,
         skip_ids=already_done_ids,
     )
 
@@ -445,6 +474,7 @@ def generate_scene_video(script_filename: str, scene_id: str) -> Path:
     """
     pm, project_name = ProjectManager.from_cwd()
     project_dir = pm.get_project_path(project_name)
+    project = pm.load_project(project_name)
 
     # 加载剧本
     script = pm.load_script(project_name, script_filename)
@@ -473,10 +503,11 @@ def generate_scene_video(script_filename: str, scene_id: str) -> Path:
     # 直接使用 video_prompt 字段
     prompt = get_video_prompt(item)
 
-    # 获取时长（说书模式默认 4 秒，剧集动画默认 8 秒）
-    default_duration = 4 if content_mode == "narration" else 8
+    # 获取时长（优先项目配置，说书模式默认 4 秒，剧集动画默认 8 秒）
+    default_duration = project.get("default_duration") or (4 if content_mode == "narration" else 8)
     duration = item.get("duration_seconds", default_duration)
-    duration_str = validate_duration(duration)
+    supported = get_supported_durations(project)
+    duration_str = validate_duration(duration, supported)
 
     print(f"🎬 正在生成视频: 场景/片段 {scene_id}")
     print("   预计等待时间: 1-6 分钟")
@@ -511,6 +542,7 @@ def generate_all_videos(script_filename: str) -> list:
     """
     pm, project_name = ProjectManager.from_cwd()
     project_dir = pm.get_project_path(project_name)
+    project = pm.load_project(project_name)
 
     # 加载剧本
     script = pm.load_script(project_name, script_filename)
@@ -534,6 +566,7 @@ def generate_all_videos(script_filename: str) -> list:
         content_mode=content_mode,
         script_filename=script_filename,
         project_dir=project_dir,
+        project=project,
     )
 
     if not specs:
@@ -590,6 +623,7 @@ def generate_selected_videos(
 
     pm, project_name = ProjectManager.from_cwd()
     project_dir = pm.get_project_path(project_name)
+    project = pm.load_project(project_name)
     script = pm.load_script(project_name, script_filename)
     content_mode = script.get("content_mode", "narration")
     all_items, id_field, _, _ = get_items_from_script(script)
@@ -643,6 +677,7 @@ def generate_selected_videos(
         content_mode=content_mode,
         script_filename=script_filename,
         project_dir=project_dir,
+        project=project,
         skip_ids=already_done_ids,
     )
 

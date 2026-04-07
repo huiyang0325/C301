@@ -41,6 +41,7 @@ interface TimelineCanvasProps {
   onUpdatePrompt?: (segmentId: string, field: string, value: unknown, scriptFile?: string) => void;
   onGenerateStoryboard?: (segmentId: string, scriptFile?: string) => void;
   onGenerateVideo?: (segmentId: string, scriptFile?: string) => void;
+  durationOptions?: number[];
   onRestoreStoryboard?: () => Promise<void> | void;
   onRestoreVideo?: () => Promise<void> | void;
 }
@@ -64,6 +65,7 @@ export function TimelineCanvas({
   episodeScript,
   scriptFile,
   projectData,
+  durationOptions,
   onUpdatePrompt,
   onGenerateStoryboard,
   onGenerateVideo,
@@ -95,8 +97,10 @@ export function TimelineCanvas({
 
   // Determine aspect ratio — use project config if available, otherwise defaults
   const aspectRatio =
-    projectData?.aspect_ratio?.storyboard ??
-    (contentMode === "narration" ? "9:16" : "16:9");
+    typeof projectData?.aspect_ratio === "string"
+      ? projectData.aspect_ratio
+      : projectData?.aspect_ratio?.storyboard ??
+        (contentMode === "narration" ? "9:16" : "16:9");
 
   // Pick the correct array (segments for narration, scenes for drama)
   const segments = useMemo<Segment[]>(
@@ -250,6 +254,7 @@ export function TimelineCanvas({
                     characters={projectData.characters}
                     clues={projectData.clues}
                     projectName={projectName}
+                    durationOptions={durationOptions}
                     onUpdatePrompt={onUpdatePrompt && ((id, field, value) => onUpdatePrompt(id, field, value, scriptFile))}
                     onGenerateStoryboard={onGenerateStoryboard && ((id) => onGenerateStoryboard(id, scriptFile))}
                     onGenerateVideo={onGenerateVideo && ((id) => onGenerateVideo(id, scriptFile))}

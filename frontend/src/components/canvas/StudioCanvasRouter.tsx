@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Route, Switch, Redirect, useLocation } from "wouter";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useAppStore } from "@/stores/app-store";
@@ -11,7 +11,8 @@ import { AddCharacterForm } from "./lorebook/AddCharacterForm";
 import { AddClueForm } from "./lorebook/AddClueForm";
 import { API } from "@/api";
 import { buildEntityRevisionKey } from "@/utils/project-changes";
-import type { Clue } from "@/types";
+import { getProviderModels, getCustomProviderModels, lookupSupportedDurations } from "@/utils/provider-models";
+import type { Clue, CustomProviderInfo, ProviderInfo } from "@/types";
 
 // ---------------------------------------------------------------------------
 // StudioCanvasRouter — reads Zustand store data and renders the correct
@@ -24,6 +25,29 @@ export function StudioCanvasRouter() {
 
   const [addingCharacter, setAddingCharacter] = useState(false);
   const [addingClue, setAddingClue] = useState(false);
+
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [customProviders, setCustomProviders] = useState<CustomProviderInfo[]>([]);
+  const [globalVideoBackend, setGlobalVideoBackend] = useState("");
+
+  useEffect(() => {
+    let disposed = false;
+    Promise.all([getProviderModels(), getCustomProviderModels(), API.getSystemConfig()]).then(
+      ([provList, customList, configRes]) => {
+        if (disposed) return;
+        setProviders(provList);
+        setCustomProviders(customList);
+        setGlobalVideoBackend(configRes.settings?.default_video_backend ?? "");
+      },
+    ).catch(() => {});
+    return () => { disposed = true; };
+  }, []);
+
+  const durationOptions = useMemo(() => {
+    const backend = currentProjectData?.video_backend || globalVideoBackend;
+    if (!backend) return undefined;
+    return lookupSupportedDurations(providers, backend, customProviders);
+  }, [providers, customProviders, globalVideoBackend, currentProjectData?.video_backend]);
 
   // 从任务队列派生 loading 状态（替代本地 state）
   const tasks = useTasksStore((s) => s.tasks);
@@ -343,6 +367,7 @@ export function StudioCanvasRouter() {
               episodeScript={script}
               scriptFile={scriptFile ?? undefined}
               projectData={currentProjectData}
+              durationOptions={durationOptions}
               onUpdatePrompt={handleUpdatePrompt}
               onGenerateStoryboard={handleGenerateStoryboard}
               onGenerateVideo={handleGenerateVideo}

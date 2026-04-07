@@ -4,6 +4,7 @@ import { X, Loader2, Upload } from "lucide-react";
 import { API } from "@/api";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useAppStore } from "@/stores/app-store";
+import { DEFAULT_DURATIONS } from "@/utils/provider-models";
 
 const STYLE_OPTIONS = [
   { value: "Photographic", label: "写实摄影" },
@@ -18,7 +19,9 @@ export function CreateProjectModal() {
 
   const [title, setTitle] = useState("");
   const [contentMode, setContentMode] = useState<"narration" | "drama">("narration");
+  const [aspectRatio, setAspectRatio] = useState<"9:16" | "16:9">("9:16");
   const [style, setStyle] = useState("Photographic");
+  const [defaultDuration, setDefaultDuration] = useState<number | null>(null);
   const [titleError, setTitleError] = useState("");
   const [styleImageFile, setStyleImageFile] = useState<File | null>(null);
   const [styleImagePreview, setStyleImagePreview] = useState<string | null>(null);
@@ -52,7 +55,7 @@ export function CreateProjectModal() {
 
     setCreatingProject(true);
     try {
-      const response = await API.createProject(title.trim(), style, contentMode);
+      const response = await API.createProject(title.trim(), style, contentMode, aspectRatio, defaultDuration);
       const projectName = response.name;
 
       // 如果用户选择了风格参考图，在项目创建后上传
@@ -155,6 +158,86 @@ export function CreateProjectModal() {
                 />
                 剧集动画
               </label>
+            </div>
+          </div>
+
+          {/* Aspect Ratio */}
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-1">
+              画面比例
+            </label>
+            <div className="flex gap-3">
+              <label className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm transition-colors ${
+                aspectRatio === "9:16"
+                  ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
+                  : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+              }`}>
+                <input
+                  type="radio"
+                  name="aspectRatio"
+                  value="9:16"
+                  checked={aspectRatio === "9:16"}
+                  onChange={() => setAspectRatio("9:16")}
+                  className="sr-only"
+                />
+                竖屏 9:16
+              </label>
+              <label className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm transition-colors ${
+                aspectRatio === "16:9"
+                  ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
+                  : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+              }`}>
+                <input
+                  type="radio"
+                  name="aspectRatio"
+                  value="16:9"
+                  checked={aspectRatio === "16:9"}
+                  onChange={() => setAspectRatio("16:9")}
+                  className="sr-only"
+                />
+                横屏 16:9
+              </label>
+            </div>
+          </div>
+
+          {/* Default Duration */}
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-0.5">
+              默认时长
+            </label>
+            <p className="text-xs text-gray-600 mb-1.5">
+              由 AI 根据内容自动决定时长，或指定固定时长
+            </p>
+            <div className="flex gap-2" role="radiogroup" aria-label="默认时长">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={defaultDuration === null}
+                onClick={() => setDefaultDuration(null)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  defaultDuration === null
+                    ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
+                    : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+                }`}
+              >
+                自动
+              </button>
+              {DEFAULT_DURATIONS.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  role="radio"
+                  aria-checked={defaultDuration === d}
+                  onClick={() => setDefaultDuration(d)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                    defaultDuration === d
+                      ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
+                      : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+                  }`}
+                >
+                  {d}s
+                </button>
+              ))}
             </div>
           </div>
 

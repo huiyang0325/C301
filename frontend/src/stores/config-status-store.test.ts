@@ -43,6 +43,7 @@ function makeProviders(overrides?: Partial<ProviderInfo>[]): { providers: Provid
       capabilities: [],
       configured_keys: [],
       missing_keys: ["api_key"],
+      models: {},
     },
   ];
   if (overrides) {
@@ -75,7 +76,7 @@ describe("config-status-store", () => {
 
   it("reports no issues when all configured", async () => {
     vi.spyOn(API, "getProviders").mockResolvedValue(
-      makeProviders([{ id: "gemini", display_name: "Google Gemini", status: "ready", media_types: ["image", "video", "text"], capabilities: [], configured_keys: ["api_key"], missing_keys: [] }]),
+      makeProviders([{ id: "gemini", display_name: "Google Gemini", status: "ready", media_types: ["image", "video", "text"], capabilities: [], configured_keys: ["api_key"], missing_keys: [], models: {} }]),
     );
     vi.spyOn(API, "getSystemConfig").mockResolvedValue(
       makeConfigResponse({ anthropic_api_key: { is_set: true, masked: "sk-ant-***" } }),

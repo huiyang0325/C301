@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ImageIcon, Film, Clock } from "lucide-react";
 import { API } from "@/api";
+import { DEFAULT_DURATIONS } from "@/utils/provider-models";
 import { VersionTimeMachine } from "@/components/canvas/timeline/VersionTimeMachine";
 import { AvatarStack } from "@/components/ui/AvatarStack";
 import { ClueStack } from "@/components/ui/ClueStack";
@@ -146,6 +147,7 @@ interface SegmentCardProps {
   characters: Record<string, Character>;
   clues: Record<string, Clue>;
   projectName: string;
+  durationOptions?: number[];
   onUpdatePrompt?: (
     segmentId: string,
     field: string,
@@ -163,17 +165,17 @@ interface SegmentCardProps {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-const DURATION_OPTIONS = [4, 6, 8];
-
 /** Duration selector — clickable when onUpdatePrompt is provided, read-only otherwise. */
 function DurationSelector({
   seconds,
   segmentId,
   onUpdatePrompt,
+  durationOptions = DEFAULT_DURATIONS as number[],
 }: {
   seconds: number;
   segmentId: string;
   onUpdatePrompt?: (segmentId: string, field: string, value: unknown) => void;
+  durationOptions?: number[];
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
@@ -181,7 +183,7 @@ function DurationSelector({
   if (!onUpdatePrompt) {
     return (
       <span className="inline-flex items-center gap-0.5 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300">
-        <Clock className="h-3 w-3" />
+        <Clock aria-hidden="true" className="h-3 w-3" />
         {seconds}s
       </span>
     );
@@ -192,9 +194,9 @@ function DurationSelector({
       <button
         ref={ref}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
       >
-        <Clock className="h-3 w-3" />
+        <Clock aria-hidden="true" className="h-3 w-3" />
         {seconds}s
       </button>
       <Popover
@@ -206,15 +208,17 @@ function DurationSelector({
         align="start"
         sideOffset={6}
       >
-        <div className="flex gap-1">
-          {DURATION_OPTIONS.map((d) => (
+        <div className="flex gap-1" role="radiogroup" aria-label="时长选择">
+          {durationOptions.map((d) => (
             <button
               key={d}
+              role="radio"
+              aria-checked={d === seconds}
               onClick={() => {
                 onUpdatePrompt(segmentId, "duration_seconds", d);
                 setOpen(false);
               }}
-              className={`rounded px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+              className={`rounded px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                 d === seconds
                   ? "bg-indigo-600 text-white"
                   : "text-gray-300 hover:bg-gray-700"
@@ -668,6 +672,7 @@ export function SegmentCard({
   characters,
   clues,
   projectName,
+  durationOptions,
   onUpdatePrompt,
   onGenerateStoryboard,
   onGenerateVideo,
@@ -699,6 +704,7 @@ export function SegmentCard({
               seconds={segment.duration_seconds}
               segmentId={segmentId}
               onUpdatePrompt={onUpdatePrompt}
+              durationOptions={durationOptions}
             />
             {segCost && (
               <span className="tabular-nums contents">
