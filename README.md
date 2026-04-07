@@ -119,6 +119,7 @@ docker compose up -d
 - **线索追踪** — 关键道具、场景元素标记为"线索"，跨镜头保持视觉连贯
 - **版本历史** — 每次重新生成自动保存历史版本，支持一键回滚
 - **多供应商费用追踪** — 图片/视频/文本全部纳入费用计算，按供应商分策略计费，不同币种分别统计
+- **费用预估** — 生成前预估项目/单集/单镜头费用，三级下钻展示预估与实际费用对比
 - **剪映草稿导出** — 按集导出剪映草稿 ZIP，支持剪映 5.x / 6+（[操作指南](docs/jianying-export-guide.md)）
 - **项目导入/导出** — 整个项目打包归档，方便备份和迁移
 
@@ -258,38 +259,7 @@ flowchart TB
 
 ## 贡献
 
-欢迎贡献代码、报告 Bug 或提出功能建议！
-
-### 本地开发环境
-
-```bash
-# 前置要求：Python 3.12+, Node.js 20+, uv, pnpm, ffmpeg
-
-# 安装依赖
-uv sync
-cd frontend && pnpm install && cd ..
-
-# 初始化数据库
-uv run alembic upgrade head
-
-# 启动后端 (终端 1)
-uv run uvicorn server.app:app --reload --port 1241
-
-# 启动前端 (终端 2)
-cd frontend && pnpm dev
-
-# 访问 http://localhost:5173
-```
-
-### 运行测试
-
-```bash
-# 后端测试
-python -m pytest
-
-# 前端类型检查 + 测试
-cd frontend && pnpm check
-```
+欢迎贡献代码、报告 Bug 或提出功能建议！请参阅 [贡献指南](CONTRIBUTING.md) 了解本地开发环境搭建、测试和代码规范。
 
 ## 许可证
 

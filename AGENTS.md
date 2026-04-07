@@ -3,7 +3,7 @@
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## 语言规范
-- **回答用户必须使用中文**：所有回复、思考过程、任务清单及计划文件，均须使用中文
+- **回答用户必须使用中文**：所有回复、任务清单及计划文件，均须使用中文
 
 ## 项目概述
 
@@ -46,6 +46,7 @@ pnpm check       # typecheck + test
 - `versions.py` — 资源版本历史与回滚
 - `characters.py` / `clues.py` — 角色/线索管理
 - `usage.py` — API 用量统计
+- `cost_estimation.py` — 费用预估（项目/单集/单镜头）
 - `auth.py` / `api_keys.py` — 认证与 API 密钥管理
 - `system_config.py` — 系统配置
 - `providers.py` — 预置供应商配置管理（列表、读写、连接测试）
@@ -57,6 +58,7 @@ pnpm check       # typecheck + test
 - `project_archive.py` — 项目导出（ZIP 打包）
 - `project_events.py` — 项目变更事件发布
 - `jianying_draft_service.py` — 剪映草稿导出
+- `cost_estimation.py` — 费用预估计算与实际费用汇总
 
 ### lib/ 核心模块
 
@@ -71,6 +73,7 @@ pnpm check       # typecheck + test
 - **UsageTracker** (`usage_tracker.py`) — API 用量追踪
 - **CostCalculator** (`cost_calculator.py`) — 费用计算
 - **TextGenerator** (`text_generator.py`) — 文本生成任务
+- **retry** (`retry.py`) — 通用指数退避重试装饰器，各供应商后端复用
 
 ### lib/config/ — 供应商配置系统
 
