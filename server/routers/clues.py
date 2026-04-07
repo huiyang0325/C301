@@ -2,6 +2,7 @@
 线索管理路由
 """
 
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,11 +42,15 @@ class UpdateClueRequest(BaseModel):
 async def add_clue(project_name: str, req: CreateClueRequest, _user: CurrentUser):
     """添加线索"""
     try:
-        with project_change_source("webui"):
-            project = get_project_manager().add_clue(
-                project_name, req.name, req.clue_type, req.description, req.importance
-            )
-        return {"success": True, "clue": project["clues"][req.name]}
+
+        def _sync():
+            with project_change_source("webui"):
+                project = get_project_manager().add_clue(
+                    project_name, req.name, req.clue_type, req.description, req.importance
+                )
+            return {"success": True, "clue": project["clues"][req.name]}
+
+        return await asyncio.to_thread(_sync)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError:
@@ -61,29 +66,37 @@ async def add_clue(project_name: str, req: CreateClueRequest, _user: CurrentUser
 async def update_clue(project_name: str, clue_name: str, req: UpdateClueRequest, _user: CurrentUser):
     """更新线索"""
     try:
-        manager = get_project_manager()
-        project = manager.load_project(project_name)
+        # 验证输入（纯 CPU，无需下沉到线程）
+        if req.clue_type is not None and req.clue_type not in ["prop", "location"]:
+            raise HTTPException(status_code=400, detail="线索类型必须是 'prop' 或 'location'")
+        if req.importance is not None and req.importance not in ["major", "minor"]:
+            raise HTTPException(status_code=400, detail="重要程度必须是 'major' 或 'minor'")
 
-        if clue_name not in project["clues"]:
-            raise HTTPException(status_code=404, detail=f"线索 '{clue_name}' 不存在")
+        def _sync():
+            manager = get_project_manager()
+            result_clue = {}
 
-        clue = project["clues"][clue_name]
-        if req.clue_type is not None:
-            if req.clue_type not in ["prop", "location"]:
-                raise HTTPException(status_code=400, detail="线索类型必须是 'prop' 或 'location'")
-            clue["type"] = req.clue_type
-        if req.description is not None:
-            clue["description"] = req.description
-        if req.importance is not None:
-            if req.importance not in ["major", "minor"]:
-                raise HTTPException(status_code=400, detail="重要程度必须是 'major' 或 'minor'")
-            clue["importance"] = req.importance
-        if req.clue_sheet is not None:
-            clue["clue_sheet"] = req.clue_sheet
+            def _mutate(project):
+                if clue_name not in project.get("clues", {}):
+                    raise KeyError(clue_name)
+                clue = project["clues"][clue_name]
+                if req.clue_type is not None:
+                    clue["type"] = req.clue_type
+                if req.description is not None:
+                    clue["description"] = req.description
+                if req.importance is not None:
+                    clue["importance"] = req.importance
+                if req.clue_sheet is not None:
+                    clue["clue_sheet"] = req.clue_sheet
+                result_clue.update(clue)
 
-        with project_change_source("webui"):
-            manager.save_project(project_name, project)
-        return {"success": True, "clue": clue}
+            with project_change_source("webui"):
+                manager.update_project(project_name, _mutate)
+            return {"success": True, "clue": result_clue}
+
+        return await asyncio.to_thread(_sync)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"线索 '{clue_name}' 不存在")
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"项目 '{project_name}' 不存在")
     except HTTPException:
@@ -97,16 +110,22 @@ async def update_clue(project_name: str, clue_name: str, req: UpdateClueRequest,
 async def delete_clue(project_name: str, clue_name: str, _user: CurrentUser):
     """删除线索"""
     try:
-        manager = get_project_manager()
-        project = manager.load_project(project_name)
 
-        if clue_name not in project["clues"]:
-            raise HTTPException(status_code=404, detail=f"线索 '{clue_name}' 不存在")
+        def _sync():
+            manager = get_project_manager()
 
-        del project["clues"][clue_name]
-        with project_change_source("webui"):
-            manager.save_project(project_name, project)
-        return {"success": True, "message": f"线索 '{clue_name}' 已删除"}
+            def _mutate(project):
+                if clue_name not in project.get("clues", {}):
+                    raise KeyError(clue_name)
+                del project["clues"][clue_name]
+
+            with project_change_source("webui"):
+                manager.update_project(project_name, _mutate)
+            return {"success": True, "message": f"线索 '{clue_name}' 已删除"}
+
+        return await asyncio.to_thread(_sync)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"线索 '{clue_name}' 不存在")
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"项目 '{project_name}' 不存在")
     except HTTPException:
