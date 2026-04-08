@@ -57,7 +57,6 @@ class OpenAIVideoBackend:
     def capabilities(self) -> set[VideoCapability]:
         return self._capabilities
 
-    @with_retry_async(retryable_errors=OPENAI_RETRYABLE_ERRORS)
     async def generate(self, request: VideoGenerationRequest) -> VideoGenerationResult:
         kwargs: dict = {
             "prompt": request.prompt,
@@ -71,12 +70,12 @@ class OpenAIVideoBackend:
 
         logger.info("OpenAI 视频生成开始: model=%s, seconds=%s", self._model, kwargs["seconds"])
 
-        video = await self._client.videos.create_and_poll(**kwargs)
+        video = await self._create_video(**kwargs)
 
         if video.status == "failed":
             raise RuntimeError(f"Sora 视频生成失败: {video.error}")
 
-        content = await self._client.videos.download_content(video.id)
+        content = await self._download_content_with_retry(video.id)
         request.output_path.parent.mkdir(parents=True, exist_ok=True)
         request.output_path.write_bytes(content.content)
 
@@ -89,6 +88,20 @@ class OpenAIVideoBackend:
             duration_seconds=int(video.seconds if video.seconds is not None else kwargs["seconds"]),
             task_id=video.id,
         )
+
+    @with_retry_async(retryable_errors=OPENAI_RETRYABLE_ERRORS)
+    async def _create_video(self, **kwargs):
+        """视频生成（create_and_poll），带独立重试。"""
+        return await self._client.videos.create_and_poll(**kwargs)
+
+    @with_retry_async(
+        max_attempts=5,
+        backoff_seconds=(4, 8, 15, 30),
+        retryable_errors=OPENAI_RETRYABLE_ERRORS,
+    )
+    async def _download_content_with_retry(self, video_id: str):
+        """单独重试内容下载，避免因下载失败重新触发视频生成。"""
+        return await self._client.videos.download_content(video_id)
 
 
 def _map_duration(seconds: int) -> str:
