@@ -1,4 +1,6 @@
+
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useWarnUnsaved } from "@/hooks/useWarnUnsaved";
 import { API } from "@/api";
 import type { SystemConfigSettings, SystemConfigOptions, SystemConfigPatch } from "@/types/system";
@@ -7,17 +9,19 @@ import { PROVIDER_NAMES } from "@/components/ui/ProviderIcon";
 import { useAppStore } from "@/stores/app-store";
 import { useConfigStatusStore } from "@/stores/config-status-store";
 
-const TEXT_MODEL_FIELDS = [
-  ["text_backend_script", "剧本生成"],
-  ["text_backend_overview", "概述生成"],
-  ["text_backend_style", "风格分析"],
-] as const;
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function MediaModelSection() {
+  const { t } = useTranslation("dashboard");
+  
+  const TEXT_MODEL_FIELDS = useMemo(() => [
+    ["text_backend_script", t("script_generation")],
+    ["text_backend_overview", t("overview_generation")],
+    ["text_backend_style", t("style_analysis")],
+  ] as const, [t]);
+
   const [settings, setSettings] = useState<SystemConfigSettings | null>(null);
   const [options, setOptions] = useState<SystemConfigOptions | null>(null);
   const [draft, setDraft] = useState<SystemConfigPatch>({});
@@ -49,16 +53,16 @@ export function MediaModelSection() {
       await API.updateSystemConfig(draft);
       await fetchConfig();
       void useConfigStatusStore.getState().refresh();
-      useAppStore.getState().pushToast("媒体模型配置已保存", "success");
+      useAppStore.getState().pushToast(t("media_config_saved"), "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`保存失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(`${t("save_failed")}${(err as Error).message}`, "error");
     } finally {
       setSaving(false);
     }
-  }, [draft, fetchConfig]);
+  }, [draft, fetchConfig, t]);
 
   if (!settings || !options) {
-    return <div className="p-6 text-sm text-gray-500">加载中…</div>;
+    return <div className="p-6 text-sm text-gray-500">{t("common:loading")}</div>;
   }
 
   const videoBackends: string[] = options.video_backends ?? [];
@@ -73,13 +77,13 @@ export function MediaModelSection() {
     <div className="space-y-6 p-6">
       {/* Section heading */}
       <div>
-        <h3 className="text-lg font-semibold text-gray-100">模型选择</h3>
-        <p className="mt-1 text-sm text-gray-500">设置全局默认的生成模型，项目内可单独覆盖</p>
+        <h3 className="text-lg font-semibold text-gray-100">{t("model_selection")}</h3>
+        <p className="mt-1 text-sm text-gray-500">{t("model_selection_desc")}</p>
       </div>
 
       {/* Video backend selector */}
       <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-        <div className="mb-3 text-sm font-medium text-gray-100">默认视频模型</div>
+        <div className="mb-3 text-sm font-medium text-gray-100">{t("default_video_model")}</div>
         {videoBackends.length > 0 ? (
           <ProviderModelSelect
             value={currentVideo}
@@ -87,12 +91,12 @@ export function MediaModelSection() {
             providerNames={allProviderNames}
             onChange={(v) => setDraft((prev) => ({ ...prev, default_video_backend: v }))}
             allowDefault
-            defaultLabel="自动选择"
-            defaultHint="自动"
+            defaultLabel={t("auto_select")}
+            defaultHint={t("auto")}
           />
         ) : (
           <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-sm text-gray-500">
-            暂无可用视频供应商，请先在「供应商」页面配置 API 密钥
+            {t("no_video_providers_hint")}
           </div>
         )}
 
@@ -106,14 +110,14 @@ export function MediaModelSection() {
             }
             className="rounded border-gray-600 bg-gray-800"
           />
-          生成音频
-          <span className="text-xs text-gray-500">（仅部分供应商支持）</span>
+          {t("generate_audio")}
+          <span className="text-xs text-gray-500">{t("audio_support_hint")}</span>
         </label>
       </div>
 
       {/* Image backend selector */}
       <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-        <div className="mb-3 text-sm font-medium text-gray-100">默认图片模型</div>
+        <div className="mb-3 text-sm font-medium text-gray-100">{t("default_image_model")}</div>
         {imageBackends.length > 0 ? (
           <ProviderModelSelect
             value={currentImage}
@@ -121,20 +125,20 @@ export function MediaModelSection() {
             providerNames={allProviderNames}
             onChange={(v) => setDraft((prev) => ({ ...prev, default_image_backend: v }))}
             allowDefault
-            defaultLabel="自动选择"
-            defaultHint="自动"
+            defaultLabel={t("auto_select")}
+            defaultHint={t("auto")}
           />
         ) : (
           <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-sm text-gray-500">
-            暂无可用图片供应商，请先在「供应商」页面配置 API 密钥
+            {t("no_image_providers_hint")}
           </div>
         )}
       </div>
 
       {/* Text backend selectors */}
       <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-        <div className="mb-3 text-sm font-medium text-gray-100">文本模型</div>
-        <p className="mb-3 text-xs text-gray-500">按任务类型配置文本模型，留空表示自动选择</p>
+        <div className="mb-3 text-sm font-medium text-gray-100">{t("text_models")}</div>
+        <p className="mb-3 text-xs text-gray-500">{t("text_models_desc")}</p>
 
         {textBackends.length > 0 ? (
           <div className="space-y-3">
@@ -147,7 +151,7 @@ export function MediaModelSection() {
                   providerNames={allProviderNames}
                   onChange={(v) => setDraft((prev) => ({ ...prev, [key]: v }))}
                   allowDefault
-                  defaultHint="自动"
+                  defaultHint={t("auto")}
                   aria-label={label}
                 />
               </div>
@@ -155,7 +159,7 @@ export function MediaModelSection() {
           </div>
         ) : (
           <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-sm text-gray-500">
-            暂无可用文本供应商，请先在「供应商」页面配置 API 密钥
+            {t("no_text_providers_hint")}
           </div>
         )}
       </div>
@@ -169,14 +173,14 @@ export function MediaModelSection() {
             disabled={saving}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:outline-none"
           >
-            {saving ? "保存中…" : "保存"}
+            {saving ? t("common:saving") : t("common:save")}
           </button>
           <button
             type="button"
             onClick={() => setDraft({})}
             className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-800 focus-visible:ring-2 focus-visible:ring-indigo-500/60 focus-visible:outline-none"
           >
-            重置
+            {t("common:reset")}
           </button>
         </div>
       )}

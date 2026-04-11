@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Route, Switch, Redirect, useLocation } from "wouter";
+import { useTranslation } from "react-i18next";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useAppStore } from "@/stores/app-store";
 import { useTasksStore } from "@/stores/tasks-store";
@@ -20,6 +21,9 @@ import type { Clue, CustomProviderInfo, ProviderInfo } from "@/types";
 // ---------------------------------------------------------------------------
 
 export function StudioCanvasRouter() {
+  const { t } = useTranslation("dashboard");
+  const tRef = useRef(t);
+  tRef.current = t;
   const { currentProjectData, currentProjectName, currentScripts } =
     useProjectsStore();
 
@@ -110,7 +114,7 @@ export function StudioCanvasRouter() {
       }
       await refreshProject();
     } catch (err) {
-      useAppStore.getState().pushToast(`更新 Prompt 失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("update_prompt_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, currentProjectData, refreshProject]);
 
@@ -129,9 +133,9 @@ export function StudioCanvasRouter() {
     const prompt = seg?.image_prompt ?? "";
     try {
       await API.generateStoryboard(currentProjectName, segmentId, prompt as string | Record<string, unknown>, resolvedFile);
-      useAppStore.getState().pushToast(`已提交分镜 "${segmentId}" 生成任务`, "success");
+      useAppStore.getState().pushToast(tRef.current("storyboard_task_submitted_toast", { id: segmentId }), "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`生成分镜失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("generate_storyboard_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, currentScripts]);
 
@@ -151,9 +155,9 @@ export function StudioCanvasRouter() {
     const duration = seg?.duration_seconds ?? 4;
     try {
       await API.generateVideo(currentProjectName, segmentId, prompt as string | Record<string, unknown>, resolvedFile, duration);
-      useAppStore.getState().pushToast(`已提交视频 "${segmentId}" 生成任务`, "success");
+      useAppStore.getState().pushToast(tRef.current("video_task_submitted_toast", { id: segmentId }), "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`生成视频失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("generate_video_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, currentScripts]);
 
@@ -187,9 +191,9 @@ export function StudioCanvasRouter() {
           ? [buildEntityRevisionKey("character", name)]
           : [],
       );
-      useAppStore.getState().pushToast(`角色 "${name}" 已更新`, "success");
+      useAppStore.getState().pushToast(tRef.current("character_updated_toast", { name }), "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`更新角色失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("update_character_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, refreshProject]);
 
@@ -203,9 +207,9 @@ export function StudioCanvasRouter() {
       );
       useAppStore
         .getState()
-        .pushToast(`角色 "${name}" 生成任务已提交`, "success");
+        .pushToast(tRef.current("character_task_submitted_toast", { name }), "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`提交失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("submit_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, currentProjectData]);
 
@@ -229,9 +233,9 @@ export function StudioCanvasRouter() {
           : [],
       );
       setAddingCharacter(false);
-      useAppStore.getState().pushToast(`角色 "${name}" 已添加`, "success");
+      useAppStore.getState().pushToast(tRef.current("character_added_toast", { name }), "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`添加失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("add_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, refreshProject]);
 
@@ -242,7 +246,7 @@ export function StudioCanvasRouter() {
       await API.updateClue(currentProjectName, name, updates);
       await refreshProject();
     } catch (err) {
-      useAppStore.getState().pushToast(`更新线索失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("update_clue_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, refreshProject]);
 
@@ -256,9 +260,9 @@ export function StudioCanvasRouter() {
       );
       useAppStore
         .getState()
-        .pushToast(`线索 "${name}" 生成任务已提交`, "success");
+        .pushToast(tRef.current("clue_task_submitted_toast", { name }), "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`提交失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("submit_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, currentProjectData]);
 
@@ -268,9 +272,9 @@ export function StudioCanvasRouter() {
       await API.addClue(currentProjectName, name, clueType, description, importance);
       await refreshProject();
       setAddingClue(false);
-      useAppStore.getState().pushToast(`线索 "${name}" 已添加`, "success");
+      useAppStore.getState().pushToast(tRef.current("clue_added_toast", { name }), "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`添加失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("add_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, refreshProject]);
 
@@ -280,7 +284,7 @@ export function StudioCanvasRouter() {
       const result = await API.generateGrid(currentProjectName, episode, scriptFile, sceneIds);
       useAppStore.getState().pushToast(result.message, "success");
     } catch (err) {
-      useAppStore.getState().pushToast(`宫格生成失败: ${(err as Error).message}`, "error");
+      useAppStore.getState().pushToast(tRef.current("grid_generation_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName]);
 
@@ -293,7 +297,7 @@ export function StudioCanvasRouter() {
   if (!currentProjectName) {
     return (
       <div className="flex h-full items-center justify-center text-gray-500">
-        加载中...
+        {t("loading_placeholder")}
       </div>
     );
   }

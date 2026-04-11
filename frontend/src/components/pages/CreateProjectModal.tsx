@@ -1,18 +1,21 @@
+
 import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { X, Loader2, Upload } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { API } from "@/api";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useAppStore } from "@/stores/app-store";
 import { DEFAULT_DURATIONS } from "@/utils/provider-models";
 
 const STYLE_OPTIONS = [
-  { value: "Photographic", label: "写实摄影" },
-  { value: "Anime", label: "动漫风格" },
-  { value: "3D Animation", label: "3D 动画" },
+  { value: "Photographic", label: "dashboard:photographic" },
+  { value: "Anime", label: "dashboard:anime" },
+  { value: "3D Animation", label: "dashboard:3d_animation" },
 ] as const;
 
 export function CreateProjectModal() {
+  const { t } = useTranslation(["common", "dashboard"]);
   const [, navigate] = useLocation();
   const { setShowCreateModal, setCreatingProject, creatingProject } =
     useProjectsStore();
@@ -50,7 +53,7 @@ export function CreateProjectModal() {
     e.preventDefault();
 
     if (!title.trim()) {
-      setTitleError("项目标题不能为空");
+      setTitleError(t("dashboard:project_title_required"));
       return;
     }
 
@@ -66,7 +69,7 @@ export function CreateProjectModal() {
         } catch {
           // 风格图上传失败不阻塞项目创建
           useAppStore.getState().pushToast(
-            "风格参考图上传失败，可稍后在项目设置中重新上传",
+            t("dashboard:style_upload_failed_hint"),
             "warning"
           );
         }
@@ -76,7 +79,7 @@ export function CreateProjectModal() {
       navigate(`/app/projects/${projectName}`);
     } catch (err) {
       useAppStore.getState().pushToast(
-        `创建项目失败: ${(err as Error).message}`,
+        `${t("dashboard:create_project_failed")}${(err as Error).message}`,
         "error"
       );
     } finally {
@@ -89,7 +92,7 @@ export function CreateProjectModal() {
       <div className="w-full max-w-md rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-gray-100">新建项目</h2>
+          <h2 className="text-lg font-semibold text-gray-100">{t("dashboard:new_project")}</h2>
           <button
             type="button"
             onClick={() => setShowCreateModal(false)}
@@ -103,7 +106,7 @@ export function CreateProjectModal() {
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">
-              项目标题 <span className="text-red-400">*</span>
+              {t("dashboard:project_title")} <span className="text-red-400">*</span>
             </label>
             <input
               type="text"
@@ -112,21 +115,21 @@ export function CreateProjectModal() {
                 setTitle(e.target.value);
                 setTitleError("");
               }}
-              placeholder="例如：重生之皇后威武"
+              placeholder={t("dashboard:rebirth_empress_example")}
               className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 outline-none focus:border-indigo-500"
             />
             {titleError && (
               <p className="mt-1 text-xs text-red-400">{titleError}</p>
             )}
             <p className="mt-1 text-xs text-gray-600">
-              系统会自动生成内部项目标识并用于 URL 与文件存储
+              {t("dashboard:project_id_auto_gen_hint")}
             </p>
           </div>
 
           {/* Content Mode */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">
-              内容模式
+              {t("dashboard:content_mode")}
             </label>
             <div className="flex gap-3">
               <label className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm transition-colors ${
@@ -142,7 +145,7 @@ export function CreateProjectModal() {
                   onChange={() => setContentMode("narration")}
                   className="sr-only"
                 />
-                说书+画面
+                {t("dashboard:narration_visuals")}
               </label>
               <label className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm transition-colors ${
                 contentMode === "drama"
@@ -157,7 +160,7 @@ export function CreateProjectModal() {
                   onChange={() => setContentMode("drama")}
                   className="sr-only"
                 />
-                剧集动画
+                {t("dashboard:drama_animation")}
               </label>
             </div>
           </div>
@@ -165,7 +168,7 @@ export function CreateProjectModal() {
           {/* Aspect Ratio */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">
-              画面比例
+              {t("dashboard:aspect_ratio")}
             </label>
             <div className="flex gap-3">
               <label className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm transition-colors ${
@@ -181,7 +184,7 @@ export function CreateProjectModal() {
                   onChange={() => setAspectRatio("9:16")}
                   className="sr-only"
                 />
-                竖屏 9:16
+                {t("dashboard:portrait_9_16")}
               </label>
               <label className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm transition-colors ${
                 aspectRatio === "16:9"
@@ -196,7 +199,7 @@ export function CreateProjectModal() {
                   onChange={() => setAspectRatio("16:9")}
                   className="sr-only"
                 />
-                横屏 16:9
+                {t("dashboard:landscape_16_9")}
               </label>
             </div>
           </div>
@@ -204,12 +207,12 @@ export function CreateProjectModal() {
           {/* Default Duration */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-0.5">
-              默认时长
+              {t("dashboard:default_duration")}
             </label>
             <p className="text-xs text-gray-600 mb-1.5">
-              由 AI 根据内容自动决定时长，或指定固定时长
+              {t("dashboard:default_duration_desc")}
             </p>
-            <div className="flex gap-2" role="radiogroup" aria-label="默认时长">
+            <div className="flex gap-2" role="radiogroup" aria-label={t("dashboard:default_duration")}>
               <button
                 type="button"
                 role="radio"
@@ -221,7 +224,7 @@ export function CreateProjectModal() {
                     : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
                 }`}
               >
-                自动
+                {t("dashboard:auto")}
               </button>
               {DEFAULT_DURATIONS.map((d) => (
                 <button
@@ -245,7 +248,7 @@ export function CreateProjectModal() {
           {/* Style — fixed radio options */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">
-              视觉风格
+              {t("dashboard:visual_style")}
             </label>
             <div className="flex gap-2">
               {STYLE_OPTIONS.map((opt) => (
@@ -265,7 +268,7 @@ export function CreateProjectModal() {
                     onChange={() => setStyle(opt.value)}
                     className="sr-only"
                   />
-                  {opt.label}
+                  {t(opt.label)}
                 </label>
               ))}
             </div>
@@ -274,10 +277,10 @@ export function CreateProjectModal() {
           {/* Generation Mode */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-0.5">
-              分镜生成模式
+              {t("dashboard:generation_mode")}
             </label>
             <p className="text-xs text-gray-600 mb-1.5">
-              宫格模式按段落分组一次生成，首尾帧链式衔接，画风更一致
+              {t("dashboard:generation_mode_desc")}
             </p>
             <div className="flex gap-3">
               <label className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm transition-colors ${
@@ -293,7 +296,7 @@ export function CreateProjectModal() {
                   onChange={() => setGenerationMode("single")}
                   className="sr-only"
                 />
-                逐张生成
+                {t("dashboard:single_generation")}
               </label>
               <label className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-center text-sm transition-colors ${
                 generationMode === "grid"
@@ -308,7 +311,7 @@ export function CreateProjectModal() {
                   onChange={() => setGenerationMode("grid")}
                   className="sr-only"
                 />
-                宫格生成
+                {t("dashboard:grid_generation")}
               </label>
             </div>
           </div>
@@ -316,13 +319,13 @@ export function CreateProjectModal() {
           {/* Style reference image */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">
-              风格参考图 <span className="text-xs text-gray-600 font-normal">（可选）</span>
+              {t("dashboard:style_reference_image")} <span className="text-xs text-gray-600 font-normal">（{t("dashboard:optional")}）</span>
             </label>
             {styleImagePreview ? (
               <div className="relative rounded-lg border border-gray-700 overflow-hidden">
                 <img
                   src={styleImagePreview}
-                  alt="风格参考图预览"
+                  alt={t("dashboard:style_image_preview")}
                   className="w-full h-32 object-cover"
                 />
                 <button
@@ -340,7 +343,7 @@ export function CreateProjectModal() {
                 className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-700 bg-gray-800/50 px-3 py-4 text-sm text-gray-500 transition-colors hover:border-gray-500 hover:text-gray-300"
               >
                 <Upload className="h-4 w-4" />
-                上传参考图片
+                {t("dashboard:upload_reference_image")}
               </button>
             )}
             <input
@@ -351,7 +354,7 @@ export function CreateProjectModal() {
               className="hidden"
             />
             <p className="mt-1 text-xs text-gray-600">
-              上传后将自动分析风格特征，用于生成一致的画面
+              {t("dashboard:style_analysis_hint")}
             </p>
           </div>
 
@@ -364,10 +367,10 @@ export function CreateProjectModal() {
             {creatingProject ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                创建中...
+                {t("dashboard:creating")}
               </span>
             ) : (
-              "创建项目"
+              t("dashboard:create_project")
             )}
           </button>
         </form>

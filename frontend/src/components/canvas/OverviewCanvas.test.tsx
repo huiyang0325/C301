@@ -77,7 +77,7 @@ describe("OverviewCanvas", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "删除参考图" }));
+    fireEvent.click(screen.getByRole("button", { name: /删除参考图/ }));
 
     await waitFor(() => {
       expect(API.deleteStyleImage).toHaveBeenCalledWith("demo");
@@ -86,7 +86,7 @@ describe("OverviewCanvas", () => {
   }, 10_000);
 
   it("shows a save action only when style description is edited", async () => {
-    vi.spyOn(API, "updateStyleDescription").mockResolvedValue({ success: true });
+    vi.spyOn(API, "updateStyleDescription").mockResolvedValue({} as any);
     vi.spyOn(API, "getProject").mockResolvedValue({
       project: makeProjectData({ style_description: "new description" }),
       scripts: {},
@@ -97,19 +97,17 @@ describe("OverviewCanvas", () => {
     );
 
     expect(
-      screen.queryByRole("button", { name: "保存风格描述" }),
+      screen.queryByRole("button", { name: /保存风格描述/ }),
     ).not.toBeInTheDocument();
 
     fireEvent.change(
-      screen.getByPlaceholderText(
-        "上传风格参考图后，系统会自动分析并填充风格描述；也可以手动编辑。",
-      ),
+      screen.getByPlaceholderText(/上传风格参考图后/),
       {
         target: { value: "new description" },
       },
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "保存风格描述" }));
+    fireEvent.click(screen.getByRole("button", { name: /保存风格描述/ }));
 
     await waitFor(() => {
       expect(API.updateStyleDescription).toHaveBeenCalledWith(

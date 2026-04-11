@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Image, Video, Check, X, Loader2, ChevronDown } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useAnchoredPopover } from "@/hooks/useAnchoredPopover";
 import { useAppStore } from "@/stores/app-store";
 import { useTasksStore } from "@/stores/tasks-store";
@@ -50,26 +51,6 @@ function RunningProgressBar() {
 }
 
 // ---------------------------------------------------------------------------
-// Static lookup tables (hoisted out of TaskRow — they never change)
-// ---------------------------------------------------------------------------
-
-const statusLabel: Record<TaskItem["status"], string> = {
-  running: "生成中...",
-  queued: "排队中",
-  succeeded: "已完成",
-  failed: "失败",
-  cancelled: "已取消",
-};
-
-const statusColor: Record<TaskItem["status"], string> = {
-  running: "text-indigo-400",
-  queued: "text-gray-500",
-  succeeded: "text-emerald-400",
-  failed: "text-red-400",
-  cancelled: "text-gray-400",
-};
-
-// ---------------------------------------------------------------------------
 // TaskRow — 单个任务条目（含完成高亮、失败展开、运行进度条）
 // ---------------------------------------------------------------------------
 
@@ -86,6 +67,22 @@ function TaskRow({
   onToggleError: (taskId: string) => void;
   onCancel?: (taskId: string) => void;
 }) {
+  const { t } = useTranslation("dashboard");
+  const statusLabel: Record<TaskItem["status"], string> = {
+    running: t("generating_status"),
+    queued: t("queued_status"),
+    succeeded: t("completed_status"),
+    failed: t("failed_status"),
+    cancelled: t("cancelled_status"),
+  };
+
+  const statusColor: Record<TaskItem["status"], string> = {
+    running: "text-indigo-400",
+    queued: "text-gray-500",
+    succeeded: "text-emerald-400",
+    failed: "text-red-400",
+    cancelled: "text-gray-400",
+  };
 
   // 根据状态确定行背景样式
   const rowBg =
@@ -132,14 +129,14 @@ function TaskRow({
               onCancel(task.task_id);
             }}
             className="ml-1 rounded px-1 py-0.5 text-xs text-gray-500 hover:bg-gray-700 hover:text-gray-300"
-            title="取消任务"
-            aria-label="取消此任务"
+            title={t("cancel_task")}
+            aria-label={t("cancel_this_task")}
           >
-            取消
+            {t("cancel_btn")}
           </button>
         )}
         {task.status === "cancelled" && task.cancelled_by === "cascade" && (
-          <span className="ml-1 text-xs text-gray-500">级联</span>
+          <span className="ml-1 text-xs text-gray-500">{t("cascade_label")}</span>
         )}
         {hasError && (
           <ChevronDown
@@ -192,6 +189,7 @@ function ChannelSection({
   tasks: TaskItem[];
   onCancel?: (taskId: string) => void;
 }) {
+  const { t } = useTranslation("dashboard");
   // 跟踪正在淡出的任务 ID
   const [fadingIds, setFadingIds] = useState<Set<string>>(new Set());
   // 跟踪已完全淡出（应隐藏）的任务 ID
@@ -258,7 +256,7 @@ function ChannelSection({
         {title}
         {running.length > 0 && (
           <span className="ml-auto text-indigo-400">
-            {running.length} 运行中
+            {t("running_count", { count: running.length })}
           </span>
         )}
       </div>
@@ -275,7 +273,7 @@ function ChannelSection({
         ))}
       </AnimatePresence>
       {visible.length === 0 && (
-        <div className="px-3 py-2 text-xs text-gray-600">暂无任务</div>
+        <div className="px-3 py-2 text-xs text-gray-600">{t("no_tasks")}</div>
       )}
     </div>
   );
@@ -286,6 +284,7 @@ function ChannelSection({
 // ---------------------------------------------------------------------------
 
 export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null> }) {
+  const { t } = useTranslation("dashboard");
   const { taskHudOpen, setTaskHudOpen } = useAppStore();
   const { tasks, stats } = useTasksStore();
   const { panelRef, positionStyle } = useAnchoredPopover({
@@ -375,24 +374,24 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
           {/* 统计栏 */}
           <div className="flex gap-3 border-b border-gray-800 px-3 py-2 text-xs text-gray-400">
             <span>
-              排队{" "}
+              {t("queued_label")}{" "}
               <strong className="text-gray-200">{stats.queued}</strong>
             </span>
             <span>
-              运行{" "}
+              {t("running_label")}{" "}
               <strong className="text-indigo-400">{stats.running}</strong>
             </span>
             <span>
-              完成{" "}
+              {t("completed_label")}{" "}
               <strong className="text-emerald-400">{stats.succeeded}</strong>
             </span>
             <span>
-              失败{" "}
+              {t("failed_label")}{" "}
               <strong className="text-red-400">{stats.failed}</strong>
             </span>
             {stats.cancelled > 0 && (
               <span>
-                取消{" "}
+                {t("cancelled_label")}{" "}
                 <strong className="text-gray-400">{stats.cancelled}</strong>
               </span>
             )}
@@ -400,28 +399,28 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
               <button
                 onClick={handleCancelAll}
                 className="ml-auto text-xs text-gray-500 hover:text-red-400"
-                aria-label="取消所有排队中的任务"
+                aria-label={t("cancel_all_queued_aria")}
               >
-                全部取消
+                {t("cancel_all")}
               </button>
             )}
           </div>
 
           {/* 双通道 */}
           <div className="max-h-80 divide-y divide-gray-800/50 overflow-y-auto">
-            <ChannelSection title="图片通道" icon={Image} tasks={imageTasks} onCancel={handleCancelSingle} />
-            <ChannelSection title="视频通道" icon={Video} tasks={videoTasks} onCancel={handleCancelSingle} />
+            <ChannelSection title={t("image_channel")} icon={Image} tasks={imageTasks} onCancel={handleCancelSingle} />
+            <ChannelSection title={t("video_channel")} icon={Video} tasks={videoTasks} onCancel={handleCancelSingle} />
           </div>
 
           {/* 取消确认面板 */}
           {cancelConfirm && (
-            <div className="border-t border-gray-800 px-3 py-2" role="alertdialog" aria-label="取消确认">
+            <div className="border-t border-gray-800 px-3 py-2" role="alertdialog" aria-label={t("cancel_confirm_aria")}>
               <p className="text-xs text-gray-300">
                 {cancelConfirm.preview
                   ? cancelConfirm.preview.cascaded.length > 0
-                    ? `取消此任务将同时取消 ${cancelConfirm.preview.cascaded.length} 个依赖任务`
-                    : "确定取消此任务？"
-                  : `确定取消所有 ${cancelConfirm.allCount} 个排队中的任务？`}
+                    ? t("cancel_cascade_msg", { count: cancelConfirm.preview.cascaded.length })
+                    : t("cancel_single_confirm")
+                  : t("cancel_all_confirm", { count: cancelConfirm.allCount })}
               </p>
               {cancelConfirm.preview && cancelConfirm.preview.cascaded.length > 0 && (
                 <ul className="mt-1 max-h-20 overflow-y-auto text-xs text-gray-500">
@@ -438,13 +437,13 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
                   disabled={cancelling}
                   className="rounded bg-red-600/80 px-2 py-0.5 text-xs text-white hover:bg-red-600 disabled:opacity-50"
                 >
-                  {cancelling ? "取消中..." : "确认取消"}
+                  {cancelling ? t("cancelling") : t("confirm_cancel")}
                 </button>
                 <button
                   onClick={() => setCancelConfirm(null)}
                   className="rounded px-2 py-0.5 text-xs text-gray-400 hover:bg-gray-700"
                 >
-                  返回
+                  {t("go_back")}
                 </button>
               </div>
             </div>

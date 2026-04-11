@@ -6,6 +6,7 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -13,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 logger = logging.getLogger(__name__)
 
 from lib import PROJECT_ROOT
+from lib.i18n import Translator
 from lib.project_change_hints import project_change_source
 from lib.project_manager import ProjectManager
 from lib.version_manager import VersionManager
@@ -45,11 +47,12 @@ def _resolve_resource_path(
     resource_type: str,
     resource_id: str,
     project_path: Path,
+    _t: Callable[..., str],
 ) -> tuple[Path, str]:
     """返回 (current_file_absolute, relative_file_path)，资源类型无效时抛出 HTTPException。"""
     pattern = _RESOURCE_FILE_PATTERNS.get(resource_type)
     if pattern is None:
-        raise HTTPException(status_code=400, detail=f"不支持的资源类型: {resource_type}")
+        raise HTTPException(status_code=400, detail=_t("unsupported_resource_type", resource_type=resource_type))
     subdir, name_tpl = pattern
     name = name_tpl.format(id=resource_id)
     return project_path / subdir / name, f"{subdir}/{name}"
@@ -151,6 +154,7 @@ async def restore_version(
     resource_id: str,
     version: int,
     _user: CurrentUser,
+    _t: Translator,
 ):
     """
     切换到指定版本
@@ -168,7 +172,7 @@ async def restore_version(
         def _sync():
             vm = get_version_manager(project_name)
             project_path = get_project_manager().get_project_path(project_name)
-            current_file, file_path = _resolve_resource_path(resource_type, resource_id, project_path)
+            current_file, file_path = _resolve_resource_path(resource_type, resource_id, project_path, _t)
 
             result = vm.restore_version(
                 resource_type=resource_type,

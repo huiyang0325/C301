@@ -15,6 +15,7 @@ from lib.generation_queue import (
     get_generation_queue,
     read_queue_poll_interval,
 )
+from lib.i18n import Translator
 from server.auth import CurrentUser, CurrentUserFlexible
 
 router = APIRouter()
@@ -190,9 +191,13 @@ async def cancel_all_queued(project_name: str, _user: CurrentUser):
 
 
 @router.get("/tasks/{task_id}")
-async def get_task(task_id: str, _user: CurrentUser):
+async def get_task(
+    task_id: str,
+    _user: CurrentUser,
+    _t: Translator,
+):
     queue = get_task_queue()
     task = await queue.get_task(task_id)
     if not task:
-        raise HTTPException(status_code=404, detail=f"任务 '{task_id}' 不存在")
+        raise HTTPException(status_code=404, detail=_t("task_not_found", id=task_id))
     return {"task": task}
