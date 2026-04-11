@@ -100,12 +100,13 @@ class TestCollectGridReferenceImages:
     def test_no_references(self, project_with_script):
         from server.services.generation_tasks import _collect_grid_reference_images
 
-        result = _collect_grid_reference_images(
+        paths, metadata = _collect_grid_reference_images(
             project_with_script,
             {"script_file": "episode_1.json"},
             ["E1S01", "E1S02"],
         )
-        assert result is None
+        assert paths is None
+        assert metadata == []
 
     def test_with_character_sheet(self, project_with_script):
         from server.services.generation_tasks import _collect_grid_reference_images
@@ -121,14 +122,17 @@ class TestCollectGridReferenceImages:
         script["segments"][0]["characters_in_segment"] = ["hero"]
         (project_with_script / "scripts" / "episode_1.json").write_text(json.dumps(script))
 
-        result = _collect_grid_reference_images(
+        paths, metadata = _collect_grid_reference_images(
             project_with_script,
             {"script_file": "episode_1.json"},
             ["E1S01"],
         )
-        assert result is not None
-        assert len(result) == 1
-        assert Path(str(result[0])).name == "hero.png"
+        assert paths is not None
+        assert len(paths) == 1
+        assert Path(str(paths[0])).name == "hero.png"
+        assert len(metadata) == 1
+        assert metadata[0]["name"] == "hero"
+        assert metadata[0]["ref_type"] == "character"
 
     def test_deduplicates_references(self, project_with_script):
         from server.services.generation_tasks import _collect_grid_reference_images
@@ -144,13 +148,14 @@ class TestCollectGridReferenceImages:
         script["segments"][1]["characters_in_segment"] = ["hero"]
         (project_with_script / "scripts" / "episode_1.json").write_text(json.dumps(script))
 
-        result = _collect_grid_reference_images(
+        paths, metadata = _collect_grid_reference_images(
             project_with_script,
             {"script_file": "episode_1.json"},
             ["E1S01", "E1S02"],
         )
-        assert result is not None
-        assert len(result) == 1  # Deduplicated
+        assert paths is not None
+        assert len(paths) == 1  # Deduplicated
+        assert len(metadata) == 1  # Deduplicated
 
 
 class TestExecuteGridTask:
@@ -244,27 +249,3 @@ class TestTaskExecutorsRegistry:
 
         assert "grid" in _TASK_EXECUTORS
         assert _TASK_EXECUTORS["grid"] is execute_grid_task
-
-
-class TestResolveVideoEndImage:
-    def test_returns_path_when_exists(self, tmp_path):
-        from server.services.generation_tasks import _resolve_video_end_image
-
-        (tmp_path / "storyboards").mkdir()
-        (tmp_path / "storyboards" / "scene_E1S01_last.png").write_bytes(b"fake")
-        item = {"generated_assets": {"storyboard_last_image": "storyboards/scene_E1S01_last.png"}}
-        result = _resolve_video_end_image(tmp_path, item)
-        assert result is not None
-        assert "last" in str(result)
-
-    def test_returns_none_when_no_field(self, tmp_path):
-        from server.services.generation_tasks import _resolve_video_end_image
-
-        item = {"generated_assets": {"storyboard_image": "x.png"}}
-        assert _resolve_video_end_image(tmp_path, item) is None
-
-    def test_returns_none_when_file_missing(self, tmp_path):
-        from server.services.generation_tasks import _resolve_video_end_image
-
-        item = {"generated_assets": {"storyboard_last_image": "storyboards/missing.png"}}
-        assert _resolve_video_end_image(tmp_path, item) is None

@@ -113,12 +113,28 @@ async def generate_grid(
         queue = get_generation_queue()
         gm = GridManager(project_path)
 
+        # Pre-load existing grids for cleanup
+        existing_grids = gm.list_all()
+
         for group in groups:
             all_scene_ids = [item[id_field] for item in group]
             n = len(all_scene_ids)
             layout = calculate_grid_layout(n, aspect_ratio)
             if layout is None:
                 continue
+
+            # 清理该组旧的 grid 记录（限定同脚本同集，scene_ids 是当前组子集的旧 grid）
+            # 跳过 pending/generating 状态的记录，避免 worker 执行时找不到资源
+            group_id_set = set(all_scene_ids)
+            for old_grid in existing_grids:
+                if (
+                    old_grid.script_file == req.script_file
+                    and old_grid.episode == episode
+                    and old_grid.status not in ("pending", "generating")
+                    and old_grid.scene_ids
+                    and set(old_grid.scene_ids) <= group_id_set
+                ):
+                    gm.delete(old_grid.id)
 
             # 将大分组拆分为多个宫格批次（余下不足4个的场景也用 grid_4 + 占位符）
             chunks: list[list] = []

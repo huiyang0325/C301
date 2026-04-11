@@ -7,6 +7,7 @@ import { SegmentCard } from "./SegmentCard";
 import { GridSegmentGroup } from "./GridSegmentGroup";
 import { PreprocessingView } from "./PreprocessingView";
 import { useScrollTarget } from "@/hooks/useScrollTarget";
+import { useAppStore } from "@/stores/app-store";
 import { useCostStore } from "@/stores/cost-store";
 import { formatCost, totalBreakdown } from "@/utils/cost-format";
 import { API } from "@/api";
@@ -183,6 +184,7 @@ export function TimelineCanvas({
   );
 
   // Grid mode state
+  const gridsRevision = useAppStore((s) => s.gridsRevision);
   const isGridMode = projectData?.generation_mode === "grid";
   const segmentGroups = useMemo(
     () => (isGridMode ? groupBySegmentBreak(segments) : []),
@@ -191,29 +193,46 @@ export function TimelineCanvas({
   const [generatingGridGroups, setGeneratingGridGroups] = useState<Set<number>>(new Set());
   const [generatingAllGrids, setGeneratingAllGrids] = useState(false);
   const [grids, setGrids] = useState<GridGeneration[]>([]);
+  const [gridsVersion, setGridsVersion] = useState(0);
+
+  const refreshGrids = useCallback(() => {
+    if (!isGridMode || !projectName) return;
+    API.listGrids(projectName).then((data) => {
+      setGrids(data);
+      setGridsVersion((v) => v + 1);
+    }).catch(() => {/* silently ignore */});
+  }, [isGridMode, projectName]);
 
   // Fetch grids list for the current episode when in grid mode
+  // Also re-fetch when gridsRevision changes (triggered by grid_ready SSE events)
   useEffect(() => {
-    if (!isGridMode || !projectName) return;
-    API.listGrids(projectName).then(setGrids).catch(() => {/* silently ignore */});
-  }, [isGridMode, projectName, episodeScript]);
+    refreshGrids();
+  }, [refreshGrids, episodeScript, gridsRevision]);
 
   /**
-   * Build a map from sorted-scene-key → gridId for matching groups.
-   * Uses the grid's scene_ids set intersection with a group's scene IDs.
+   * Find all grid IDs whose scene_ids are a subset of the given group.
+   * Handles batched grids: a group with 32 scenes may have 4 grids of ~9 each.
+   * Deduplicates by scene_ids key — keeps only the newest grid per unique batch.
    */
-  const gridIdByGroupScenes = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const grid of grids) {
-      const key = [...grid.scene_ids].sort().join(",");
-      map.set(key, grid.id);
+  function getGridIdsForGroup(groupScenes: Segment[]): string[] {
+    const groupIdSet = new Set(groupScenes.map((s) => getSegmentId(s, contentMode)));
+    const matched = grids.filter((g) =>
+      g.episode === episode &&
+      g.scene_ids.length > 0 &&
+      g.scene_ids.every((id) => groupIdSet.has(id)),
+    );
+    // Deduplicate: for grids with identical scene_ids, keep the newest one
+    const byKey = new Map<string, typeof matched[number]>();
+    for (const g of matched) {
+      const key = [...g.scene_ids].sort().join(",");
+      const existing = byKey.get(key);
+      if (!existing || g.created_at > existing.created_at) {
+        byKey.set(key, g);
+      }
     }
-    return map;
-  }, [grids]);
-
-  function getGridIdForGroup(groupScenes: Segment[]): string | null {
-    const key = groupScenes.map((s) => getSegmentId(s, contentMode)).sort().join(",");
-    return gridIdByGroupScenes.get(key) ?? null;
+    return Array.from(byKey.values())
+      .sort((a, b) => a.created_at.localeCompare(b.created_at))
+      .map((g) => g.id);
   }
 
   const handleGenerateGroupGrid = useCallback(
@@ -230,17 +249,21 @@ export function TimelineCanvas({
           next.delete(groupIndex);
           return next;
         });
+        refreshGrids();
       }, 3000);
     },
-    [onGenerateGrid, scriptFile, contentMode, episode],
+    [onGenerateGrid, scriptFile, contentMode, episode, refreshGrids],
   );
 
   const handleGenerateAllGrids = useCallback(() => {
     if (!onGenerateGrid || !scriptFile) return;
     setGeneratingAllGrids(true);
     onGenerateGrid(episode, scriptFile);
-    setTimeout(() => setGeneratingAllGrids(false), 3000);
-  }, [onGenerateGrid, scriptFile, episode]);
+    setTimeout(() => {
+      setGeneratingAllGrids(false);
+      refreshGrids();
+    }, 3000);
+  }, [onGenerateGrid, scriptFile, episode, refreshGrids]);
 
   const virtualizer = useVirtualizer({
     count: segments.length,
@@ -361,10 +384,10 @@ export function TimelineCanvas({
                     type="button"
                     onClick={handleGenerateAllGrids}
                     disabled={generatingAllGrids}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
                       generatingAllGrids
-                        ? "bg-blue-700 opacity-70 cursor-not-allowed"
-                        : "bg-blue-600 hover:bg-blue-500"
+                        ? "border-blue-700 text-blue-400 opacity-70 cursor-not-allowed"
+                        : "border-blue-600 text-blue-400 hover:bg-blue-600/10"
                     }`}
                     animate={
                       generatingAllGrids
@@ -417,8 +440,10 @@ export function TimelineCanvas({
                     batchCount={gridResult.batchCount}
                     onGenerateGrid={() => handleGenerateGroupGrid(groupIdx, group)}
                     generatingGrid={generatingGridGroups.has(groupIdx)}
-                    gridId={getGridIdForGroup(group)}
+                    gridIds={getGridIdsForGroup(group)}
                     projectName={projectName}
+                    onGridRegenerated={refreshGrids}
+                    gridsVersion={gridsVersion}
                   >
                     {group.map((segment) => {
                       const segId = getSegmentId(segment, contentMode);
@@ -432,6 +457,7 @@ export function TimelineCanvas({
                             clues={projectData.clues}
                             projectName={projectName}
                             durationOptions={durationOptions}
+                            isGridMode
                             onUpdatePrompt={onUpdatePrompt && ((id, field, value) => onUpdatePrompt(id, field, value, scriptFile))}
                             onGenerateStoryboard={onGenerateStoryboard && ((id) => onGenerateStoryboard(id, scriptFile))}
                             onGenerateVideo={onGenerateVideo && ((id) => onGenerateVideo(id, scriptFile))}
