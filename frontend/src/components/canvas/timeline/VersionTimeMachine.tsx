@@ -74,6 +74,7 @@ export function VersionTimeMachine({
   useEffect(() => {
     if (!open || loadedOnce || !resourceId) return;
     void loadVersions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadVersions 是组件内普通函数，无法稳定化；加入 deps 会导致每次渲染重复触发
   }, [open, loadedOnce, resourceId]);
 
   async function loadVersions() {
@@ -170,7 +171,7 @@ export function VersionTimeMachine({
       for (const sp of scrollParents) sp.removeEventListener("scroll", close);
       document.removeEventListener("mousedown", onMouseDown);
     };
-  }, [open, close]);
+  }, [open, close, computeTop]);
 
   if (!resourceId) return null;
 
@@ -293,6 +294,7 @@ export function VersionTimeMachine({
                     {/* Media preview */}
                     {selectedInfo.file_url &&
                       (resourceType === "videos" ? (
+                        // eslint-disable-next-line jsx-a11y/media-has-caption -- 生成式预览视频暂无字幕源，将来如引入字幕生成则移除此 disable
                         <video
                           src={selectedInfo.file_url}
                           className="mb-2 w-full rounded-lg border border-gray-800 bg-black object-contain"

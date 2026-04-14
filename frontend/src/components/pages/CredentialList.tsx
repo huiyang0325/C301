@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef, memo } from "react";
+import { useAutoFocus } from "@/hooks/useAutoFocus";
+import { voidPromise } from "@/utils/async";
 import {
   Check,
   Edit2,
@@ -102,7 +104,7 @@ const CredentialRow = memo(function CredentialRow({ cred, providerId, isVertex, 
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={cred.is_active ? undefined : handleActivate}
+          onClick={cred.is_active ? undefined : voidPromise(handleActivate)}
           disabled={cred.is_active}
           aria-label={cred.is_active ? t("currently_active") : t("activate_credential", { name: cred.name })}
           className={`h-2.5 w-2.5 flex-shrink-0 rounded-full transition-colors focus-ring ${
@@ -137,7 +139,7 @@ const CredentialRow = memo(function CredentialRow({ cred, providerId, isVertex, 
         <div className="flex flex-shrink-0 items-center gap-1">
           <button
             type="button"
-            onClick={handleTest}
+            onClick={voidPromise(handleTest)}
             disabled={testing}
             aria-label={t("test_credential", { name: cred.name })}
             className={`rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-800 hover:text-gray-300 focus-ring`}
@@ -161,7 +163,7 @@ const CredentialRow = memo(function CredentialRow({ cred, providerId, isVertex, 
           {!confirmDelete ? (
             <button
               type="button"
-              onClick={handleDelete}
+              onClick={voidPromise(handleDelete)}
               disabled={deleting}
               aria-label={t("delete_credential", { name: cred.name })}
               className={`rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-800 hover:text-rose-400 focus-ring`}
@@ -172,7 +174,7 @@ const CredentialRow = memo(function CredentialRow({ cred, providerId, isVertex, 
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={handleDelete}
+                onClick={voidPromise(handleDelete)}
                 disabled={deleting}
                 className={`rounded px-2 py-1 text-xs text-rose-400 transition-colors hover:bg-rose-900/20 focus-ring`}
               >
@@ -292,6 +294,7 @@ function AddCredentialForm({ providerId, isVertex, onCreated, onCancel }: AddFor
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const nameRef = useAutoFocus<HTMLInputElement>();
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
@@ -338,7 +341,7 @@ function AddCredentialForm({ providerId, isVertex, onCreated, onCancel }: AddFor
           onChange={(e) => setName(e.target.value)}
           placeholder={t("credential_name_placeholder")}
           className={inputClsPlaceholder}
-          autoFocus
+          ref={nameRef}
         />
       </div>
       {isVertex ? (
@@ -491,7 +494,7 @@ export function CredentialList({ providerId, onChanged }: Props) {
             cred={c}
             providerId={providerId}
             isVertex={isVertex}
-            onChanged={handleChanged}
+            onChanged={voidPromise(handleChanged)}
           />
         ))}
       </div>

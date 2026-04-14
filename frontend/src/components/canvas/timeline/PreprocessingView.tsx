@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { Edit3, Save, X } from "lucide-react";
 import { API } from "@/api";
+import { voidPromise } from "@/utils/async";
 import { useAppStore } from "@/stores/app-store";
 import { StreamMarkdown } from "@/components/copilot/StreamMarkdown";
 
@@ -49,6 +50,7 @@ export function PreprocessingView({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- content 仅用于决定是否显示加载态，加入 deps 会在内容更新后触发重新拉取，导致循环
   }, [projectName, episode, draftRevision]);
 
   const handleSave = useCallback(async () => {
@@ -63,7 +65,7 @@ export function PreprocessingView({
     } finally {
       setSaving(false);
     }
-  }, [projectName, episode, editContent, pushToast]);
+  }, [projectName, episode, editContent, pushToast, t]);
 
   const statusLabel =
     contentMode === "narration" ? t("dashboard:segment_split_complete") : t("dashboard:script_normalized_complete");
@@ -97,7 +99,7 @@ export function PreprocessingView({
             <>
               <button
                 type="button"
-                onClick={handleSave}
+                onClick={voidPromise(handleSave)}
                 disabled={saving}
                 className="flex items-center gap-1 rounded px-2 py-1 text-xs text-green-400 transition-colors hover:bg-gray-800 disabled:opacity-50"
               >

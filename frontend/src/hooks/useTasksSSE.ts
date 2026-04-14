@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { API } from "@/api";
 import { useTasksStore } from "@/stores/tasks-store";
+import { voidCall } from "@/utils/async";
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -29,9 +30,7 @@ export function useTasksSSE(projectName?: string | null): void {
         ]);
         if (disposed) return;
         setTasks(tasksRes.items);
-        // REST returns { stats: {...} }
-        const stats = (statsRes as any).stats ?? statsRes;
-        setStats(stats);
+        setStats(statsRes.stats);
         setConnected(true);
       } catch {
         if (disposed) return;
@@ -40,11 +39,11 @@ export function useTasksSSE(projectName?: string | null): void {
     }
 
     // Initial fetch
-    poll();
+    voidCall(poll());
 
     // Periodic polling
     timerRef.current = setInterval(() => {
-      if (!disposed) poll();
+      if (!disposed) voidCall(poll());
     }, POLL_INTERVAL_MS);
 
     return () => {

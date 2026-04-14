@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { voidPromise } from "@/utils/async";
 import { Route, Switch, Redirect, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useProjectsStore } from "@/stores/projects-store";
@@ -51,6 +52,7 @@ function resolveSegmentPrompt(
 export function StudioCanvasRouter() {
   const { t } = useTranslation("dashboard");
   const tRef = useRef(t);
+  // eslint-disable-next-line react-hooks/refs -- tRef 是稳定 event-handler ref 模式，用于在回调中获取最新 t 而不触发无限 useCallback 重建
   tRef.current = t;
   const { currentProjectData, currentProjectName, currentScripts } =
     useProjectsStore();
@@ -312,6 +314,16 @@ export function StudioCanvasRouter() {
     await refreshProject();
   }, [refreshProject]);
 
+  const handleUpdateClueVoid = useCallback((...args: Parameters<typeof handleUpdateClue>) => {
+    void handleUpdateClue(...args).catch(console.error);
+  }, [handleUpdateClue]);
+  const handleGenerateCharacterVoid = useCallback((...args: Parameters<typeof handleGenerateCharacter>) => {
+    void handleGenerateCharacter(...args).catch(console.error);
+  }, [handleGenerateCharacter]);
+  const handleGenerateClueVoid = useCallback((...args: Parameters<typeof handleGenerateClue>) => {
+    void handleGenerateClue(...args).catch(console.error);
+  }, [handleGenerateClue]);
+
   const [location] = useLocation();
 
   if (!currentProjectName) {
@@ -344,9 +356,9 @@ export function StudioCanvasRouter() {
             clues={currentProjectData?.clues ?? {}}
             mode={location === "/clues" ? "clues" : "characters"}
             onSaveCharacter={handleSaveCharacter}
-            onUpdateClue={handleUpdateClue}
-            onGenerateCharacter={handleGenerateCharacter}
-            onGenerateClue={handleGenerateClue}
+            onUpdateClue={handleUpdateClueVoid}
+            onGenerateCharacter={handleGenerateCharacterVoid}
+            onGenerateClue={handleGenerateClueVoid}
             onRestoreCharacterVersion={handleRestoreAsset}
             onRestoreClueVersion={handleRestoreAsset}
             generatingCharacterNames={generatingCharacterNames}
@@ -402,10 +414,10 @@ export function StudioCanvasRouter() {
               scriptFile={scriptFile ?? undefined}
               projectData={currentProjectData}
               durationOptions={durationOptions}
-              onUpdatePrompt={handleUpdatePrompt}
-              onGenerateStoryboard={handleGenerateStoryboard}
-              onGenerateVideo={handleGenerateVideo}
-              onGenerateGrid={handleGenerateGrid}
+              onUpdatePrompt={voidPromise(handleUpdatePrompt)}
+              onGenerateStoryboard={voidPromise(handleGenerateStoryboard)}
+              onGenerateVideo={voidPromise(handleGenerateVideo)}
+              onGenerateGrid={voidPromise(handleGenerateGrid)}
               onRestoreStoryboard={handleRestoreAsset}
               onRestoreVideo={handleRestoreAsset}
             />

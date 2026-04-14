@@ -1,5 +1,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { voidCall, voidPromise } from "@/utils/async";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import {
@@ -98,6 +99,7 @@ function AssetThumbnail({
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 图片源变更时重置错误态，确保新 URL 正常加载
     setImgError(false);
   }, [sheetFp, sheetPath]);
 
@@ -144,6 +146,7 @@ interface AssetSidebarProps {
 export function AssetSidebar({ className }: AssetSidebarProps) {
   const { t } = useTranslation(["common", "dashboard"]);
   const tRef = useRef(t);
+  // eslint-disable-next-line react-hooks/refs -- tRef 是稳定 event-handler ref 模式，用于在回调中获取最新 t 而不触发无限 useCallback 重建
   tRef.current = t;
   const { currentProjectData, currentProjectName } = useProjectsStore();
   const sourceFilesVersion = useAppStore((s) => s.sourceFilesVersion);
@@ -260,7 +263,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
               type="file"
               accept=".txt,.md,.doc,.docx"
               aria-label={t("dashboard:upload_asset_file_aria")}
-              onChange={handleUpload}
+              onChange={voidPromise(handleUpload)}
               className="hidden"
             />
           </>
@@ -292,7 +295,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
                     </button>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteFile(name); }}
+                      onClick={(e) => { e.stopPropagation(); voidCall(handleDeleteFile(name)); }}
                       className="shrink-0 rounded p-0.5 text-gray-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100 focus-ring focus-visible:opacity-100"
                       title={t("dashboard:delete_file")}
                     >

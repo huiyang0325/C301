@@ -167,12 +167,7 @@ export function GridPreviewPanel({
   const safeIdx = Math.min(selectedIdx, Math.max(0, gridIds.length - 1));
   const selectedGridId = gridIds[safeIdx] ?? null;
 
-  // Clamp selection when grid list changes
-  useEffect(() => {
-    if (selectedIdx >= gridIds.length && gridIds.length > 0) {
-      setSelectedIdx(0);
-    }
-  }, [gridIds.length, selectedIdx]);
+  // safeIdx already clamps selectedIdx to valid range; no effect needed
 
   // Fetch grid data when expanded and selectedGridId is available
   useEffect(() => {
@@ -203,6 +198,7 @@ export function GridPreviewPanel({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- grid 用于判断是否切换批次，加入 deps 会在每次拉取完成后触发重新拉取，导致无限循环；t 稳定可忽略
   }, [expanded, selectedGridId, projectName, refreshKey]);
 
   const isInProgress =

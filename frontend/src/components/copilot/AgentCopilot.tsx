@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { voidCall, voidPromise } from "@/utils/async";
 import { Bot, Send, Square, Plus, ChevronDown, Trash2, MessageSquare, PanelRightClose, Paperclip, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useAssistantStore } from "@/stores/assistant-store";
 import { useProjectsStore } from "@/stores/projects-store";
@@ -119,7 +121,7 @@ function StatusDot({ status }: { status: string }) {
   );
 }
 
-function formatTime(isoStr: string | undefined, t: any): string {
+function formatTime(isoStr: string | undefined, t: TFunction): string {
   if (!isoStr) return t("new_session");
   try {
     const d = new Date(isoStr);
@@ -229,7 +231,7 @@ export function AgentCopilot() {
   const handleSend = useCallback(() => {
     if (inputDisabled || (!localInput.trim() && attachedImages.length === 0)) return;
     imageGenRef.current += 1; // invalidate pending FileReader callbacks
-    sendMessage(localInput.trim(), attachedImages.length > 0 ? attachedImages : undefined);
+    voidCall(sendMessage(localInput.trim(), attachedImages.length > 0 ? attachedImages : undefined));
     setLocalInput("");
     setAttachedImages([]);
     setAttachError(null);
@@ -293,7 +295,9 @@ export function AgentCopilot() {
   }, []);
 
   // Derive slash filter from input (text after "/" up to cursor)
+  // eslint-disable-next-line react-hooks/refs -- slashPosRef 同时被 render 和 handleSlashSelect 使用，转 state 会引入 stale-closure 问题；此处仅用于过滤展示，不影响 UI 一致性
   const slashFilter = showSlashMenu && slashPosRef.current >= 0
+    // eslint-disable-next-line react-hooks/refs -- 同上
     ? localInput.slice(slashPosRef.current + 1).split(/\s/)[0]
     : "";
 
@@ -344,7 +348,7 @@ export function AgentCopilot() {
               {t("thinking")}
             </span>
           )}
-          <SessionSelector onSwitch={switchSession} onDelete={deleteSession} />
+          <SessionSelector onSwitch={voidPromise(switchSession)} onDelete={voidPromise(deleteSession)} />
           <button
             type="button"
             onClick={createNewSession}
@@ -380,7 +384,7 @@ export function AgentCopilot() {
           pendingQuestion={pendingQuestion}
           answeringQuestion={answeringQuestion}
           error={error}
-          onSubmitAnswers={answerQuestion}
+          onSubmitAnswers={voidPromise(answerQuestion)}
         />
       )}
 
@@ -451,7 +455,10 @@ export function AgentCopilot() {
             aria-label={t("assistant_input")}
             aria-expanded={showSlashMenu}
             aria-controls={showSlashMenu ? "slash-command-menu" : undefined}
-            aria-activedescendant={slashMenuRef.current?.activeDescendantId}
+            aria-activedescendant={
+              // eslint-disable-next-line react-hooks/refs -- aria-activedescendant 需实时读取 slashMenuRef 的派生值，改用回调 prop 需修改 SlashCommandMenu 接口，超出范围
+              slashMenuRef.current?.activeDescendantId
+            }
             className="flex-1 resize-none bg-transparent text-sm text-gray-200 placeholder-gray-500 outline-none overflow-hidden"
             style={{ maxHeight: `${MAX_TEXTAREA_HEIGHT_VH}vh` }}
             disabled={inputDisabled}
@@ -471,7 +478,7 @@ export function AgentCopilot() {
 
           {isRunning ? (
             <button
-              onClick={interrupt}
+              onClick={voidPromise(interrupt)}
               className="shrink-0 rounded p-1.5 text-red-400 hover:bg-gray-700"
               title={t("stop_session")}
               aria-label={t("stop_session")}

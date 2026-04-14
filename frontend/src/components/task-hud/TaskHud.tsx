@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { activateOnEnterSpace } from "@/utils/a11y";
+import { voidPromise } from "@/utils/async";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Image, Video, Check, X, Loader2, ChevronDown } from "lucide-react";
@@ -112,7 +114,10 @@ function TaskRow({
         className={`flex items-center gap-2 px-3 py-1.5 text-sm ${rowBg} ${
           hasError ? "cursor-pointer hover:bg-red-500/15" : ""
         }`}
+        role={hasError ? "button" : undefined}
+        tabIndex={hasError ? 0 : undefined}
         onClick={hasError ? () => onToggleError(task.task_id) : undefined}
+        onKeyDown={hasError ? activateOnEnterSpace(() => onToggleError(task.task_id)) : undefined}
       >
         <TaskStatusIcon status={task.status} />
         <span className="font-mono text-xs text-gray-400">
@@ -232,9 +237,10 @@ function ChannelSection({
       timersRef.current.set(task.task_id, fadeTimer);
     }
 
+    const timers = timersRef.current;
     return () => {
       // 组件卸载时清理所有定时器
-      for (const timer of timersRef.current.values()) {
+      for (const timer of timers.values()) {
         clearTimeout(timer);
       }
     };
@@ -397,7 +403,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             )}
             {stats.queued > 0 && (
               <button
-                onClick={handleCancelAll}
+                onClick={voidPromise(handleCancelAll)}
                 className="ml-auto text-xs text-gray-500 hover:text-red-400"
                 aria-label={t("cancel_all_queued_aria")}
               >
@@ -408,8 +414,8 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
 
           {/* 双通道 */}
           <div className="max-h-80 divide-y divide-gray-800/50 overflow-y-auto">
-            <ChannelSection title={t("image_channel")} icon={Image} tasks={imageTasks} onCancel={handleCancelSingle} />
-            <ChannelSection title={t("video_channel")} icon={Video} tasks={videoTasks} onCancel={handleCancelSingle} />
+            <ChannelSection title={t("image_channel")} icon={Image} tasks={imageTasks} onCancel={voidPromise(handleCancelSingle)} />
+            <ChannelSection title={t("video_channel")} icon={Video} tasks={videoTasks} onCancel={voidPromise(handleCancelSingle)} />
           </div>
 
           {/* 取消确认面板 */}
@@ -433,7 +439,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
               )}
               <div className="mt-2 flex gap-2">
                 <button
-                  onClick={confirmCancel}
+                  onClick={voidPromise(confirmCancel)}
                   disabled={cancelling}
                   className="rounded bg-red-600/80 px-2 py-0.5 text-xs text-white hover:bg-red-600 disabled:opacity-50"
                 >

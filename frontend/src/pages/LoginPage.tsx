@@ -1,8 +1,11 @@
 
 import { useState, type FormEvent } from "react";
+import { useAutoFocus } from "@/hooks/useAutoFocus";
+import { voidPromise } from "@/utils/async";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "@/stores/auth-store";
+import type { LoginResponse, ErrorResponse } from "@/api";
 
 export function LoginPage() {
   const { t, i18n } = useTranslation(["common", "auth"]);
@@ -12,6 +15,7 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [, setLocation] = useLocation();
   const login = useAuthStore((s) => s.login);
+  const usernameRef = useAutoFocus<HTMLInputElement>();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -33,11 +37,12 @@ export function LoginPage() {
       });
 
       if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        throw new Error(data.detail || t("auth:login_failed"));
+        const data = await resp.json().catch(() => ({})) as Partial<ErrorResponse>;
+        const detail = data.detail;
+        throw new Error(typeof detail === "string" ? detail : t("auth:login_failed"));
       }
 
-      const data = await resp.json();
+      const data = await resp.json() as LoginResponse;
       login(data.access_token, username);
       setLocation("/app/projects");
     } catch (err) {
@@ -55,7 +60,7 @@ export function LoginPage() {
           <span>ArcReel</span>
         </h1>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={voidPromise(handleSubmit)} className="space-y-4">
           <div>
             <label className="mb-1 block text-sm text-gray-400">{t("auth:username")}</label>
             <input
@@ -63,7 +68,7 @@ export function LoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-gray-100 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-              autoFocus
+              ref={usernameRef}
               required
             />
           </div>
