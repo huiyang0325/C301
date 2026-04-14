@@ -20,6 +20,7 @@ def generate_structured_via_instructor(
     response_model: type[BaseModel],
     mode: Mode = Mode.MD_JSON,
     max_retries: int = 2,
+    max_tokens: int | None = None,
 ) -> tuple[str, int | None, int | None]:
     """通过 Instructor 生成结构化输出（同步版，供 Ark 等同步 SDK 使用）。
 
@@ -31,11 +32,13 @@ def generate_structured_via_instructor(
             f"instructor.from_openai() 返回 None — client 类型 {type(client).__name__} 不受支持，"
             "请传入 openai.OpenAI 或 openai.AsyncOpenAI 实例"
         )
+    extra: dict = {"max_tokens": max_tokens} if max_tokens is not None else {}
     result, completion = patched.chat.completions.create_with_completion(
         model=model,
         messages=messages,
         response_model=response_model,
         max_retries=max_retries,
+        **extra,
     )
     json_text = result.model_dump_json()
 
@@ -55,6 +58,7 @@ async def generate_structured_via_instructor_async(
     response_model: type[BaseModel],
     mode: Mode = Mode.MD_JSON,
     max_retries: int = 2,
+    max_tokens: int | None = None,
 ) -> tuple[str, int | None, int | None]:
     """通过 Instructor 生成结构化输出（异步版，供 OpenAI AsyncOpenAI 使用）。
 
@@ -66,11 +70,13 @@ async def generate_structured_via_instructor_async(
             f"instructor.from_openai() 返回 None — client 类型 {type(client).__name__} 不受支持，"
             "请传入 openai.OpenAI 或 openai.AsyncOpenAI 实例"
         )
+    extra: dict = {"max_tokens": max_tokens} if max_tokens is not None else {}
     result, completion = await patched.chat.completions.create_with_completion(
         model=model,
         messages=messages,
         response_model=response_model,
         max_retries=max_retries,
+        **extra,
     )
     json_text = result.model_dump_json()
 
@@ -107,6 +113,7 @@ def instructor_fallback_sync(
     messages: list[dict],
     response_schema: dict | type,
     provider: str,
+    max_tokens: int | None = None,
 ):
     """同步 Instructor 降级路径。
 
@@ -122,6 +129,7 @@ def instructor_fallback_sync(
             model=model,
             messages=messages,
             response_model=response_schema,
+            max_tokens=max_tokens,
         )
         return TextGenerationResult(
             text=json_text,
@@ -133,19 +141,32 @@ def instructor_fallback_sync(
 
     logger.info("response_schema 为 dict，无法使用 Instructor，回退到 json_object 模式")
     fb_messages = inject_json_instruction(messages)
-    response = client.chat.completions.create(
-        model=model,
-        messages=fb_messages,
-        response_format={"type": "json_object"},
-    )
+    create_kwargs: dict = {
+        "model": model,
+        "messages": fb_messages,
+        "response_format": {"type": "json_object"},
+    }
+    if max_tokens is not None:
+        create_kwargs["max_tokens"] = max_tokens
+    response = client.chat.completions.create(**create_kwargs)
     usage = getattr(response, "usage", None)
-    text = response.choices[0].message.content or ""
+    choice = response.choices[0]
+    text = choice.message.content or ""
+    output_tokens = getattr(usage, "completion_tokens", None) if usage else None
+    from lib.text_backends.base import warn_if_truncated
+
+    warn_if_truncated(
+        getattr(choice, "finish_reason", None),
+        provider=provider,
+        model=model,
+        output_tokens=output_tokens,
+    )
     return TextGenerationResult(
         text=text.strip() if isinstance(text, str) else str(text),
         provider=provider,
         model=model,
         input_tokens=getattr(usage, "prompt_tokens", None) if usage else None,
-        output_tokens=getattr(usage, "completion_tokens", None) if usage else None,
+        output_tokens=output_tokens,
     )
 
 
@@ -155,6 +176,7 @@ async def instructor_fallback_async(
     messages: list[dict],
     response_schema: dict | type,
     provider: str,
+    max_tokens: int | None = None,
 ):
     """异步 Instructor 降级路径。
 
@@ -172,6 +194,7 @@ async def instructor_fallback_async(
             model=model,
             messages=messages,
             response_model=response_schema,
+            max_tokens=max_tokens,
         )
         return TextGenerationResult(
             text=json_text,
@@ -183,17 +206,30 @@ async def instructor_fallback_async(
 
     logger.info("response_schema 为 dict，无法使用 Instructor，回退到 json_object 模式")
     fb_messages = inject_json_instruction(messages)
-    response = await client.chat.completions.create(
-        model=model,
-        messages=fb_messages,
-        response_format={"type": "json_object"},
-    )
+    create_kwargs: dict = {
+        "model": model,
+        "messages": fb_messages,
+        "response_format": {"type": "json_object"},
+    }
+    if max_tokens is not None:
+        create_kwargs["max_tokens"] = max_tokens
+    response = await client.chat.completions.create(**create_kwargs)
     usage = getattr(response, "usage", None)
-    text = response.choices[0].message.content or ""
+    choice = response.choices[0]
+    text = choice.message.content or ""
+    output_tokens = getattr(usage, "completion_tokens", None) if usage else None
+    from lib.text_backends.base import warn_if_truncated
+
+    warn_if_truncated(
+        getattr(choice, "finish_reason", None),
+        provider=provider,
+        model=model,
+        output_tokens=output_tokens,
+    )
     return TextGenerationResult(
         text=text.strip() if isinstance(text, str) else str(text),
         provider=provider,
         model=model,
         input_tokens=getattr(usage, "prompt_tokens", None) if usage else None,
-        output_tokens=getattr(usage, "completion_tokens", None) if usage else None,
+        output_tokens=output_tokens,
     )

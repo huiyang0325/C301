@@ -19,6 +19,7 @@ from .base import (
     TextCapability,
     TextGenerationRequest,
     TextGenerationResult,
+    warn_if_truncated,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ class GeminiTextBackend:
         self,
         response_schema: dict | type | None,
         system_prompt: str | None,
+        max_output_tokens: int | None = None,
     ) -> dict:
         """构建 generate_content 的 config 字典。"""
         config: dict = {}
@@ -113,6 +115,8 @@ class GeminiTextBackend:
                 config["response_json_schema"] = response_schema
         if system_prompt:
             config["system_instruction"] = system_prompt
+        if max_output_tokens is not None:
+            config["max_output_tokens"] = max_output_tokens
         return config
 
     def _build_contents(self, request: TextGenerationRequest) -> list:
@@ -134,7 +138,11 @@ class GeminiTextBackend:
     @with_retry_async()
     async def generate(self, request: TextGenerationRequest) -> TextGenerationResult:
         """异步生成文本，支持结构化输出和 vision。"""
-        config = self._build_config(request.response_schema, request.system_prompt)
+        config = self._build_config(
+            request.response_schema,
+            request.system_prompt,
+            request.max_output_tokens,
+        )
         contents = self._build_contents(request)
 
         response = await self._client.aio.models.generate_content(
@@ -150,6 +158,17 @@ class GeminiTextBackend:
         if response.usage_metadata is not None:
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", None)
             output_tokens = getattr(response.usage_metadata, "candidates_token_count", None)
+
+        candidates = getattr(response, "candidates", None) or []
+        if candidates:
+            finish_reason = getattr(candidates[0], "finish_reason", None)
+            # Gemini finish_reason 可能是枚举对象，转 str 后再比对
+            warn_if_truncated(
+                str(finish_reason).rsplit(".", 1)[-1] if finish_reason is not None else None,
+                provider=PROVIDER_GEMINI,
+                model=self._model,
+                output_tokens=output_tokens,
+            )
 
         return TextGenerationResult(
             text=text,
