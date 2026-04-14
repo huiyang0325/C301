@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ImagePlus, Upload, User } from "lucide-react";
 import { API } from "@/api";
@@ -51,6 +51,7 @@ export function CharacterCard({
   const [isEditing, setIsEditing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const descId = useId();
 
   useEffect(() => {
     setDescription(character.description);
@@ -251,20 +252,22 @@ export function CharacterCard({
             ref={fileInputRef}
             type="file"
             accept=".png,.jpg,.jpeg,.webp"
+            aria-label={t("upload_character_ref_aria")}
             onChange={handleReferenceChange}
             className="hidden"
           />
         </div>
       </div>
 
-      <label className="text-xs font-medium text-gray-400">{t("description")}</label>
+      <label htmlFor={descId} className="text-xs font-medium text-gray-400">{t("description")}</label>
       <textarea
         ref={textareaRef}
+        id={descId}
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         onInput={autoResize}
         rows={3}
-        className="mt-1 w-full resize-none overflow-hidden rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+        className="mt-1 w-full resize-none overflow-hidden rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus-ring"
         placeholder={t("character_desc_placeholder")}
       />
 
@@ -273,7 +276,7 @@ export function CharacterCard({
         type="text"
         value={voiceStyle}
         onChange={(e) => setVoiceStyle(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+        className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus-ring"
         placeholder={t("voice_style_example")}
       />
 

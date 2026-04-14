@@ -283,9 +283,9 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
 
   // --- Shared input classes ---
   const inputCls =
-    "w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+    "w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:border-indigo-500 focus-ring";
   const selectCls =
-    "rounded-lg border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500";
+    "rounded-lg border border-gray-700 bg-gray-900 px-2 py-1.5 text-sm text-gray-100 focus:border-indigo-500 focus-ring";
 
   // --- Base URL preview (effective models endpoint) ---
   const urlPreview = (() => {
@@ -384,7 +384,7 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
             <button
               type="button"
               onClick={() => setShowApiKey((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded text-gray-500 hover:text-gray-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/60"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded text-gray-500 hover:text-gray-300 focus-ring"
               aria-label={showApiKey ? t("common:hide") : t("common:show")}
             >
               {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -440,7 +440,7 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
                   value={modelFilter}
                   onChange={(e) => setModelFilter(e.target.value)}
                   placeholder={t("search_models")}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-900 py-1.5 pl-8 pr-3 text-xs text-gray-100 placeholder-gray-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full rounded-lg border border-gray-700 bg-gray-900 py-1.5 pl-8 pr-3 text-xs text-gray-100 placeholder-gray-600 focus:border-indigo-500 focus-ring"
                 />
               </div>
             )}

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { Puzzle } from "lucide-react";
 import { API } from "@/api";
@@ -65,6 +65,7 @@ export function ClueCard({
 
   // Auto-resize textarea.
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const descId = useId();
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -154,13 +155,15 @@ export function ClueCard({
       </div>
 
       {/* ---- Description ---- */}
+      <label htmlFor={descId} className="text-xs font-medium text-gray-400">{t("description")}</label>
       <textarea
         ref={textareaRef}
+        id={descId}
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         onInput={autoResize}
         rows={2}
-        className="mb-3 w-full resize-none overflow-hidden bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+        className="mb-3 w-full resize-none overflow-hidden bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus-ring"
         placeholder={t("clue_desc_placeholder")}
       />
 

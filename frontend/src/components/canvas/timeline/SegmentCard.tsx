@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { ImageIcon, Film, Clock } from "lucide-react";
 import { API } from "@/api";
@@ -198,7 +198,7 @@ function DurationSelector({
       <button
         ref={ref}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        className="inline-flex cursor-pointer items-center gap-0.5 rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 focus-ring"
       >
         <Clock aria-hidden="true" className="h-3 w-3" />
         {seconds}s
@@ -222,7 +222,7 @@ function DurationSelector({
                 onUpdatePrompt(segmentId, "duration_seconds", d);
                 setOpen(false);
               }}
-              className={`rounded px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+              className={`rounded px-3 py-1.5 text-xs font-medium transition-colors focus-ring ${
                 d === seconds
                   ? "bg-indigo-600 text-white"
                   : "text-gray-300 hover:bg-gray-700"
@@ -277,6 +277,7 @@ function TextColumn({
   const { t } = useTranslation("dashboard");
   const [noteDraft, setNoteDraft] = useState(segment.note ?? "");
   const committedRef = useRef(segment.note ?? "");
+  const noteId = useId();
 
   useEffect(() => {
     setNoteDraft(segment.note ?? "");
@@ -292,14 +293,14 @@ function TextColumn({
 
   const noteSection = (
     <div className="mt-auto pt-3 border-t border-gray-800">
-      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2 block">
+      <label htmlFor={noteId} className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2 block">
         {t("note_section")}
-      </span>
+      </label>
       <textarea
-        className="w-full resize-none rounded-lg border border-gray-700 bg-gray-800/50 px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:border-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+        id={noteId}
+        className="w-full resize-none rounded-lg border border-gray-700 bg-gray-800/50 px-3 py-2 text-sm text-gray-300 placeholder-gray-600 focus:border-indigo-500 focus-ring"
         rows={4}
         placeholder={t("add_note_placeholder")}
-        aria-label={t("note_section")}
         value={noteDraft}
         onChange={(e) => setNoteDraft(e.target.value)}
         onBlur={handleNoteBlur}
@@ -368,6 +369,8 @@ function PromptColumn({
 }) {
   const { t } = useTranslation("dashboard");
   const { image_prompt, video_prompt } = segment;
+  const imgLabelId = useId();
+  const vidLabelId = useId();
 
   const isStructuredImage = isStructuredImagePromptValue(image_prompt);
   const isStructuredVideo = isStructuredVideoPromptValue(video_prompt);
@@ -469,7 +472,7 @@ function PromptColumn({
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
           <ImageIcon className="h-3.5 w-3.5 text-gray-500" />
-          <span className="text-[11px] font-semibold text-gray-400">
+          <span id={imgLabelId} className="text-[11px] font-semibold text-gray-400">
             Image Prompt
           </span>
         </div>
@@ -481,6 +484,7 @@ function PromptColumn({
           />
         ) : (
           <AutoTextarea
+            aria-labelledby={imgLabelId}
             value={imgText}
             onChange={(v) => {
               setImgText(v);
@@ -495,7 +499,7 @@ function PromptColumn({
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1.5">
           <Film className="h-3.5 w-3.5 text-gray-500" />
-          <span className="text-[11px] font-semibold text-gray-400">
+          <span id={vidLabelId} className="text-[11px] font-semibold text-gray-400">
             Video Prompt
           </span>
         </div>
@@ -507,6 +511,7 @@ function PromptColumn({
           />
         ) : (
           <AutoTextarea
+            aria-labelledby={vidLabelId}
             value={vidText}
             onChange={(v) => {
               setVidText(v);
