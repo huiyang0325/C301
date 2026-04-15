@@ -602,6 +602,11 @@ async def upload_style_image(project_name: str, _user: CurrentUser, _t: Translat
             project_data = get_project_manager().load_project(project_name)
             project_data["style_image"] = style_filename
             project_data["style_description"] = style_description
+            # 强互斥：自定义参考图与模版二选一。除了清 template_id，
+            # 还需清掉之前由模板展开写入的 `style` prompt，否则生成链路会把
+            # 模板 prompt 与 style_description 同时喂给 LLM，破坏二选一语义。
+            project_data.pop("style_template_id", None)
+            project_data["style"] = ""
             with project_change_source("webui"):
                 get_project_manager().save_project(project_name, project_data)
 
@@ -613,70 +618,6 @@ async def upload_style_image(project_name: str, _user: CurrentUser, _t: Translat
             "style_description": style_description,
             "url": f"/api/v1/files/{project_name}/{style_filename}",
         }
-
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=_t("project_not_found", name=project_name))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("请求处理失败")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/projects/{project_name}/style-image")
-async def delete_style_image(project_name: str, _user: CurrentUser, _t: Translator):
-    """
-    删除风格参考图及相关字段
-    """
-    try:
-
-        def _sync():
-            project_dir = get_project_manager().get_project_path(project_name)
-
-            # 删除图片文件（兼容所有可能的后缀）
-            for suffix in (".jpg", ".jpeg", ".png", ".webp"):
-                image_path = project_dir / f"style_reference{suffix}"
-                if image_path.exists():
-                    image_path.unlink()
-
-            # 清除 project.json 中的相关字段
-            project_data = get_project_manager().load_project(project_name)
-            project_data.pop("style_image", None)
-            project_data.pop("style_description", None)
-            with project_change_source("webui"):
-                get_project_manager().save_project(project_name, project_data)
-
-            return {"success": True}
-
-        return await asyncio.to_thread(_sync)
-
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=_t("project_not_found", name=project_name))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("请求处理失败")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.patch("/projects/{project_name}/style-description")
-async def update_style_description(
-    project_name: str, _user: CurrentUser, _t: Translator, style_description: str = Body(..., embed=True)
-):
-    """
-    更新风格描述（手动编辑）
-    """
-    try:
-
-        def _sync():
-            project_data = get_project_manager().load_project(project_name)
-            project_data["style_description"] = style_description
-            with project_change_source("webui"):
-                get_project_manager().save_project(project_name, project_data)
-
-            return {"success": True, "style_description": style_description}
-
-        return await asyncio.to_thread(_sync)
 
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=_t("project_not_found", name=project_name))

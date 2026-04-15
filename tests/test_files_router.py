@@ -179,6 +179,12 @@ class TestFilesRouter:
     def test_style_image_endpoints(self, tmp_path, monkeypatch):
         client, pm = _client(monkeypatch, tmp_path)
 
+        # 预置 style_template_id + 展开后的 style prompt，验证上传后被强制清掉（互斥）
+        project = pm.load_project("demo")
+        project["style_template_id"] = "live_premium_drama"
+        project["style"] = "画风：真人电视剧风格，精品短剧画风，大师级构图"
+        pm.save_project("demo", project)
+
         with client:
             upload_style = client.post(
                 "/api/v1/projects/demo/style-image",
@@ -186,20 +192,12 @@ class TestFilesRouter:
             )
             assert upload_style.status_code == 200
             assert upload_style.json()["style_description"] == "cinematic, high contrast"
-
-            patch_style = client.patch(
-                "/api/v1/projects/demo/style-description",
-                json={"style_description": "manual style"},
-            )
-            assert patch_style.status_code == 200
-            assert patch_style.json()["style_description"] == "manual style"
-
-            delete_style = client.delete("/api/v1/projects/demo/style-image")
-            assert delete_style.status_code == 200
-
-            project = pm.load_project("demo")
-            assert "style_image" not in project
-            assert "style_description" not in project
+            after = pm.load_project("demo")
+            assert after.get("style_image", "").startswith("style_reference")
+            assert "style_template_id" not in after
+            # 互斥语义关键断言：模板展开到 style 的 prompt 也要被清空，
+            # 否则生成链路会把模板 prompt 与 style_description 一起喂给 LLM。
+            assert after.get("style", "") == ""
 
             bad_style_ext = client.post(
                 "/api/v1/projects/demo/style-image",
@@ -226,9 +224,6 @@ class TestFilesRouter:
                 headers={"content-type": "text/plain"},
             )
             assert missing_source.status_code == 404
-
-            style_missing_project = client.delete("/api/v1/projects/missing/style-image")
-            assert style_missing_project.status_code == 404
 
     def test_upload_without_name_and_keyerror_tolerance(self, tmp_path, monkeypatch):
         client, _ = _client(monkeypatch, tmp_path)

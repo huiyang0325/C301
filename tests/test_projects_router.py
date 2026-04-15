@@ -74,7 +74,17 @@ class _FakePM:
     def generate_project_name(self, title):
         return self.generated_names.pop(0)
 
-    def create_project_metadata(self, name, title, style, content_mode, aspect_ratio="9:16", default_duration=None):
+    def create_project_metadata(
+        self,
+        name,
+        title,
+        style,
+        content_mode,
+        aspect_ratio="9:16",
+        default_duration=None,
+        style_template_id=None,
+        extras=None,
+    ):
         payload = {
             "title": (title or name),
             "style": style or "",
@@ -84,6 +94,10 @@ class _FakePM:
         }
         if default_duration is not None:
             payload["default_duration"] = default_duration
+        if style_template_id is not None:
+            payload["style_template_id"] = style_template_id
+        if extras:
+            payload.update(extras)
         self.project_data[name] = payload
         return payload
 
@@ -304,3 +318,196 @@ class TestProjectsRouter:
             assert "asset_fingerprints" in data
             assert "storyboards/scene_E1S01.png" in data["asset_fingerprints"]
             assert isinstance(data["asset_fingerprints"]["storyboards/scene_E1S01.png"], int)
+
+    def test_create_project_with_style_template_id_expands_prompt(self, tmp_path, monkeypatch):
+        fake_pm = _FakePM(tmp_path)
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+
+        with client:
+            resp = client.post(
+                "/api/v1/projects",
+                json={
+                    "title": "模版项目",
+                    "name": "tpl-1",
+                    "style_template_id": "live_premium_drama",
+                    "content_mode": "drama",
+                    "aspect_ratio": "9:16",
+                },
+            )
+            assert resp.status_code == 200
+            data = fake_pm.project_data["tpl-1"]
+            assert data["style_template_id"] == "live_premium_drama"
+            assert "真人电视剧" in data["style"] or "精品短剧" in data["style"]
+
+    def test_create_project_with_unknown_template_id_returns_400(self, tmp_path, monkeypatch):
+        fake_pm = _FakePM(tmp_path)
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+
+        with client:
+            resp = client.post(
+                "/api/v1/projects",
+                json={
+                    "title": "坏模版",
+                    "name": "bad-1",
+                    "style_template_id": "no_such",
+                },
+            )
+            assert resp.status_code == 400
+
+    def test_create_project_with_model_fields_persists(self, tmp_path, monkeypatch):
+        fake_pm = _FakePM(tmp_path)
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+
+        with client:
+            resp = client.post(
+                "/api/v1/projects",
+                json={
+                    "title": "模型项目",
+                    "name": "m-1",
+                    "video_backend": "gemini-aistudio/veo-3",
+                    "image_backend": "gemini-aistudio/nano-banana",
+                    "text_backend_script": "gemini-aistudio/gemini-2.5",
+                    "default_duration": 8,
+                },
+            )
+            assert resp.status_code == 200
+            data = fake_pm.project_data["m-1"]
+            assert data["video_backend"] == "gemini-aistudio/veo-3"
+            assert data["image_backend"] == "gemini-aistudio/nano-banana"
+            assert data["text_backend_script"] == "gemini-aistudio/gemini-2.5"
+            assert data["default_duration"] == 8
+
+    def test_create_project_empty_model_fields_not_written(self, tmp_path, monkeypatch):
+        fake_pm = _FakePM(tmp_path)
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+
+        with client:
+            resp = client.post(
+                "/api/v1/projects",
+                json={
+                    "title": "空字段项目",
+                    "name": "e-1",
+                    "video_backend": "",
+                    "image_backend": None,
+                },
+            )
+            assert resp.status_code == 200
+            data = fake_pm.project_data["e-1"]
+            assert "video_backend" not in data
+            assert "image_backend" not in data
+
+    def test_create_project_with_invalid_backend_returns_400(self, tmp_path, monkeypatch):
+        """非法 backend 字符串应被校验器拒绝。"""
+        fake_pm = _FakePM(tmp_path)
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+
+        with client:
+            resp = client.post(
+                "/api/v1/projects",
+                json={
+                    "title": "Bad Backend",
+                    "name": "bad-bk",
+                    "video_backend": "garbage",  # 无 "/"，且不在 _LEGACY_PROVIDER_NAMES/PROVIDER_REGISTRY
+                },
+            )
+            assert resp.status_code == 400
+
+    def test_update_project_with_style_template_id_expands_and_clears_image(self, tmp_path, monkeypatch):
+        """PATCH style_template_id：写入 id + 展开 prompt 到 style，并清掉 style_image/description。"""
+        fake_pm = _FakePM(tmp_path)
+        # 预置一个带参考图的项目
+        fake_pm.project_data["ready"]["style_image"] = "style_reference.png"
+        fake_pm.project_data["ready"]["style_description"] = "old desc"
+
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+        with client:
+            resp = client.patch(
+                "/api/v1/projects/ready",
+                json={"style_template_id": "live_zhang_yimou"},
+            )
+            assert resp.status_code == 200
+            data = fake_pm.project_data["ready"]
+            assert data["style_template_id"] == "live_zhang_yimou"
+            assert "张艺谋" in data["style"]
+            assert "style_image" not in data
+            assert "style_description" not in data
+
+    def test_update_project_with_unknown_template_id_returns_400(self, tmp_path, monkeypatch):
+        client = _client(monkeypatch, _FakePM(tmp_path), _FakeCalc())
+        with client:
+            resp = client.patch(
+                "/api/v1/projects/ready",
+                json={"style_template_id": "no_such_template"},
+            )
+            assert resp.status_code == 400
+
+    def test_update_project_clear_style_template(self, tmp_path, monkeypatch):
+        """PATCH style_template_id=null：同时清掉 id 与派生的 style 长文本。"""
+        fake_pm = _FakePM(tmp_path)
+        fake_pm.project_data["ready"]["style_template_id"] = "live_premium_drama"
+        fake_pm.project_data["ready"]["style"] = "画风：真人电视剧风格，精品短剧画风，大师级构图"
+
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+        with client:
+            resp = client.patch(
+                "/api/v1/projects/ready",
+                json={"style_template_id": None},
+            )
+            assert resp.status_code == 200
+            data = fake_pm.project_data["ready"]
+            assert "style_template_id" not in data
+            assert data["style"] == ""
+
+    def test_update_project_clear_style_image(self, tmp_path, monkeypatch):
+        """PATCH clear_style_image=true：清掉 style_image 与 style_description。"""
+        fake_pm = _FakePM(tmp_path)
+        fake_pm.project_data["ready"]["style_image"] = "style_reference.png"
+        fake_pm.project_data["ready"]["style_description"] = "some desc"
+
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+        with client:
+            resp = client.patch(
+                "/api/v1/projects/ready",
+                json={"clear_style_image": True},
+            )
+            assert resp.status_code == 200
+            data = fake_pm.project_data["ready"]
+            assert "style_image" not in data
+            assert "style_description" not in data
+
+    def test_list_projects_returns_style_image_field(self, tmp_path, monkeypatch):
+        """列表端点需返回 style_image：否则前端无法区分"自定义风格"与"未设置"。"""
+        fake_pm = _FakePM(tmp_path)
+        fake_pm.project_data["ready"]["style_image"] = "style_reference.png"
+        # 互斥：自定义图情况下 style_template_id 应为空
+        fake_pm.project_data["ready"].pop("style_template_id", None)
+        fake_pm.project_data["ready"]["style"] = ""
+
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+        with client:
+            resp = client.get("/api/v1/projects")
+            assert resp.status_code == 200
+            ready = [p for p in resp.json()["projects"] if p["name"] == "ready"][0]
+            assert ready["style_image"] == "style_reference.png"
+            assert ready.get("style_template_id") is None
+
+    def test_update_project_clear_style_combined(self, tmp_path, monkeypatch):
+        """一次性清空所有风格：style_template_id=null + clear_style_image=true。"""
+        fake_pm = _FakePM(tmp_path)
+        fake_pm.project_data["ready"]["style_template_id"] = "live_premium_drama"
+        fake_pm.project_data["ready"]["style"] = "画风：..."
+        fake_pm.project_data["ready"]["style_image"] = "style_reference.png"
+        fake_pm.project_data["ready"]["style_description"] = "some desc"
+
+        client = _client(monkeypatch, fake_pm, _FakeCalc())
+        with client:
+            resp = client.patch(
+                "/api/v1/projects/ready",
+                json={"style_template_id": None, "clear_style_image": True},
+            )
+            assert resp.status_code == 200
+            data = fake_pm.project_data["ready"]
+            assert "style_template_id" not in data
+            assert data["style"] == ""
+            assert "style_image" not in data
+            assert "style_description" not in data

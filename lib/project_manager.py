@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from lib.project_change_hints import emit_project_change_hint
+from lib.style_templates import LEGACY_STYLE_MAP, resolve_template_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -952,6 +953,24 @@ class ProjectManager:
         except FileNotFoundError:
             return False
 
+    @staticmethod
+    def _migrate_legacy_style(project: dict) -> bool:
+        """检测旧 style 值并就地迁移。返回是否发生了变更。"""
+        if "style_template_id" in project:
+            return False  # 已迁移
+        legacy_value = project.get("style", "")
+        if legacy_value not in LEGACY_STYLE_MAP:
+            return False
+        if project.get("style_image"):
+            # 参考图优先：清空旧 style、template_id 置 None
+            project["style_template_id"] = None
+            project["style"] = ""
+        else:
+            new_id = LEGACY_STYLE_MAP[legacy_value]
+            project["style_template_id"] = new_id
+            project["style"] = resolve_template_prompt(new_id)
+        return True
+
     def load_project(self, project_name: str) -> dict:
         """
         加载项目元数据
@@ -967,8 +986,23 @@ class ProjectManager:
         if not project_file.exists():
             raise FileNotFoundError(f"项目元数据文件不存在: {project_file}")
 
-        with open(project_file, encoding="utf-8") as f:
-            return json.load(f)
+        migrated = False
+        with self._project_lock(project_name):
+            # 读-改-写放在同一把锁内，避免并发 save_project 在读与写之间完成
+            # 更新后，迁移写回又把更新覆盖掉（Codex #304 P2）。
+            with open(project_file, encoding="utf-8") as f:
+                project = json.load(f)
+            if self._migrate_legacy_style(project):
+                # 用 _atomic_write_json 保证一致性，不走 save_project 是为了
+                # 避免触发 _touch_metadata 污染 updated_at。
+                self._atomic_write_json(project_file, project)
+                migrated = True
+        if migrated:
+            emit_project_change_hint(
+                project_name,
+                changed_paths=[self.PROJECT_FILE],
+            )
+        return project
 
     @contextmanager
     def _project_lock(self, project_name: str):
@@ -1110,20 +1144,15 @@ class ProjectManager:
         content_mode: str = "narration",
         aspect_ratio: str = "9:16",
         default_duration: int | None = None,
+        style_template_id: str | None = None,
+        extras: dict | None = None,
     ) -> dict:
         """
         创建新的项目元数据文件
 
-        Args:
-            project_name: 项目标识
-            title: 项目标题，留空时默认使用项目标识
-            style: 整体视觉风格描述
-            content_mode: 内容模式 ('narration' 或 'drama')
-            aspect_ratio: 视频宽高比（独立于 content_mode）
-            default_duration: 默认视频时长（秒），None 表示使用系统默认值
-
-        Returns:
-            项目元数据字典
+        `extras` 用于写入可选的模型/后端等字段（如 video_backend / image_backend /
+        text_backend_{script,overview,style}）。调用方负责剔除空值，本方法只按字面
+        写入 extras 中已有的键。
         """
         project_name = self.normalize_project_name(project_name)
         project_title = str(title).strip() if title is not None else ""
@@ -1143,6 +1172,10 @@ class ProjectManager:
         }
         if default_duration is not None:
             project["default_duration"] = default_duration
+        if style_template_id is not None:
+            project["style_template_id"] = style_template_id
+        if extras:
+            project.update(extras)
 
         self.save_project(project_name, project)
         return project

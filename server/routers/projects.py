@@ -32,6 +32,7 @@ from lib.i18n import Translator
 from lib.project_change_hints import project_change_source
 from lib.project_manager import ProjectManager
 from lib.status_calculator import StatusCalculator
+from lib.style_templates import is_known_template, resolve_template_prompt
 from server.auth import CurrentUser, create_download_token, verify_download_token
 from server.routers._validators import validate_backend_value
 from server.services.project_archive import (
@@ -61,11 +62,18 @@ def get_archive_service() -> ProjectArchiveService:
 class CreateProjectRequest(BaseModel):
     name: str | None = None
     title: str | None = None
-    style: str | None = ""
+    style: str | None = ""  # 保留但不再是用户入口
     content_mode: str | None = "narration"
     aspect_ratio: str | None = "9:16"
     default_duration: int | None = None
     generation_mode: str | None = None
+    # ===== 新增 =====
+    style_template_id: str | None = None
+    video_backend: str | None = None
+    image_backend: str | None = None
+    text_backend_script: str | None = None
+    text_backend_overview: str | None = None
+    text_backend_style: str | None = None
 
 
 class UpdateProjectRequest(BaseModel):
@@ -81,6 +89,8 @@ class UpdateProjectRequest(BaseModel):
     text_backend_script: str | None = None
     text_backend_overview: str | None = None
     text_backend_style: str | None = None
+    style_template_id: str | None = None
+    clear_style_image: bool | None = None
 
 
 def _cleanup_temp_file(path: str) -> None:
@@ -340,6 +350,8 @@ async def list_projects(_user: CurrentUser):
                             "name": name,
                             "title": project.get("title", name),
                             "style": project.get("style", ""),
+                            "style_template_id": project.get("style_template_id"),
+                            "style_image": project.get("style_image"),
                             "thumbnail": thumbnail,
                             "status": status,
                         }
@@ -384,18 +396,52 @@ async def create_project(
                 raise HTTPException(status_code=400, detail=_t("title_required"))
             project_name = manual_name or manager.generate_project_name(title)
 
+            style_prompt = req.style or ""
+            if req.style_template_id:
+                if not is_known_template(req.style_template_id):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=_t("unknown_style_template", template_id=req.style_template_id),
+                    )
+                style_prompt = resolve_template_prompt(req.style_template_id)
+
+            # 与 update 路径对称：校验所有 backend 字段
+            for field_name in (
+                "video_backend",
+                "image_backend",
+                "text_backend_script",
+                "text_backend_overview",
+                "text_backend_style",
+            ):
+                value = getattr(req, field_name)
+                if value:
+                    validate_backend_value(value, field_name, _t)
+
             try:
                 manager.create_project(project_name)
             except FileExistsError:
                 raise HTTPException(status_code=400, detail=_t("project_exists", name=project_name))
+            extras = {
+                field: value
+                for field in (
+                    "video_backend",
+                    "image_backend",
+                    "text_backend_script",
+                    "text_backend_overview",
+                    "text_backend_style",
+                )
+                if (value := getattr(req, field))
+            }
             with project_change_source("webui"):
                 project = manager.create_project_metadata(
                     project_name,
                     title or manual_name,
-                    req.style,
+                    style_prompt,
                     req.content_mode,
                     aspect_ratio=req.aspect_ratio,
                     default_duration=req.default_duration,
+                    style_template_id=req.style_template_id,
+                    extras=extras or None,
                 )
                 if req.generation_mode is not None:
                     project["generation_mode"] = req.generation_mode
@@ -519,6 +565,28 @@ async def update_project(name: str, req: UpdateProjectRequest, _user: CurrentUse
                     project.pop("default_duration", None)
                 else:
                     project["default_duration"] = req.default_duration
+
+            if "style_template_id" in req.model_fields_set:
+                if req.style_template_id is None:
+                    # 取消模版选择：同时清掉展开的 style prompt，避免遗留孤儿文本
+                    project.pop("style_template_id", None)
+                    project["style"] = ""
+                else:
+                    if not is_known_template(req.style_template_id):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=_t("unknown_style_template", template_id=req.style_template_id),
+                        )
+                    project["style_template_id"] = req.style_template_id
+                    project["style"] = resolve_template_prompt(req.style_template_id)
+                    # 强互斥:模版与参考图二选一
+                    project.pop("style_image", None)
+                    project.pop("style_description", None)
+
+            if req.clear_style_image:
+                # 显式清除自定义参考图，用于"取消风格"流程
+                project.pop("style_image", None)
+                project.pop("style_description", None)
 
             with project_change_source("webui"):
                 manager.save_project(name, project)

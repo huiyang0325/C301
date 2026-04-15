@@ -2,13 +2,38 @@ import { useParams, useLocation } from "wouter";
 import { voidCall, voidPromise } from "@/utils/async";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { API } from "@/api";
 import { useAppStore } from "@/stores/app-store";
-import { ProviderModelSelect } from "@/components/ui/ProviderModelSelect";
 import { PROVIDER_NAMES } from "@/components/ui/ProviderIcon";
-import { getProviderModels, getCustomProviderModels, lookupSupportedDurations, DEFAULT_DURATIONS } from "@/utils/provider-models";
+import { getProviderModels, getCustomProviderModels } from "@/utils/provider-models";
+import { ModelConfigSection } from "@/components/shared/ModelConfigSection";
+import { StylePicker, type StylePickerValue } from "@/components/shared/StylePicker";
+import { DEFAULT_TEMPLATE_ID, STYLE_TEMPLATES } from "@/data/style-templates";
 import type { CustomProviderInfo, ProviderInfo } from "@/types";
+
+function deriveStyleValue(project: Record<string, unknown>, projectName: string): StylePickerValue {
+  const styleImage = project.style_image as string | undefined;
+  const templateId = (project.style_template_id as string | undefined) ?? null;
+  if (styleImage) {
+    return {
+      mode: "custom",
+      templateId: null,
+      activeCategory: "live",
+      uploadedFile: null,
+      uploadedPreview: `/api/v1/files/${encodeURIComponent(projectName)}/${styleImage}`,
+    };
+  }
+  const effectiveId = templateId ?? DEFAULT_TEMPLATE_ID;
+  const tpl = STYLE_TEMPLATES.find((x) => x.id === effectiveId);
+  return {
+    mode: "template",
+    templateId: effectiveId,
+    activeCategory: tpl?.category ?? "live",
+    uploadedFile: null,
+    uploadedPreview: null,
+  };
+}
 
 export function ProjectSettingsPage() {
   const { t } = useTranslation("dashboard");
@@ -25,7 +50,10 @@ export function ProjectSettingsPage() {
   const [globalDefaults, setGlobalDefaults] = useState<{
     video: string;
     image: string;
-  }>({ video: "", image: "" });
+    textScript: string;
+    textOverview: string;
+    textStyle: string;
+  }>({ video: "", image: "", textScript: "", textOverview: "", textStyle: "" });
 
   const allProviderNames = useMemo(
     () => ({ ...PROVIDER_NAMES, ...(options?.provider_names ?? {}) }),
@@ -46,12 +74,18 @@ export function ProjectSettingsPage() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [customProviders, setCustomProviders] = useState<CustomProviderInfo[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // ── Style picker state (independent save flow) ─────────────────────────────
+  const [styleValue, setStyleValue] = useState<StylePickerValue | null>(null);
+  const [savingStyle, setSavingStyle] = useState(false);
   const initialRef = useRef({
     videoBackend: "", imageBackend: "", audioOverride: null as boolean | null,
     textScript: "", textOverview: "", textStyle: "",
     aspectRatio: "", generationMode: "single" as "single" | "grid",
     defaultDuration: null as number | null,
   });
+  // 风格区独立保存，但"未保存就离开"也需被 isDirty 拦截。
+  const initialStyleRef = useRef<StylePickerValue | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -73,6 +107,9 @@ export function ProjectSettingsPage() {
       setGlobalDefaults({
         video: configRes.settings?.default_video_backend ?? "",
         image: configRes.settings?.default_image_backend ?? "",
+        textScript: configRes.settings?.text_backend_script ?? "",
+        textOverview: configRes.settings?.text_backend_overview ?? "",
+        textStyle: configRes.settings?.text_backend_style ?? "",
       });
       setProviders(providerList);
       setCustomProviders(customProviderList);
@@ -86,9 +123,10 @@ export function ProjectSettingsPage() {
       const to = (project.text_backend_overview as string | undefined) ?? "";
       const tst = (project.text_backend_style as string | undefined) ?? "";
 
-      const ar = typeof project.aspect_ratio === "string"
-        ? project.aspect_ratio
-        : "";
+      const rawAr = typeof project.aspect_ratio === "string" ? project.aspect_ratio : "";
+      // Backend's get_aspect_ratio() falls back to "9:16" when unset (generation_tasks.py).
+      // Mirror that here so the UI reflects the actually-effective ratio.
+      const ar = rawAr || "9:16";
       const gm = (project.generation_mode as "single" | "grid" | undefined) ?? "single";
       const dd = project.default_duration != null ? (project.default_duration as number) : null;
 
@@ -101,6 +139,9 @@ export function ProjectSettingsPage() {
       setAspectRatio(ar);
       setGenerationMode(gm);
       setDefaultDuration(dd);
+      const derivedStyle = deriveStyleValue(project, projectName);
+      setStyleValue(derivedStyle);
+      initialStyleRef.current = derivedStyle;
       initialRef.current = {
         videoBackend: vb, imageBackend: ib, audioOverride: ao,
         textScript: ts, textOverview: to, textStyle: tst,
@@ -111,29 +152,31 @@ export function ProjectSettingsPage() {
     return () => { disposed = true; };
   }, [projectName]);
 
-  const effectiveVideoBackend = videoBackend || globalDefaults.video;
-  const supportedDurations = useMemo(
-    () => lookupSupportedDurations(providers, effectiveVideoBackend, customProviders),
-    [providers, effectiveVideoBackend, customProviders],
-  );
+  // blob: URL 所有权集中：StylePicker 只通过 onChange 更换引用，
+  // revoke 统一在此 effect 做（URL 变更或卸载时）。
+  useEffect(() => {
+    const url = styleValue?.uploadedPreview;
+    if (!url?.startsWith("blob:")) return;
+    return () => URL.revokeObjectURL(url);
+  }, [styleValue?.uploadedPreview]);
 
-  // Derive effective default duration during render — if current value
-  // is not in the model's supported list, treat it as "auto" (null).
-  const effectiveDefaultDuration =
-    supportedDurations && defaultDuration !== null && !supportedDurations.includes(defaultDuration)
-      ? null
-      : defaultDuration;
+  const styleIsDirty = (() => {
+    const init = initialStyleRef.current;
+    if (!styleValue || !init) return false;
+    if (styleValue.mode !== init.mode) return true;
+    if (styleValue.mode === "template") return styleValue.templateId !== init.templateId;
+    // custom 模式：新上传文件、或既有图被用户清空（preview 从 URL 变为 null）
+    return styleValue.uploadedFile !== null || styleValue.uploadedPreview !== init.uploadedPreview;
+  })();
 
-  const handleVideoBackendChange = useCallback((value: string) => {
-    setVideoBackend(value);
-    // When video model changes, reset default duration so the UI
-    // re-evaluates against the new model's supported durations.
-    const effective = value || globalDefaults.video;
-    const durations = lookupSupportedDurations(providers, effective, customProviders);
-    if (durations && defaultDuration !== null && !durations.includes(defaultDuration)) {
-      setDefaultDuration(null);
-    }
-  }, [globalDefaults.video, providers, customProviders, defaultDuration]);
+  // "无风格"态：模版未选 + 未上传新文件 + 未保留旧预览
+  const isStyleCleared = !!styleValue
+    && styleValue.templateId === null
+    && styleValue.uploadedFile === null
+    && !styleValue.uploadedPreview;
+  const hasInitialStyle = !!initialStyleRef.current
+    && (initialStyleRef.current.templateId !== null
+      || initialStyleRef.current.uploadedPreview !== null);
 
   const isDirty =
     videoBackend !== initialRef.current.videoBackend ||
@@ -144,7 +187,8 @@ export function ProjectSettingsPage() {
     textStyle !== initialRef.current.textStyle ||
     aspectRatio !== initialRef.current.aspectRatio ||
     generationMode !== initialRef.current.generationMode ||
-    defaultDuration !== initialRef.current.defaultDuration;
+    defaultDuration !== initialRef.current.defaultDuration ||
+    styleIsDirty;
 
   useEffect(() => {
     if (!isDirty) return;
@@ -157,6 +201,55 @@ export function ProjectSettingsPage() {
     if (isDirty && !window.confirm(t("unsaved_changes_confirm"))) return;
     navigate(path);
   }, [isDirty, navigate, t]);
+
+  // Cross-tab switch from custom → template may leave {mode:"template", templateId:null}
+  // while an uploaded preview still lingers — no user-chosen card. Block save so
+  // clicking it can't silently route to the "clear style" PATCH branch. The
+  // explicit 取消风格 action zeroes uploadedFile/uploadedPreview too, bypassing this.
+  const isStyleIncomplete =
+    !!styleValue
+    && styleValue.mode === "template"
+    && !styleValue.templateId
+    && (styleValue.uploadedFile !== null || !!styleValue.uploadedPreview);
+  const isStyleSaveDisabled = savingStyle || !styleIsDirty || isStyleIncomplete;
+
+  const handleSaveStyle = useCallback(async () => {
+    if (!styleValue) return;
+    setSavingStyle(true);
+    try {
+      if (styleValue.mode === "template" && styleValue.templateId) {
+        await API.updateProject(projectName, { style_template_id: styleValue.templateId });
+      } else if (styleValue.mode === "custom" && styleValue.uploadedFile) {
+        await API.uploadStyleImage(projectName, styleValue.uploadedFile);
+      } else {
+        // 取消风格：显式清掉模板 ID 与自定义图
+        await API.updateProject(projectName, {
+          style_template_id: null,
+          clear_style_image: true,
+        });
+      }
+      // Refetch project to reset styleValue from canonical server state
+      const refreshed = await API.getProject(projectName);
+      const nextStyle = deriveStyleValue(refreshed.project as unknown as Record<string, unknown>, projectName);
+      setStyleValue(nextStyle);
+      initialStyleRef.current = nextStyle;
+      useAppStore.getState().pushToast(t("saved"), "success");
+    } catch (e: unknown) {
+      useAppStore.getState().pushToast(e instanceof Error ? e.message : t("save_failed"), "error");
+    } finally {
+      setSavingStyle(false);
+    }
+  }, [styleValue, projectName, t]);
+
+  const handleClearStyle = useCallback(() => {
+    if (!styleValue) return;
+    setStyleValue({
+      ...styleValue,
+      templateId: null,
+      uploadedFile: null,
+      uploadedPreview: null,
+    });
+  }, [styleValue]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -208,22 +301,73 @@ export function ProjectSettingsPage() {
           </p>
         </div>
 
+        {/* Style picker (independent save flow, mutually exclusive template / custom) */}
+        {styleValue && (
+          <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4 space-y-3">
+            <div className="text-sm font-medium text-gray-100">{t("project_style_section_title")}</div>
+            <StylePicker value={styleValue} onChange={setStyleValue} />
+            <div className="flex items-center gap-3 pt-2 border-t border-gray-800">
+              <button
+                type="button"
+                onClick={voidPromise(handleSaveStyle)}
+                disabled={isStyleSaveDisabled}
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950"
+              >
+                {savingStyle && <Loader2 className="h-4 w-4 animate-spin" />}
+                {savingStyle ? t("style_saving") : t("style_save")}
+              </button>
+              {hasInitialStyle && !isStyleCleared && !savingStyle && (
+                <button
+                  type="button"
+                  onClick={handleClearStyle}
+                  className="text-sm text-gray-400 hover:text-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950 rounded"
+                >
+                  {t("style_clear")}
+                </button>
+              )}
+              {isStyleCleared && !savingStyle && styleIsDirty && (
+                <p className="text-xs text-gray-500">{t("style_cleared_hint")}</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {options && (
           <>
-            {/* Video model override */}
-            <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-              <div className="mb-3 text-sm font-medium text-gray-100">{t("video_model")}</div>
-              <ProviderModelSelect
-                value={videoBackend}
-                options={options.video_backends}
-                providerNames={allProviderNames}
-                onChange={handleVideoBackendChange}
-                allowDefault
-                defaultHint={
-                  globalDefaults.video ? t("current_global_hint", { value: globalDefaults.video }) : undefined
-                }
-              />
-            </div>
+            {/* Model config (video + duration + image + text) */}
+            <ModelConfigSection
+              value={{
+                videoBackend,
+                imageBackend,
+                textBackendScript: textScript,
+                textBackendOverview: textOverview,
+                textBackendStyle: textStyle,
+                defaultDuration,
+              }}
+              onChange={(next) => {
+                setVideoBackend(next.videoBackend);
+                setImageBackend(next.imageBackend);
+                setTextScript(next.textBackendScript);
+                setTextOverview(next.textBackendOverview);
+                setTextStyle(next.textBackendStyle);
+                setDefaultDuration(next.defaultDuration);
+              }}
+              providers={providers}
+              customProviders={customProviders}
+              options={{
+                videoBackends: options.video_backends,
+                imageBackends: options.image_backends,
+                textBackends: options.text_backends,
+                providerNames: allProviderNames,
+              }}
+              globalDefaults={{
+                video: globalDefaults.video,
+                image: globalDefaults.image,
+                textScript: globalDefaults.textScript ?? "",
+                textOverview: globalDefaults.textOverview ?? "",
+                textStyle: globalDefaults.textStyle ?? "",
+              }}
+            />
 
             {/* Aspect ratio */}
             <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
@@ -297,60 +441,6 @@ export function ProjectSettingsPage() {
               </fieldset>
             </div>
 
-            {/* Default duration */}
-            <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-              <div className="mb-3 text-sm font-medium text-gray-100">{t("default_duration_label")}</div>
-              <p className="mb-2 text-xs text-gray-500">
-                {t("default_duration_project_desc")}
-              </p>
-              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t("duration_selection")}>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={effectiveDefaultDuration === null}
-                  onClick={() => setDefaultDuration(null)}
-                  className={`rounded-lg border px-3 py-1.5 text-sm transition-colors focus-ring ${
-                    effectiveDefaultDuration === null
-                      ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
-                      : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
-                  }`}
-                >
-                  {t("auto_label")}
-                </button>
-                {(supportedDurations ?? DEFAULT_DURATIONS).map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    role="radio"
-                    aria-checked={effectiveDefaultDuration === d}
-                    onClick={() => setDefaultDuration(d)}
-                    className={`rounded-lg border px-3 py-1.5 text-sm transition-colors focus-ring ${
-                      effectiveDefaultDuration === d
-                        ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
-                        : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
-                    }`}
-                  >
-                    {d}s
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Image model override */}
-            <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-              <div className="mb-3 text-sm font-medium text-gray-100">{t("image_model")}</div>
-              <ProviderModelSelect
-                value={imageBackend}
-                options={options.image_backends}
-                providerNames={allProviderNames}
-                onChange={setImageBackend}
-                allowDefault
-                defaultHint={
-                  globalDefaults.image ? t("current_global_hint", { value: globalDefaults.image }) : undefined
-                }
-              />
-            </div>
-
             {/* Audio override */}
             <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
               <div className="mb-3 text-sm font-medium text-gray-100">{t("generate_audio_label")}</div>
@@ -372,31 +462,6 @@ export function ProjectSettingsPage() {
                   {t("disabled_label")}
                 </label>
               </fieldset>
-            </div>
-            {/* Text model overrides */}
-            <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
-              <div className="mb-3 text-sm font-medium text-gray-100">{t("text_models")}</div>
-              <p className="mb-2 text-xs text-gray-500">{t("text_model_override_desc")}</p>
-              <div className="space-y-3">
-                {([
-                  { value: textScript, setter: setTextScript, labelKey: "script_generation" },
-                  { value: textOverview, setter: setTextOverview, labelKey: "overview_generation" },
-                  { value: textStyle, setter: setTextStyle, labelKey: "style_analysis" },
-                ] as const).map(({ value, setter, labelKey }) => (
-                  <div key={labelKey}>
-                    <div className="mb-1 text-xs text-gray-400">{t(labelKey)}</div>
-                    <ProviderModelSelect
-                      value={value}
-                      options={options.text_backends}
-                      providerNames={allProviderNames}
-                      onChange={setter}
-                      allowDefault
-                      defaultHint={t("follow_global_default")}
-                      aria-label={t(labelKey)}
-                    />
-                  </div>
-                ))}
-              </div>
             </div>
           </>
         )}

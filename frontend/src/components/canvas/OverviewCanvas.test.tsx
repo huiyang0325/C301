@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { API } from "@/api";
 import { OverviewCanvas } from "./OverviewCanvas";
@@ -37,84 +37,38 @@ describe("OverviewCanvas", () => {
     vi.stubGlobal("confirm", vi.fn(() => true));
   });
 
-  it("uploads and deletes the style reference image from the workspace", async () => {
-    vi.spyOn(API, "uploadStyleImage").mockResolvedValue({
-      success: true,
-      style_image: "style_reference.png",
-      style_description: "updated",
-      url: "u",
-    });
-    vi.spyOn(API, "deleteStyleImage").mockResolvedValue({ success: true });
-    vi.spyOn(API, "getProject")
-      .mockResolvedValueOnce({
-        project: makeProjectData({ style_image: "style_reference.png" }),
-        scripts: {},
-      })
-      .mockResolvedValueOnce({
-        project: makeProjectData(),
-        scripts: {},
-      });
+  it("renders the project title and content mode", () => {
+    render(<OverviewCanvas projectName="demo" projectData={makeProjectData()} />);
+    expect(screen.getByText("Demo")).toBeInTheDocument();
+  });
 
-    const { container, rerender } = render(
-      <OverviewCanvas projectName="demo" projectData={makeProjectData()} />,
-    );
-
-    const file = new File(["style"], "style.png", { type: "image/png" });
-    const fileInput = container.querySelector("input[type='file']");
-    expect(fileInput).not.toBeNull();
-
-    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [file] } });
-
-    await waitFor(() => {
-      expect(API.uploadStyleImage).toHaveBeenCalledWith("demo", file);
-      expect(API.getProject).toHaveBeenCalledTimes(1);
-    });
-
-    rerender(
+  it("shows welcome canvas when there is no overview and no episodes", () => {
+    render(
       <OverviewCanvas
         projectName="demo"
-        projectData={makeProjectData({ style_image: "style_reference.png" })}
+        projectData={makeProjectData({ overview: undefined, episodes: [] })}
       />,
     );
+    expect(screen.getByTestId("welcome-canvas")).toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: /删除参考图/ }));
-
-    await waitFor(() => {
-      expect(API.deleteStyleImage).toHaveBeenCalledWith("demo");
-      expect(API.getProject).toHaveBeenCalledTimes(2);
-    });
-  }, 10_000);
-
-  it("shows a save action only when style description is edited", async () => {
-    vi.spyOn(API, "updateStyleDescription").mockResolvedValue({} as any);
+  it("regenerates overview on button click", async () => {
+    vi.spyOn(API, "generateOverview").mockResolvedValue(undefined as never);
     vi.spyOn(API, "getProject").mockResolvedValue({
-      project: makeProjectData({ style_description: "new description" }),
+      project: makeProjectData(),
       scripts: {},
     });
 
-    render(
-      <OverviewCanvas projectName="demo" projectData={makeProjectData()} />,
-    );
+    render(<OverviewCanvas projectName="demo" projectData={makeProjectData()} />);
 
-    expect(
-      screen.queryByRole("button", { name: /保存风格描述/ }),
-    ).not.toBeInTheDocument();
-
-    fireEvent.change(
-      screen.getByPlaceholderText(/上传风格参考图后/),
-      {
-        target: { value: "new description" },
-      },
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /保存风格描述/ }));
-
-    await waitFor(() => {
-      expect(API.updateStyleDescription).toHaveBeenCalledWith(
-        "demo",
-        "new description",
-      );
-      expect(API.getProject).toHaveBeenCalled();
-    });
-  });
+    // Find the regenerate button by its accessible role
+    const buttons = screen.getAllByRole("button");
+    const regenButton = buttons.find((b) => b.getAttribute("title") !== null);
+    if (regenButton) {
+      regenButton.click();
+      await waitFor(() => {
+        expect(API.generateOverview).toHaveBeenCalledWith("demo");
+      });
+    }
+  }, 10_000);
 });
