@@ -16,6 +16,7 @@ from fastapi import APIRouter, Body, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from lib import PROJECT_ROOT
+from lib.asset_types import ASSET_TYPES
 from lib.i18n import Translator
 from lib.image_utils import normalize_uploaded_image
 from lib.project_change_hints import emit_project_change_batch, project_change_source
@@ -37,7 +38,8 @@ ALLOWED_EXTENSIONS = {
     "source": [".txt", ".md", ".doc", ".docx"],
     "character": [".png", ".jpg", ".jpeg", ".webp"],
     "character_ref": [".png", ".jpg", ".jpeg", ".webp"],
-    "clue": [".png", ".jpg", ".jpeg", ".webp"],
+    "scene": [".png", ".jpg", ".jpeg", ".webp"],
+    "prop": [".png", ".jpg", ".jpeg", ".webp"],
     "storyboard": [".png", ".jpg", ".jpeg", ".webp"],
 }
 
@@ -74,6 +76,29 @@ async def serve_project_file(project_name: str, path: str, request: Request, _t:
         raise HTTPException(status_code=404, detail=_t("project_not_found", name=project_name))
 
 
+@router.get("/global-assets/{asset_type}/{filename}")
+async def serve_global_asset(asset_type: str, filename: str, _t: Translator):
+    """服务 _global_assets 下的全局资产图片（character/scene/prop）"""
+    if asset_type not in ASSET_TYPES:
+        raise HTTPException(status_code=400, detail=_t("invalid_asset_type"))
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail=_t("invalid_asset_filename"))
+
+    root = get_project_manager().get_global_assets_root()
+    path = root / asset_type / filename
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=_t("file_not_found", path=filename))
+
+    # 防御性检查：即使 filename 通过了字符串校验，也要确保解析后的路径仍在 root 之内
+    # （防御 symlink / URL 编码等边界场景）
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail=_t("forbidden_access"))
+
+    return FileResponse(str(path))
+
+
 @router.post("/projects/{project_name}/upload/{upload_type}")
 async def upload_file(
     project_name: str,
@@ -88,9 +113,9 @@ async def upload_file(
 
     Args:
         project_name: 项目名称
-        upload_type: 上传类型 (source/character/clue/storyboard)
+        upload_type: 上传类型 (source/character/prop/storyboard)
         file: 上传的文件
-        name: 可选，用于角色/线索名称，或分镜 ID（自动更新元数据）
+        name: 可选，用于角色/道具名称，或分镜 ID（自动更新元数据）
     """
     if upload_type not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=_t("invalid_upload_type", upload_type=upload_type))
@@ -126,8 +151,14 @@ async def upload_file(
                     filename = f"{name}.png"
                 else:
                     filename = f"{Path(file.filename).stem}.png"
-            elif upload_type == "clue":
-                target_dir = project_dir / "clues"
+            elif upload_type == "scene":
+                target_dir = project_dir / "scenes"
+                if name:
+                    filename = f"{name}.png"
+                else:
+                    filename = f"{Path(file.filename).stem}.png"
+            elif upload_type == "prop":
+                target_dir = project_dir / "props"
                 if name:
                     filename = f"{name}.png"
                 else:
@@ -147,7 +178,7 @@ async def upload_file(
 
             # 保存文件（大于 2MB 时压缩为 JPEG，否则校验后原样保存）
             nonlocal content
-            if upload_type in ("character", "character_ref", "clue", "storyboard"):
+            if upload_type in ("character", "character_ref", "scene", "prop", "storyboard"):
                 try:
                     content, ext = normalize_uploaded_image(content, Path(file.filename).suffix.lower())
                 except ValueError:
@@ -165,8 +196,10 @@ async def upload_file(
                 relative_path = f"characters/{filename}"
             elif upload_type == "character_ref":
                 relative_path = f"characters/refs/{filename}"
-            elif upload_type == "clue":
-                relative_path = f"clues/{filename}"
+            elif upload_type == "scene":
+                relative_path = f"scenes/{filename}"
+            elif upload_type == "prop":
+                relative_path = f"props/{filename}"
             elif upload_type == "storyboard":
                 relative_path = f"storyboards/{filename}"
             else:
@@ -190,16 +223,27 @@ async def upload_file(
                 except KeyError:
                     pass  # 角色不存在，忽略
 
-            if upload_type == "clue" and name:
+            if upload_type == "scene" and name:
                 try:
                     with project_change_source("webui"):
-                        get_project_manager().update_clue_sheet(
+                        get_project_manager().update_scene_sheet(
                             project_name,
                             name,
-                            f"clues/{filename}",
+                            f"scenes/{filename}",
                         )
                 except KeyError:
-                    pass  # 线索不存在，忽略
+                    pass  # 场景不存在，忽略
+
+            if upload_type == "prop" and name:
+                try:
+                    with project_change_source("webui"):
+                        get_project_manager().update_prop_sheet(
+                            project_name,
+                            name,
+                            f"props/{filename}",
+                        )
+                except KeyError:
+                    pass  # 道具不存在，忽略
 
             return {
                 "success": True,
@@ -230,7 +274,8 @@ async def list_project_files(project_name: str, _user: CurrentUser, _t: Translat
             files = {
                 "source": [],
                 "characters": [],
-                "clues": [],
+                "scenes": [],
+                "props": [],
                 "storyboards": [],
                 "videos": [],
                 "output": [],

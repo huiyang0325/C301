@@ -1,69 +1,80 @@
 import { useState, useRef, useEffect, useCallback, useId } from "react";
 import { useTranslation } from "react-i18next";
-import { Puzzle } from "lucide-react";
+import { Landmark, Upload } from "lucide-react";
 import { API } from "@/api";
+import { AddToLibraryButton } from "@/components/assets/AddToLibraryButton";
 import { VersionTimeMachine } from "@/components/canvas/timeline/VersionTimeMachine";
 import { AspectFrame } from "@/components/ui/AspectFrame";
 import { GenerateButton } from "@/components/ui/GenerateButton";
 import { PreviewableImageFrame } from "@/components/ui/PreviewableImageFrame";
+import { useAppStore } from "@/stores/app-store";
 import { useProjectsStore } from "@/stores/projects-store";
-import type { Clue } from "@/types";
+import type { Scene } from "@/types";
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
-interface ClueCardProps {
+interface SceneCardProps {
   name: string;
-  clue: Clue;
+  scene: Scene;
   projectName: string;
-  onUpdate: (name: string, updates: Partial<Clue>) => void;
+  onUpdate: (name: string, updates: Partial<Scene>) => void;
   onGenerate: (name: string) => void;
-  onRestoreVersion?: () => Promise<void> | void;
+  onRestoreVersion?: () => void | Promise<void>;
+  onReload?: () => void | Promise<void>;
   generating?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// SceneCard
 // ---------------------------------------------------------------------------
 
-const TYPE_LABEL_KEYS: Record<string, string> = {
-  prop: "prop_option",
-  location: "location_option",
-};
-
-// ---------------------------------------------------------------------------
-// ClueCard
-// ---------------------------------------------------------------------------
-
-export function ClueCard({
+export function SceneCard({
   name,
-  clue,
+  scene,
   projectName,
   onUpdate,
   onGenerate,
   onRestoreVersion,
+  onReload,
   generating = false,
-}: ClueCardProps) {
-  const { t } = useTranslation("dashboard");
+}: SceneCardProps) {
+  const { t } = useTranslation(["dashboard", "assets"]);
   const sheetFp = useProjectsStore(
-    (s) => clue.clue_sheet ? s.getAssetFingerprint(clue.clue_sheet) : null,
+    (s) => scene.scene_sheet ? s.getAssetFingerprint(scene.scene_sheet) : null,
   );
-  const [description, setDescription] = useState(clue.description);
+  const [description, setDescription] = useState(scene.description);
   const [imgError, setImgError] = useState(false);
+  const [uploadingSheet, setUploadingSheet] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const sheetInputRef = useRef<HTMLInputElement>(null);
 
-  const isDirty = description !== clue.description;
+  const handleSheetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploadingSheet(true);
+    try {
+      await API.uploadFile(projectName, "scene", file, name);
+      await onReload?.();
+      useAppStore.getState().pushToast(t("assets:upload_sheet_success", { name }), "success");
+    } catch (err) {
+      useAppStore.getState().pushToast((err as Error).message, "error");
+    } finally {
+      setUploadingSheet(false);
+    }
+  };
+
+  const isDirty = description !== scene.description;
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 可编辑描述字段必须跟随外部 prop 更新，拷贝模式是有意设计
-    setDescription(clue.description);
-  }, [clue.description]);
+    setDescription(scene.description);
+  }, [scene.description]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 图片源变更时重置错误态，确保新 URL 正常加载
     setImgError(false);
-  }, [clue.clue_sheet, sheetFp]);
+  }, [scene.scene_sheet, sheetFp]);
 
   // Auto-resize textarea.
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -85,8 +96,8 @@ export function ClueCard({
     onUpdate(name, { description });
   };
 
-  const sheetUrl = clue.clue_sheet
-    ? API.getFileUrl(projectName, clue.clue_sheet, sheetFp)
+  const sheetUrl = scene.scene_sheet
+    ? API.getFileUrl(projectName, scene.scene_sheet, sheetFp)
     : null;
 
   return (
@@ -102,53 +113,63 @@ export function ClueCard({
         setIsEditing(false);
       }}
     >
-      {/* ---- Header: name + badges ---- */}
-      <div className="mb-4 flex items-center gap-2">
-        <h3 className="text-lg font-bold text-white truncate">{name}</h3>
-
-        <span className="shrink-0 rounded-full bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-300">
-          {t(TYPE_LABEL_KEYS[clue.type] ?? clue.type)}
-        </span>
-
-        {clue.importance === "major" ? (
-          <span className="shrink-0 rounded-full bg-indigo-500/10 px-2 py-0.5 text-xs font-medium text-indigo-400 border border-indigo-500/20">
-            {t("major_option")}
-          </span>
-        ) : (
-          <span className="shrink-0 rounded-full bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-400">
-            {t("minor_option")}
-          </span>
-        )}
-      </div>
-
-      {/* ---- Image area ---- */}
-      <div className="mb-4">
-        <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-            {t("clue_design")}
-          </span>
+      {/* ---- Header: name + actions ---- */}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="min-w-0 flex-1 truncate text-lg font-bold text-white">{name}</h3>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => sheetInputRef.current?.click()}
+            disabled={uploadingSheet}
+            title={t("assets:upload_sheet")}
+            aria-label={t("assets:upload_sheet")}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-gray-400 transition-colors hover:bg-gray-800 hover:text-gray-200 disabled:opacity-40"
+          >
+            <Upload className="h-3 w-3" />
+            <span>{t("assets:upload_sheet_short")}</span>
+          </button>
+          <input
+            ref={sheetInputRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,.webp"
+            aria-label={t("assets:upload_sheet")}
+            className="hidden"
+            onChange={(e) => void handleSheetUpload(e)}
+          />
+          <AddToLibraryButton
+            resourceType="scene"
+            resourceId={name}
+            projectName={projectName}
+            initialDescription={scene.description}
+            sheetPath={scene.scene_sheet}
+            showLabel
+          />
           <VersionTimeMachine
             projectName={projectName}
-            resourceType="clues"
+            resourceType="scenes"
             resourceId={name}
             onRestore={onRestoreVersion}
           />
         </div>
+      </div>
+
+      {/* ---- Image area ---- */}
+      <div className="mb-4">
         <PreviewableImageFrame
           src={sheetUrl && !imgError ? sheetUrl : null}
-          alt={`${name} ${t("clue_design")}`}
+          alt={`${name} ${t("scene_design")}`}
         >
           <AspectFrame ratio="16:9">
             {sheetUrl && !imgError ? (
               <img
                 src={sheetUrl}
-                alt={`${name} ${t("clue_design")}`}
+                alt={`${name} ${t("scene_design")}`}
                 className="h-full w-full object-cover"
                 onError={() => setImgError(true)}
               />
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-500">
-                <Puzzle className="h-10 w-10" />
+                <Landmark className="h-10 w-10" />
                 <span className="text-xs">{t("click_to_generate")}</span>
               </div>
             )}
@@ -166,7 +187,7 @@ export function ClueCard({
         onInput={autoResize}
         rows={2}
         className="mb-3 w-full resize-none overflow-hidden bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus-ring"
-        placeholder={t("clue_desc_placeholder")}
+        placeholder={t("scene_desc_placeholder")}
       />
 
       {isDirty && (
@@ -179,14 +200,12 @@ export function ClueCard({
         </button>
       )}
 
-      {clue.importance === "major" && (
-        <GenerateButton
-          onClick={() => onGenerate(name)}
-          loading={generating}
-          label={clue.clue_sheet ? t("regenerate_design") : t("generate_design")}
-          className="w-full justify-center"
-        />
-      )}
+      <GenerateButton
+        onClick={() => onGenerate(name)}
+        loading={generating}
+        label={scene.scene_sheet ? t("regenerate_design") : t("generate_design")}
+        className="w-full justify-center"
+      />
     </div>
   );
 }

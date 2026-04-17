@@ -126,7 +126,7 @@ class CostEstimationService:
             if not script:
                 continue
 
-            raw_segments, id_key, _, _ = get_storyboard_items(script)
+            raw_segments, id_key, _, _, _ = get_storyboard_items(script)
 
             # Grid 模式：预计算每个 segment 的图片分摊费用
             grid_cost_per_segment: dict[str, tuple[float, str]] = {}
@@ -238,10 +238,12 @@ class CostEstimationService:
                     ep_act.get(cost_type, {}),
                 )
 
-        # Project-level actual costs (character/clue images — segment_id is null)
-        project_level = actual_by_segment.get("__project__", {})
-        if "image" in project_level:
-            proj_act["character_and_clue"] = project_level["image"]
+        # Project-level actual costs (characters/scenes/props 三类资产图 —— segment_id is null)
+        project_image_by_type = await self._tracker.get_project_image_costs_by_asset_type(project_name)
+        for asset_type in ("characters", "scenes", "props"):
+            bucket = project_image_by_type.get(asset_type)
+            if bucket:
+                proj_act[asset_type] = bucket
 
         return {
             "project_name": project_name,

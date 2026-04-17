@@ -38,6 +38,7 @@ import type {
   CostEstimateResponse,
 } from "@/types";
 import type { GridGeneration } from "@/types/grid";
+import type { Asset, AssetType, AssetCreatePayload, AssetUpdatePayload } from "@/types/asset";
 import { getToken, clearToken } from "@/utils/auth";
 import i18n from "./i18n";
 
@@ -480,36 +481,29 @@ class API {
     );
   }
 
-  // ==================== 线索管理 ====================
+  // ==================== 项目场景管理 ====================
 
-  static async addClue(
+  static async addProjectScene(
     projectName: string,
     name: string,
-    clueType: string,
-    description: string,
-    importance: string = "major"
+    description: string
   ): Promise<SuccessResponse> {
     return this.request(
-      `/projects/${encodeURIComponent(projectName)}/clues`,
+      `/projects/${encodeURIComponent(projectName)}/scenes`,
       {
         method: "POST",
-        body: JSON.stringify({
-          name,
-          clue_type: clueType,
-          description,
-          importance,
-        }),
+        body: JSON.stringify({ name, description }),
       }
     );
   }
 
-  static async updateClue(
+  static async updateProjectScene(
     projectName: string,
-    clueName: string,
+    sceneName: string,
     updates: Record<string, unknown>
   ): Promise<SuccessResponse> {
     return this.request(
-      `/projects/${encodeURIComponent(projectName)}/clues/${encodeURIComponent(clueName)}`,
+      `/projects/${encodeURIComponent(projectName)}/scenes/${encodeURIComponent(sceneName)}`,
       {
         method: "PATCH",
         body: JSON.stringify(updates),
@@ -517,12 +511,54 @@ class API {
     );
   }
 
-  static async deleteClue(
+  static async deleteProjectScene(
     projectName: string,
-    clueName: string
+    sceneName: string
   ): Promise<SuccessResponse> {
     return this.request(
-      `/projects/${encodeURIComponent(projectName)}/clues/${encodeURIComponent(clueName)}`,
+      `/projects/${encodeURIComponent(projectName)}/scenes/${encodeURIComponent(sceneName)}`,
+      {
+        method: "DELETE",
+      }
+    );
+  }
+
+  // ==================== 项目道具管理 ====================
+
+  static async addProjectProp(
+    projectName: string,
+    name: string,
+    description: string
+  ): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/props`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name, description }),
+      }
+    );
+  }
+
+  static async updateProjectProp(
+    projectName: string,
+    propName: string,
+    updates: Record<string, unknown>
+  ): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/props/${encodeURIComponent(propName)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      }
+    );
+  }
+
+  static async deleteProjectProp(
+    projectName: string,
+    propName: string
+  ): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/props/${encodeURIComponent(propName)}`,
       {
         method: "DELETE",
       }
@@ -845,14 +881,14 @@ class API {
   }
 
   /**
-   * 生成线索设计图
+   * 生成场景设计图
    * @param projectName - 项目名称
-   * @param clueName - 线索名称
-   * @param prompt - 线索描述 prompt
+   * @param sceneName - 场景名称
+   * @param prompt - 场景描述 prompt
    */
-  static async generateClue(
+  static async generateProjectScene(
     projectName: string,
-    clueName: string,
+    sceneName: string,
     prompt: string
   ): Promise<{
     success: boolean;
@@ -860,7 +896,31 @@ class API {
     message: string;
   }> {
     return this.request(
-      `/projects/${encodeURIComponent(projectName)}/generate/clue/${encodeURIComponent(clueName)}`,
+      `/projects/${encodeURIComponent(projectName)}/generate/scene/${encodeURIComponent(sceneName)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ prompt }),
+      }
+    );
+  }
+
+  /**
+   * 生成道具设计图
+   * @param projectName - 项目名称
+   * @param propName - 道具名称
+   * @param prompt - 道具描述 prompt
+   */
+  static async generateProjectProp(
+    projectName: string,
+    propName: string,
+    prompt: string
+  ): Promise<{
+    success: boolean;
+    task_id: string;
+    message: string;
+  }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/generate/prop/${encodeURIComponent(propName)}`,
       {
         method: "POST",
         body: JSON.stringify({ prompt }),
@@ -1041,7 +1101,7 @@ class API {
   /**
    * 获取资源版本列表
    * @param projectName - 项目名称
-   * @param resourceType - 资源类型 (storyboards, videos, characters, clues)
+   * @param resourceType - 资源类型 (storyboards, videos, characters, scenes, props)
    * @param resourceId - 资源 ID
    */
   static async getVersions(
@@ -1485,6 +1545,107 @@ class API {
       `/projects/${encodeURIComponent(projectName)}/grids/${encodeURIComponent(gridId)}/regenerate`,
       { method: "POST" }
     );
+  }
+
+  // ==================== Global Asset Library ====================
+
+  static async listAssets(
+    params: { type?: AssetType; q?: string; limit?: number; offset?: number } = {},
+    options: RequestInit = {},
+  ) {
+    const usp = new URLSearchParams();
+    if (params.type) usp.set("type", params.type);
+    if (params.q) usp.set("q", params.q);
+    if (params.limit) usp.set("limit", String(params.limit));
+    if (params.offset) usp.set("offset", String(params.offset));
+    return this.request<{ items: Asset[] }>(`/assets?${usp.toString()}`, options);
+  }
+
+  static async getAsset(id: string) {
+    return this.request<{ asset: Asset }>(`/assets/${encodeURIComponent(id)}`);
+  }
+
+  static async createAsset(payload: AssetCreatePayload & { image?: File }) {
+    const form = new FormData();
+    form.append("type", payload.type);
+    form.append("name", payload.name);
+    form.append("description", payload.description ?? "");
+    form.append("voice_style", payload.voice_style ?? "");
+    if (payload.image) form.append("image", payload.image);
+    const url = `${API_BASE}/assets`;
+    const response = await fetch(url, withAuth({ method: "POST", body: form }));
+    if (!response.ok) {
+      handleUnauthorized(response);
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as {
+        detail?: string;
+      };
+      throw new Error(typeof error.detail === "string" ? error.detail : "请求失败");
+    }
+    return response.json() as Promise<{ asset: Asset }>;
+  }
+
+  static async updateAsset(id: string, patch: AssetUpdatePayload) {
+    return this.request<{ asset: Asset }>(`/assets/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  }
+
+  static async replaceAssetImage(id: string, image: File) {
+    const form = new FormData();
+    form.append("image", image);
+    const url = `${API_BASE}/assets/${encodeURIComponent(id)}/image`;
+    const response = await fetch(url, withAuth({ method: "POST", body: form }));
+    if (!response.ok) {
+      handleUnauthorized(response);
+      const error = (await response.json().catch(() => ({ detail: response.statusText }))) as {
+        detail?: string;
+      };
+      throw new Error(typeof error.detail === "string" ? error.detail : "请求失败");
+    }
+    return response.json() as Promise<{ asset: Asset }>;
+  }
+
+  static async deleteAsset(id: string): Promise<void> {
+    return this.request(`/assets/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  static async addAssetFromProject(payload: {
+    project_name: string;
+    resource_type: AssetType;
+    resource_id: string;
+    override_name?: string;
+    overwrite?: boolean;
+  }) {
+    return this.request<{ asset: Asset }>(`/assets/from-project`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async applyAssetsToProject(payload: {
+    asset_ids: string[];
+    target_project: string;
+    conflict_policy: "skip" | "overwrite" | "rename";
+  }) {
+    return this.request<{
+      succeeded: Array<{ id: string; name: string }>;
+      skipped: Array<{ id: string; name: string }>;
+      failed: Array<{ id: string; reason: string }>;
+    }>(`/assets/apply-to-project`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static getGlobalAssetUrl(path: string | null, fp?: string | null): string | null {
+    if (!path) return null;
+    const parts = path.split("/");
+    if (parts.length < 3 || parts[0] !== "_global_assets") return null;
+    const type = parts[1];
+    const filename = parts.slice(2).join("/");
+    const qs = fp ? `?fp=${encodeURIComponent(fp)}` : "";
+    return `${API_BASE}/global-assets/${type}/${filename}${qs}`;
   }
 }
 

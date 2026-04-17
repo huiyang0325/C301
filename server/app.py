@@ -22,13 +22,14 @@ from lib import PROJECT_ROOT
 from lib.db import async_session_factory, close_db, init_db
 from lib.generation_worker import GenerationWorker
 from lib.logging_config import setup_logging
+from lib.project_migrations import cleanup_stale_backups, run_project_migrations
 from server.auth import ensure_auth_password
 from server.routers import (
     agent_chat,
     api_keys,
+    assets,
     assistant,
     characters,
-    clues,
     cost_estimation,
     custom_providers,
     files,
@@ -36,7 +37,9 @@ from server.routers import (
     grids,
     project_events,
     projects,
+    props,
     providers,
+    scenes,
     system_config,
     tasks,
     usage,
@@ -59,6 +62,20 @@ async def lifespan(app: FastAPI):
     # Run Alembic migrations (auto-creates tables on first start)
     await init_db()
 
+    # Run any pending project.json schema migrations (file-based).
+    # Both calls are synchronous filesystem walks — offload to a worker thread
+    # so they don't block the event loop during uvicorn startup.
+    projects_root = PROJECT_ROOT / "projects"
+    migration_summary = await asyncio.to_thread(run_project_migrations, projects_root)
+    if migration_summary.migrated or migration_summary.failed:
+        logger.info(
+            "Project migrations: migrated=%s skipped=%d failed=%s",
+            migration_summary.migrated,
+            len(migration_summary.skipped),
+            migration_summary.failed,
+        )
+    await asyncio.to_thread(cleanup_stale_backups, projects_root, 7)
+
     # Migrate legacy .system_config.json → DB (no-op if file doesn't exist or already migrated)
     try:
         from lib.config.migration import migrate_json_to_db
@@ -80,11 +97,11 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("DB→env Anthropic config sync failed (non-fatal): %s", exc)
 
-    # 修复存量项目的 agent_runtime 软连接
+    # 修复存量项目的 agent_runtime 软连接（同步文件遍历 → 放到 worker 线程）
     from lib.project_manager import ProjectManager
 
     _pm = ProjectManager(PROJECT_ROOT / "projects")
-    _symlink_stats = _pm.repair_all_symlinks()
+    _symlink_stats = await asyncio.to_thread(_pm.repair_all_symlinks)
     if any(v > 0 for v in _symlink_stats.values()):
         logger.info("agent_runtime 软连接修复完成: %s", _symlink_stats)
 
@@ -171,7 +188,8 @@ async def request_logging_middleware(request: Request, call_next):
 app.include_router(auth_router.router, prefix="/api/v1", tags=["认证"])
 app.include_router(projects.router, prefix="/api/v1", tags=["项目管理"])
 app.include_router(characters.router, prefix="/api/v1", tags=["角色管理"])
-app.include_router(clues.router, prefix="/api/v1", tags=["线索管理"])
+app.include_router(scenes.router, prefix="/api/v1", tags=["场景管理"])
+app.include_router(props.router, prefix="/api/v1", tags=["道具管理"])
 app.include_router(files.router, prefix="/api/v1", tags=["文件管理"])
 app.include_router(generate.router, prefix="/api/v1", tags=["生成"])
 app.include_router(versions.router, prefix="/api/v1", tags=["版本管理"])
@@ -186,6 +204,7 @@ app.include_router(agent_chat.router, prefix="/api/v1", tags=["Agent 对话"])
 app.include_router(custom_providers.router, prefix="/api/v1", tags=["自定义供应商"])
 app.include_router(cost_estimation.router, prefix="/api/v1", tags=["费用估算"])
 app.include_router(grids.router, prefix="/api/v1", tags=["宫格图"])
+app.include_router(assets.router, prefix="/api/v1", tags=["全局资产库"])
 
 
 def create_generation_worker() -> GenerationWorker:

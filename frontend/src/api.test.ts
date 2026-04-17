@@ -152,7 +152,7 @@ describe("API", () => {
   });
 
   describe("request-based wrappers", () => {
-    it("covers project, character, clue, script and generation endpoints", async () => {
+    it("covers project, character, scene, prop, script and generation endpoints", async () => {
       const requestSpy = vi
         .spyOn(API, "request")
         .mockResolvedValue({ success: true } as never);
@@ -168,9 +168,12 @@ describe("API", () => {
       await API.updateCharacter("demo", "Hero", { description: "updated" });
       await API.deleteCharacter("demo", "Hero");
 
-      await API.addClue("demo", "Key", "prop", "important");
-      await API.updateClue("demo", "Key", { importance: "minor" });
-      await API.deleteClue("demo", "Key");
+      await API.addProjectScene("demo", "Temple", "ancient");
+      await API.updateProjectScene("demo", "Temple", { description: "dark" });
+      await API.deleteProjectScene("demo", "Temple");
+      await API.addProjectProp("demo", "Sword", "rusty");
+      await API.updateProjectProp("demo", "Sword", { description: "shiny" });
+      await API.deleteProjectProp("demo", "Sword");
 
       await API.getScript("demo", "episode 1.json");
       await API.updateScene("demo", "scene-1", "episode_1.json", { x: 1 });
@@ -187,7 +190,8 @@ describe("API", () => {
       await API.generateStoryboard("demo", "seg-1", "img", "episode_1.json");
       await API.generateVideo("demo", "seg-1", "vid", "episode_1.json");
       await API.generateCharacter("demo", "Hero", "prompt");
-      await API.generateClue("demo", "Key", "prompt");
+      await API.generateProjectScene("demo", "Temple", "prompt");
+      await API.generateProjectProp("demo", "Sword", "prompt");
 
       expect(requestSpy).toHaveBeenCalledWith("/projects");
       expect(requestSpy).toHaveBeenCalledWith("/projects", {
@@ -214,14 +218,13 @@ describe("API", () => {
           voice_style: "",
         }),
       });
-      expect(requestSpy).toHaveBeenCalledWith("/projects/demo/clues", {
+      expect(requestSpy).toHaveBeenCalledWith("/projects/demo/scenes", {
         method: "POST",
-        body: JSON.stringify({
-          name: "Key",
-          clue_type: "prop",
-          description: "important",
-          importance: "major",
-        }),
+        body: JSON.stringify({ name: "Temple", description: "ancient" }),
+      });
+      expect(requestSpy).toHaveBeenCalledWith("/projects/demo/props", {
+        method: "POST",
+        body: JSON.stringify({ name: "Sword", description: "rusty" }),
       });
       expect(requestSpy).toHaveBeenCalledWith(
         "/projects/demo/scripts/episode%201.json",
@@ -506,7 +509,8 @@ describe("API", () => {
                 style: "Anime",
                 episodes: [],
                 characters: {},
-                clues: {},
+                scenes: {},
+                props: {},
               },
               warnings: [],
               conflict_resolution: "none",
@@ -690,6 +694,75 @@ describe("API", () => {
 
       API.openTaskStream({ projectName: "demo", lastEventId: "0" });
       expect(instances[0].url).toBe("/api/v1/tasks/stream?project_name=demo");
+    });
+  });
+
+  describe("listAssets", () => {
+    it("GETs /api/v1/assets with type query", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        mockResponse({ jsonData: { items: [] } }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await API.listAssets({ type: "character" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/assets"),
+        expect.anything()
+      );
+    });
+  });
+
+  describe("createAsset", () => {
+    it("POSTs multipart to /api/v1/assets", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        mockResponse({ jsonData: { asset: { id: "x", type: "scene", name: "A", description: "", voice_style: "", image_path: null, source_project: null, updated_at: null } } }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const res = await API.createAsset({ type: "scene", name: "A", description: "d" });
+      expect(res.asset.id).toBe("x");
+    });
+  });
+
+  describe("addAssetFromProject", () => {
+    it("POSTs /api/v1/assets/from-project", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        mockResponse({ jsonData: { asset: { id: "x", type: "character", name: "王", description: "", voice_style: "", image_path: null, source_project: "demo", updated_at: null } } }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await API.addAssetFromProject({ project_name: "demo", resource_type: "character", resource_id: "王" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/assets/from-project"),
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+  });
+
+  describe("applyAssetsToProject", () => {
+    it("POSTs /api/v1/assets/apply-to-project", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        mockResponse({ jsonData: { succeeded: [], skipped: [], failed: [] } }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await API.applyAssetsToProject({ asset_ids: ["1"], target_project: "demo", conflict_policy: "skip" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/assets/apply-to-project"),
+        expect.anything()
+      );
+    });
+  });
+
+  describe("getGlobalAssetUrl", () => {
+    it("returns URL for valid path", () => {
+      const url = API.getGlobalAssetUrl("_global_assets/character/abc.png", "123");
+      expect(url).toContain("/global-assets/character/abc.png");
+      expect(url).toContain("fp=123");
+    });
+
+    it("returns null for null path", () => {
+      expect(API.getGlobalAssetUrl(null)).toBeNull();
+    });
+
+    it("returns null for non-global path", () => {
+      expect(API.getGlobalAssetUrl("regular/path.png")).toBeNull();
     });
   });
 });

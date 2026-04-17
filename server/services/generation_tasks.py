@@ -20,7 +20,7 @@ from lib.gemini_shared import get_shared_rate_limiter
 from lib.media_generator import MediaGenerator
 from lib.project_change_hints import emit_project_change_batch, project_change_source
 from lib.project_manager import ProjectManager
-from lib.prompt_builders import build_character_prompt, build_clue_prompt
+from lib.prompt_builders import build_character_prompt, build_prop_prompt, build_scene_prompt
 from lib.prompt_utils import (
     image_prompt_to_yaml,
     is_structured_image_prompt,
@@ -328,7 +328,7 @@ async def get_media_generator(
 def get_aspect_ratio(project: dict, resource_type: str) -> str:
     if resource_type == "characters":
         return "3:4"
-    if resource_type == "clues":
+    if resource_type in ("scenes", "props"):
         return "16:9"
     # 优先读顶层字段；缺失时按 content_mode 推导（向后兼容）
     val = project.get("aspect_ratio")
@@ -420,10 +420,11 @@ def _collect_sheet_paths(
     items: list[dict],
     *,
     char_field: str,
-    clue_field: str,
+    scene_field: str,
+    prop_field: str,
     max_count: int = 0,
 ) -> tuple[list[Path], set[str]]:
-    """Collect character_sheet and clue_sheet paths from scene/segment items.
+    """Collect character_sheet, scene_sheet and prop_sheet paths from scene/segment items.
 
     Returns (list of existing Paths, set of relative sheet strings for dedup).
     If *max_count* > 0 collection stops after that many images.
@@ -432,7 +433,8 @@ def _collect_sheet_paths(
     paths: list[Path] = []
 
     characters = project.get("characters", {})
-    clues = project.get("clues", {})
+    project_scenes = project.get("scenes", {})
+    project_props = project.get("props", {})
 
     for item in items:
         for char_name in item.get(char_field, []):
@@ -442,8 +444,15 @@ def _collect_sheet_paths(
                 if path.exists():
                     paths.append(path)
                     seen.add(sheet)
-        for clue_name in item.get(clue_field, []):
-            sheet = clues.get(clue_name, {}).get("clue_sheet")
+        for scene_name in item.get(scene_field, []):
+            sheet = project_scenes.get(scene_name, {}).get("scene_sheet")
+            if sheet and sheet not in seen:
+                path = project_path / sheet
+                if path.exists():
+                    paths.append(path)
+                    seen.add(sheet)
+        for prop_name in item.get(prop_field, []):
+            sheet = project_props.get(prop_name, {}).get("prop_sheet")
             if sheet and sheet not in seen:
                 path = project_path / sheet
                 if path.exists():
@@ -461,12 +470,13 @@ def _collect_reference_images(
     target_item: dict,
     *,
     char_field: str,
-    clue_field: str,
+    scene_field: str,
+    prop_field: str,
     extra_reference_images: list[str] | None = None,
     previous_storyboard_path: Path | None = None,
 ) -> list[object] | None:
     sheet_paths, _ = _collect_sheet_paths(
-        project, project_path, [target_item], char_field=char_field, clue_field=clue_field
+        project, project_path, [target_item], char_field=char_field, scene_field=scene_field, prop_field=prop_field
     )
     reference_images: list[object] = list(sheet_paths)
 
@@ -533,11 +543,18 @@ def _compute_affected_fingerprints(project_name: str, task_type: str, resource_i
                 project_path / "characters" / f"{resource_id}.png",
             )
         )
-    elif task_type == "clue":
+    elif task_type == "scene":
         paths.append(
             (
-                f"clues/{resource_id}.png",
-                project_path / "clues" / f"{resource_id}.png",
+                f"scenes/{resource_id}.png",
+                project_path / "scenes" / f"{resource_id}.png",
+            )
+        )
+    elif task_type == "prop":
+        paths.append(
+            (
+                f"props/{resource_id}.png",
+                project_path / "props" / f"{resource_id}.png",
             )
         )
     elif task_type == "grid":
@@ -561,7 +578,8 @@ _TASK_CHANGE_SPECS: dict[str, tuple] = {
     "storyboard": ("segment", "storyboard_ready", "分镜「{}」", True),
     "video": ("segment", "video_ready", "分镜「{}」", True),
     "character": ("character", "updated", "角色「{}」设计图", False),
-    "clue": ("clue", "updated", "线索「{}」设计图", False),
+    "scene": ("scene", "updated", "场景「{}」设计图", False),
+    "prop": ("prop", "updated", "道具「{}」设计图", False),
     "grid": ("grid", "grid_ready", "宫格「{}」", True),
 }
 
@@ -620,7 +638,7 @@ async def execute_storyboard_task(
         _project = get_project_manager().load_project(project_name)
         _project_path = get_project_manager().get_project_path(project_name)
         _script = get_project_manager().load_script(project_name, script_file)
-        _items, _id_field, _char_field, _clue_field = get_storyboard_items(_script)
+        _items, _id_field, _char_field, _scene_field, _prop_field = get_storyboard_items(_script)
 
         _resolved = find_storyboard_item(_items, _id_field, resource_id)
         if _resolved is None:
@@ -634,7 +652,8 @@ async def execute_storyboard_task(
             _project_path,
             _target_item,
             char_field=_char_field,
-            clue_field=_clue_field,
+            scene_field=_scene_field,
+            prop_field=_prop_field,
             extra_reference_images=payload.get("extra_reference_images") or [],
             previous_storyboard_path=_prev_path,
         )
@@ -695,7 +714,7 @@ async def execute_video_task(
         _project = _pm.load_project(project_name)
         _project_path = _pm.get_project_path(project_name)
         _script = _pm.load_script(project_name, script_file)
-        _items, _id_field, _, _ = get_storyboard_items(_script)
+        _items, _id_field, _, _, _ = get_storyboard_items(_script)
         _resolved = find_storyboard_item(_items, _id_field, resource_id)
         _item = _resolved[0] if _resolved else {}
         return _project, _project_path, _item
@@ -873,55 +892,87 @@ async def execute_character_task(
     }
 
 
-async def execute_clue_task(
-    project_name: str, resource_id: str, payload: dict[str, Any], *, user_id: str = DEFAULT_USER_ID
+_DESIGN_TASK_SPECS: dict[str, dict[str, Any]] = {
+    "scene": {
+        "bucket_key": "scenes",
+        "prompt_builder": build_scene_prompt,
+        "update_sheet": lambda pm, proj, rid, path: pm.update_scene_sheet(proj, rid, path),
+    },
+    "prop": {
+        "bucket_key": "props",
+        "prompt_builder": build_prop_prompt,
+        "update_sheet": lambda pm, proj, rid, path: pm.update_prop_sheet(proj, rid, path),
+    },
+}
+
+
+async def execute_design_task(
+    kind: str,
+    project_name: str,
+    resource_id: str,
+    payload: dict[str, Any],
+    *,
+    user_id: str = DEFAULT_USER_ID,
 ) -> dict[str, Any]:
+    """合并 execute_scene_task / execute_prop_task：按 kind 查表派发。"""
+    spec = _DESIGN_TASK_SPECS[kind]
+    bucket_key = spec["bucket_key"]
+    prompt_builder = spec["prompt_builder"]
+    update_sheet = spec["update_sheet"]
+
     prompt = str(payload.get("prompt", "") or "").strip()
     if not prompt:
-        raise ValueError("prompt is required for clue task")
+        raise ValueError(f"prompt is required for {kind} task")
 
-    def _prepare_clue():
-        _project = get_project_manager().load_project(project_name)
-        if resource_id not in _project.get("clues", {}):
-            raise ValueError(f"clue not found: {resource_id}")
-        _clue_data = _project["clues"][resource_id]
-        _style = _project.get("style", "")
-        _style_desc = _project.get("style_description", "")
-        _clue_type = _clue_data.get("type", "prop")
-        _full_prompt = build_clue_prompt(resource_id, prompt, _clue_type, _style, _style_desc)
-        return _project, _full_prompt
+    def _prepare():
+        project = get_project_manager().load_project(project_name)
+        if resource_id not in project.get(bucket_key, {}):
+            raise ValueError(f"{kind} not found: {resource_id}")
+        style = project.get("style", "")
+        style_desc = project.get("style_description", "")
+        full_prompt = prompt_builder(resource_id, prompt, style, style_desc)
+        return project, full_prompt
 
-    project, full_prompt = await asyncio.to_thread(_prepare_clue)
+    project, full_prompt = await asyncio.to_thread(_prepare)
 
     generator = await get_media_generator(project_name, payload=payload, user_id=user_id)
-    aspect_ratio = get_aspect_ratio(project, "clues")
+    aspect_ratio = get_aspect_ratio(project, bucket_key)
 
     _, version = await generator.generate_image_async(
         prompt=full_prompt,
-        resource_type="clues",
+        resource_type=bucket_key,
         resource_id=resource_id,
         aspect_ratio=aspect_ratio,
         image_size="1K",
     )
 
-    sheet_path = f"clues/{resource_id}.png"
+    sheet_path = f"{bucket_key}/{resource_id}.png"
 
-    def _finalize_clue():
-        def _set_clue_sheet(p: dict) -> None:
-            p["clues"][resource_id]["clue_sheet"] = sheet_path
+    def _finalize():
+        update_sheet(get_project_manager(), project_name, resource_id, sheet_path)
+        return generator.versions.get_versions(bucket_key, resource_id)["versions"][-1]["created_at"]
 
-        get_project_manager().update_project(project_name, _set_clue_sheet)
-        return generator.versions.get_versions("clues", resource_id)["versions"][-1]["created_at"]
-
-    created_at = await asyncio.to_thread(_finalize_clue)
+    created_at = await asyncio.to_thread(_finalize)
 
     return {
         "version": version,
-        "file_path": f"clues/{resource_id}.png",
+        "file_path": sheet_path,
         "created_at": created_at,
-        "resource_type": "clues",
+        "resource_type": bucket_key,
         "resource_id": resource_id,
     }
+
+
+async def execute_scene_task(
+    project_name: str, resource_id: str, payload: dict[str, Any], *, user_id: str = DEFAULT_USER_ID
+) -> dict[str, Any]:
+    return await execute_design_task("scene", project_name, resource_id, payload, user_id=user_id)
+
+
+async def execute_prop_task(
+    project_name: str, resource_id: str, payload: dict[str, Any], *, user_id: str = DEFAULT_USER_ID
+) -> dict[str, Any]:
+    return await execute_design_task("prop", project_name, resource_id, payload, user_id=user_id)
 
 
 def _group_scenes_by_segment_break(items: list[dict], id_field: str) -> list[list[dict]]:
@@ -937,7 +988,7 @@ def _collect_grid_reference_images(
     payload: dict[str, Any],
     scene_ids: list[str],
 ) -> tuple[list[object] | None, list[dict]]:
-    """Collect character/clue sheet images referenced by grid scenes.
+    """Collect character/scene/prop sheet images referenced by grid scenes.
 
     Returns a tuple of ``(image_paths, metadata)``:
     - *image_paths*: up to 6 :class:`~pathlib.Path` objects for the generation API.
@@ -962,13 +1013,14 @@ def _collect_grid_reference_images(
 
     script = json.loads(script_path.read_text(encoding="utf-8"))
 
-    items, id_field, char_field, clue_field = get_storyboard_items(script)
+    items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
 
     scene_id_set = set(scene_ids)
     matched_items = [item for item in items if str(item.get(id_field, "")) in scene_id_set]
 
     characters = project.get("characters", {})
-    clues = project.get("clues", {})
+    project_scenes = project.get("scenes", {})
+    project_props = project.get("props", {})
 
     seen: set[str] = set()
     paths: list[Path] = []
@@ -984,14 +1036,22 @@ def _collect_grid_reference_images(
                     paths.append(p)
                     seen.add(sheet)
                     metadata.append({"path": sheet, "name": char_name, "ref_type": "character"})
-        for clue_name in item.get(clue_field, []):
-            sheet = clues.get(clue_name, {}).get("clue_sheet")
+        for scene_name in item.get(scene_field, []):
+            sheet = project_scenes.get(scene_name, {}).get("scene_sheet")
             if sheet and sheet not in seen:
                 p = project_path / sheet
                 if p.exists():
                     paths.append(p)
                     seen.add(sheet)
-                    metadata.append({"path": sheet, "name": clue_name, "ref_type": "clue"})
+                    metadata.append({"path": sheet, "name": scene_name, "ref_type": "scene"})
+        for prop_name in item.get(prop_field, []):
+            sheet = project_props.get(prop_name, {}).get("prop_sheet")
+            if sheet and sheet not in seen:
+                p = project_path / sheet
+                if p.exists():
+                    paths.append(p)
+                    seen.add(sheet)
+                    metadata.append({"path": sheet, "name": prop_name, "ref_type": "prop"})
         if len(paths) >= max_count:
             break
 
@@ -1153,7 +1213,8 @@ _TASK_EXECUTORS = {
     "storyboard": execute_storyboard_task,
     "video": execute_video_task,
     "character": execute_character_task,
-    "clue": execute_clue_task,
+    "scene": execute_scene_task,
+    "prop": execute_prop_task,
     "grid": execute_grid_task,
 }
 

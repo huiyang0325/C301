@@ -1,24 +1,24 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { voidPromise } from "@/utils/async";
-import { Route, Switch, Redirect, useLocation } from "wouter";
+import { Route, Switch, Redirect } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useAppStore } from "@/stores/app-store";
 import { useTasksStore } from "@/stores/tasks-store";
-import { LorebookGallery } from "./lorebook/LorebookGallery";
 import { TimelineCanvas } from "./timeline/TimelineCanvas";
 import { OverviewCanvas } from "./OverviewCanvas";
 import { SourceFileViewer } from "./SourceFileViewer";
-import { AddCharacterForm } from "./lorebook/AddCharacterForm";
-import { AddClueForm } from "./lorebook/AddClueForm";
+import { CharactersPage } from "./lorebook/CharactersPage";
+import { ScenesPage } from "./lorebook/ScenesPage";
+import { PropsPage } from "./lorebook/PropsPage";
 import { API } from "@/api";
 import { buildEntityRevisionKey } from "@/utils/project-changes";
 import { getProviderModels, getCustomProviderModels, lookupSupportedDurations } from "@/utils/provider-models";
-import type { Clue, CustomProviderInfo, ProviderInfo } from "@/types";
+import type { Scene, Prop, CustomProviderInfo, ProviderInfo } from "@/types";
 import type { EpisodeScript } from "@/types/script";
 
 // ---------------------------------------------------------------------------
-// resolveSegmentPrompt — shared segment lookup for generate storyboard/video
+// resolveSegmentPrompt -- shared segment lookup for generate storyboard/video
 // ---------------------------------------------------------------------------
 
 type PromptField = "image_prompt" | "video_prompt";
@@ -45,7 +45,7 @@ function resolveSegmentPrompt(
 }
 
 // ---------------------------------------------------------------------------
-// StudioCanvasRouter — reads Zustand store data and renders the correct
+// StudioCanvasRouter -- reads Zustand store data and renders the correct
 // canvas view based on the nested route within /app/projects/:projectName.
 // ---------------------------------------------------------------------------
 
@@ -56,9 +56,6 @@ export function StudioCanvasRouter() {
   tRef.current = t;
   const { currentProjectData, currentProjectName, currentScripts } =
     useProjectsStore();
-
-  const [addingCharacter, setAddingCharacter] = useState(false);
-  const [addingClue, setAddingClue] = useState(false);
 
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [customProviders, setCustomProviders] = useState<CustomProviderInfo[]>([]);
@@ -98,11 +95,24 @@ export function StudioCanvasRouter() {
     }
     return names;
   }, [tasks, currentProjectName]);
-  const generatingClueNames = useMemo(() => {
+  const generatingSceneNames = useMemo(() => {
     const names = new Set<string>();
     for (const t of tasks) {
       if (
-        t.task_type === "clue" &&
+        t.task_type === "scene" &&
+        t.project_name === currentProjectName &&
+        (t.status === "queued" || t.status === "running")
+      ) {
+        names.add(t.resource_id);
+      }
+    }
+    return names;
+  }, [tasks, currentProjectName]);
+  const generatingPropNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const t of tasks) {
+      if (
+        t.task_type === "prop" &&
         t.project_name === currentProjectName &&
         (t.status === "queued" || t.status === "running")
       ) {
@@ -254,49 +264,76 @@ export function StudioCanvasRouter() {
           ? [buildEntityRevisionKey("character", name)]
           : [],
       );
-      setAddingCharacter(false);
       useAppStore.getState().pushToast(tRef.current("character_added_toast", { name }), "success");
     } catch (err) {
       useAppStore.getState().pushToast(tRef.current("add_failed", { message: (err as Error).message }), "error");
+      throw err; // AssetFormModal onSubmit 消费：失败时阻止 setAdding(false) 关闭对话框
     }
   }, [currentProjectName, refreshProject]);
 
-  // ---- Clue CRUD callbacks ----
-  const handleUpdateClue = useCallback(async (name: string, updates: Partial<Clue>) => {
+  // ---- Scene CRUD callbacks ----
+  const handleUpdateScene = useCallback(async (name: string, updates: Partial<Scene>) => {
     if (!currentProjectName) return;
     try {
-      await API.updateClue(currentProjectName, name, updates);
+      await API.updateProjectScene(currentProjectName, name, updates);
       await refreshProject();
     } catch (err) {
-      useAppStore.getState().pushToast(tRef.current("update_clue_failed", { message: (err as Error).message }), "error");
+      useAppStore.getState().pushToast(tRef.current("update_scene_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, refreshProject]);
 
-  const handleGenerateClue = useCallback(async (name: string) => {
+  const handleGenerateScene = useCallback(async (name: string) => {
     if (!currentProjectName) return;
     try {
-      await API.generateClue(
-        currentProjectName,
-        name,
-        currentProjectData?.clues?.[name]?.description ?? "",
-      );
-      useAppStore
-        .getState()
-        .pushToast(tRef.current("clue_task_submitted_toast", { name }), "success");
+      await API.generateProjectScene(currentProjectName, name, currentProjectData?.scenes?.[name]?.description ?? "");
+      useAppStore.getState().pushToast(tRef.current("scene_task_submitted_toast", { name }), "success");
     } catch (err) {
       useAppStore.getState().pushToast(tRef.current("submit_failed", { message: (err as Error).message }), "error");
     }
   }, [currentProjectName, currentProjectData]);
 
-  const handleAddClueSubmit = useCallback(async (name: string, clueType: string, description: string, importance: string) => {
+  const handleAddSceneSubmit = useCallback(async (name: string, description: string) => {
     if (!currentProjectName) return;
     try {
-      await API.addClue(currentProjectName, name, clueType, description, importance);
+      await API.addProjectScene(currentProjectName, name, description);
       await refreshProject();
-      setAddingClue(false);
-      useAppStore.getState().pushToast(tRef.current("clue_added_toast", { name }), "success");
+      useAppStore.getState().pushToast(tRef.current("scene_added_toast", { name }), "success");
     } catch (err) {
       useAppStore.getState().pushToast(tRef.current("add_failed", { message: (err as Error).message }), "error");
+      throw err; // AssetFormModal onSubmit 消费：失败时阻止 setAdding(false) 关闭对话框
+    }
+  }, [currentProjectName, refreshProject]);
+
+  // ---- Prop CRUD callbacks ----
+  const handleUpdateProp = useCallback(async (name: string, updates: Partial<Prop>) => {
+    if (!currentProjectName) return;
+    try {
+      await API.updateProjectProp(currentProjectName, name, updates);
+      await refreshProject();
+    } catch (err) {
+      useAppStore.getState().pushToast(tRef.current("update_prop_failed", { message: (err as Error).message }), "error");
+    }
+  }, [currentProjectName, refreshProject]);
+
+  const handleGenerateProp = useCallback(async (name: string) => {
+    if (!currentProjectName) return;
+    try {
+      await API.generateProjectProp(currentProjectName, name, currentProjectData?.props?.[name]?.description ?? "");
+      useAppStore.getState().pushToast(tRef.current("prop_task_submitted_toast", { name }), "success");
+    } catch (err) {
+      useAppStore.getState().pushToast(tRef.current("submit_failed", { message: (err as Error).message }), "error");
+    }
+  }, [currentProjectName, currentProjectData]);
+
+  const handleAddPropSubmit = useCallback(async (name: string, description: string) => {
+    if (!currentProjectName) return;
+    try {
+      await API.addProjectProp(currentProjectName, name, description);
+      await refreshProject();
+      useAppStore.getState().pushToast(tRef.current("prop_added_toast", { name }), "success");
+    } catch (err) {
+      useAppStore.getState().pushToast(tRef.current("add_failed", { message: (err as Error).message }), "error");
+      throw err; // AssetFormModal onSubmit 消费：失败时阻止 setAdding(false) 关闭对话框
     }
   }, [currentProjectName, refreshProject]);
 
@@ -314,17 +351,21 @@ export function StudioCanvasRouter() {
     await refreshProject();
   }, [refreshProject]);
 
-  const handleUpdateClueVoid = useCallback((...args: Parameters<typeof handleUpdateClue>) => {
-    void handleUpdateClue(...args).catch(console.error);
-  }, [handleUpdateClue]);
   const handleGenerateCharacterVoid = useCallback((...args: Parameters<typeof handleGenerateCharacter>) => {
     void handleGenerateCharacter(...args).catch(console.error);
   }, [handleGenerateCharacter]);
-  const handleGenerateClueVoid = useCallback((...args: Parameters<typeof handleGenerateClue>) => {
-    void handleGenerateClue(...args).catch(console.error);
-  }, [handleGenerateClue]);
-
-  const [location] = useLocation();
+  const handleUpdateSceneVoid = useCallback((...args: Parameters<typeof handleUpdateScene>) => {
+    void handleUpdateScene(...args).catch(console.error);
+  }, [handleUpdateScene]);
+  const handleGenerateSceneVoid = useCallback((...args: Parameters<typeof handleGenerateScene>) => {
+    void handleGenerateScene(...args).catch(console.error);
+  }, [handleGenerateScene]);
+  const handleUpdatePropVoid = useCallback((...args: Parameters<typeof handleUpdateProp>) => {
+    void handleUpdateProp(...args).catch(console.error);
+  }, [handleUpdateProp]);
+  const handleGeneratePropVoid = useCallback((...args: Parameters<typeof handleGenerateProp>) => {
+    void handleGenerateProp(...args).catch(console.error);
+  }, [handleGenerateProp]);
 
   if (!currentProjectName) {
     return (
@@ -347,39 +388,48 @@ export function StudioCanvasRouter() {
         <Redirect to="/characters" />
       </Route>
 
-      {/* Characters & Clues share one LorebookGallery to avoid remount flash */}
-      {(location === "/characters" || location === "/clues") && (
-        <div className="p-4">
-          <LorebookGallery
-            projectName={currentProjectName}
-            characters={currentProjectData?.characters ?? {}}
-            clues={currentProjectData?.clues ?? {}}
-            mode={location === "/clues" ? "clues" : "characters"}
-            onSaveCharacter={handleSaveCharacter}
-            onUpdateClue={handleUpdateClueVoid}
-            onGenerateCharacter={handleGenerateCharacterVoid}
-            onGenerateClue={handleGenerateClueVoid}
-            onRestoreCharacterVersion={handleRestoreAsset}
-            onRestoreClueVersion={handleRestoreAsset}
-            generatingCharacterNames={generatingCharacterNames}
-            generatingClueNames={generatingClueNames}
-            onAddCharacter={() => setAddingCharacter(true)}
-            onAddClue={() => setAddingClue(true)}
-          />
-          {addingCharacter && (
-            <AddCharacterForm
-              onSubmit={handleAddCharacterSubmit}
-              onCancel={() => setAddingCharacter(false)}
-            />
-          )}
-          {addingClue && (
-            <AddClueForm
-              onSubmit={handleAddClueSubmit}
-              onCancel={() => setAddingClue(false)}
-            />
-          )}
-        </div>
-      )}
+      <Route path="/clues">
+        <Redirect to="/scenes" />
+      </Route>
+
+      <Route path="/characters">
+        <CharactersPage
+          projectName={currentProjectName}
+          characters={currentProjectData?.characters ?? {}}
+          onSaveCharacter={handleSaveCharacter}
+          onGenerateCharacter={handleGenerateCharacterVoid}
+          onAddCharacter={handleAddCharacterSubmit}
+          onRestoreCharacterVersion={handleRestoreAsset}
+          onRefreshProject={refreshProject}
+          generatingCharacterNames={generatingCharacterNames}
+        />
+      </Route>
+
+      <Route path="/scenes">
+        <ScenesPage
+          projectName={currentProjectName}
+          scenes={currentProjectData?.scenes ?? {}}
+          onUpdateScene={handleUpdateSceneVoid}
+          onGenerateScene={handleGenerateSceneVoid}
+          onAddScene={handleAddSceneSubmit}
+          onRestoreSceneVersion={handleRestoreAsset}
+          onRefreshProject={refreshProject}
+          generatingSceneNames={generatingSceneNames}
+        />
+      </Route>
+
+      <Route path="/props">
+        <PropsPage
+          projectName={currentProjectName}
+          props={currentProjectData?.props ?? {}}
+          onUpdateProp={handleUpdatePropVoid}
+          onGenerateProp={handleGeneratePropVoid}
+          onAddProp={handleAddPropSubmit}
+          onRestorePropVersion={handleRestoreAsset}
+          onRefreshProject={refreshProject}
+          generatingPropNames={generatingPropNames}
+        />
+      </Route>
 
       <Route path="/source/:filename">
         {(params) => (

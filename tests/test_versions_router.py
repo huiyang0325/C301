@@ -17,11 +17,14 @@ class _FakePM:
     def update_project_character_sheet(self, *args):
         self.updated.append(("character", args))
 
-    def update_clue_sheet(self, *args):
-        self.updated.append(("clue", args))
+    def update_scene_sheet(self, *args):
+        self.updated.append(("scene", args))
+
+    def update_prop_sheet(self, *args):
+        self.updated.append(("prop", args))
 
     def update_scene_asset(self, *args, **kwargs):
-        self.updated.append(("scene", args, kwargs))
+        self.updated.append(("storyboard", args, kwargs))
 
 
 class _FakeVM:
@@ -87,6 +90,28 @@ class TestVersionsRouter:
             assert restore_resp.status_code == 200
             assert restore_resp.json()["current_version"] == 1
             assert any(item[0] == "character" for item in fake_pm.updated)
+
+    def test_get_and_restore_scenes(self, monkeypatch):
+        client, fake_pm = _client(monkeypatch)
+        with client:
+            get_resp = client.get("/api/v1/projects/demo/versions/scenes/庙宇")
+            assert get_resp.status_code == 200
+
+            restore_resp = client.post("/api/v1/projects/demo/versions/scenes/庙宇/restore/1")
+            assert restore_resp.status_code == 200
+            assert restore_resp.json()["file_path"] == "scenes/庙宇.png"
+            assert any(item[0] == "scene" for item in fake_pm.updated)
+
+    def test_get_and_restore_props(self, monkeypatch):
+        client, fake_pm = _client(monkeypatch)
+        with client:
+            get_resp = client.get("/api/v1/projects/demo/versions/props/玉佩")
+            assert get_resp.status_code == 200
+
+            restore_resp = client.post("/api/v1/projects/demo/versions/props/玉佩/restore/1")
+            assert restore_resp.status_code == 200
+            assert restore_resp.json()["file_path"] == "props/玉佩.png"
+            assert any(item[0] == "prop" for item in fake_pm.updated)
 
     def test_restore_error_mapping(self, monkeypatch):
         client, _ = _client(monkeypatch)
