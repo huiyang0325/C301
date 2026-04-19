@@ -55,19 +55,28 @@ def main():
     pm, project_name = ProjectManager.from_cwd()
     project_path = pm.get_project_path(project_name)
 
-    # 检查中间文件是否存在（根据 content_mode 确定文件名）
+    # 识别 generation_mode（项目 + 集级），由 lib.project_manager.effective_mode 统一解析
     import json as _json
 
-    project_json_path = project_path / "project.json"
-    content_mode = "narration"
-    if project_json_path.exists():
-        try:
-            content_mode = _json.loads(project_json_path.read_text(encoding="utf-8")).get("content_mode", "narration")
-        except Exception:
-            pass  # 读取或解析失败时降级使用默认值 "narration"
+    from lib.project_manager import effective_mode
+
+    project_data: dict = {}
+    try:
+        project_data = _json.loads((project_path / "project.json").read_text(encoding="utf-8"))
+    except (OSError, _json.JSONDecodeError):
+        pass  # project.json 缺失或损坏时降级；ScriptGenerator 会再次尝试并报出精确错误
+    content_mode = project_data.get("content_mode", "narration")
+    episode_dict = next(
+        (ep for ep in (project_data.get("episodes") or []) if ep.get("episode") == args.episode),
+        {},
+    )
+    generation_mode = effective_mode(project=project_data, episode=episode_dict)
 
     drafts_path = project_path / "drafts" / f"episode_{args.episode}"
-    if content_mode == "drama":
+    if generation_mode == "reference_video":
+        step1_path = drafts_path / "step1_reference_units.md"
+        step1_hint = "split-reference-video-units subagent（Step 1）"
+    elif content_mode == "drama":
         step1_path = drafts_path / "step1_normalized_script.md"
         step1_hint = "normalize_drama_script.py"
     else:
