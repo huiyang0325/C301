@@ -78,6 +78,13 @@ export interface EpisodeMeta {
   storyboards?: ProgressCategory;
   /** Injected by StatusCalculator at read time */
   videos?: ProgressCategory;
+  /** Injected by StatusCalculator at read time (reference_video mode only) */
+  units_count?: number;
+  /**
+   * Optional episode-level override; falls back to project.generation_mode.
+   * Never "single" — legacy value only exists at project level.
+   */
+  generation_mode?: "storyboard" | "grid" | "reference_video";
 }
 
 export interface ProjectData {
@@ -99,7 +106,8 @@ export interface ProjectData {
   status?: ProjectStatus;
   video_backend?: string | null;
   image_backend?: string | null;
-  generation_mode?: "single" | "grid";
+  /** Canonical values: storyboard | grid | reference_video. "single" is legacy-only. */
+  generation_mode?: "storyboard" | "grid" | "reference_video" | "single";
   video_generate_audio?: boolean | null;
   text_backend_script?: string | null;
   text_backend_overview?: string | null;

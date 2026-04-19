@@ -13,7 +13,7 @@ import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Literal
 
 if TYPE_CHECKING:
     from server.services.jianying_draft_service import JianyingDraftService
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi import Path as FastAPIPath
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from starlette.background import BackgroundTask
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,11 @@ router = APIRouter()
 # 初始化项目管理器和状态计算器
 pm = ProjectManager(PROJECT_ROOT / "projects")
 calc = StatusCalculator(pm)
+
+# episode 字段白名单：只允许持久化合法的 on-disk 字段。
+# StatusCalculator 注入的统计字段（scenes_count / status / storyboards / videos 等）
+# 是读时计算值，禁止写回 project.json。
+EPISODE_PERSIST_FIELDS = {"title", "script_file", "generation_mode"}
 
 
 def get_project_manager() -> ProjectManager:
@@ -76,6 +81,20 @@ class CreateProjectRequest(BaseModel):
     text_backend_style: str | None = None
 
 
+class EpisodePatch(BaseModel):
+    """PATCH body entry for a single episode.
+
+    Only whitelisted fields persist; computed fields (scenes_count, status,
+    storyboards, etc.) are silently dropped via extra='ignore'.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    episode: int
+    title: str | None = None
+    script_file: str | None = None
+    generation_mode: Literal["storyboard", "grid", "reference_video"] | None = None
+
+
 class UpdateProjectRequest(BaseModel):
     title: str | None = None
     style: str | None = None
@@ -91,6 +110,7 @@ class UpdateProjectRequest(BaseModel):
     text_backend_style: str | None = None
     style_template_id: str | None = None
     clear_style_image: bool | None = None
+    episodes: list[EpisodePatch] | None = None
 
 
 def _cleanup_temp_file(path: str) -> None:
@@ -587,6 +607,40 @@ async def update_project(name: str, req: UpdateProjectRequest, _user: CurrentUse
                 # 显式清除自定义参考图，用于"取消风格"流程
                 project.pop("style_image", None)
                 project.pop("style_description", None)
+
+            if "episodes" in req.model_fields_set and req.episodes is not None:
+                # 合并 episodes：保留现有 episode 的完整数据，仅更新请求中显式提供的字段。
+                # 使用 model_fields_set（而非 exclude_none）判断字段是否显式出现，使得
+                # `generation_mode: null` 可用于清空集级覆盖、回退到项目级模式继承。
+                # 白名单同时拦截 StatusCalculator 注入的计算字段（scenes_count / status
+                # / storyboards / videos 等），防止写回 project.json。
+                existing_list = project.get("episodes", [])
+                patch_map: dict[int, EpisodePatch] = {}
+                for ep in req.episodes:
+                    patch_map[ep.episode] = ep  # 重复编号：后者覆盖前者
+
+                new_episodes: list[dict] = []
+                for existing_ep in existing_list:
+                    ep_num = existing_ep.get("episode")
+                    patch = patch_map.pop(ep_num, None)
+                    if patch is None:
+                        new_episodes.append(existing_ep)
+                        continue
+                    updated = dict(existing_ep)
+                    for field_name in EPISODE_PERSIST_FIELDS:
+                        if field_name not in patch.model_fields_set:
+                            continue
+                        value = getattr(patch, field_name)
+                        if value is None:
+                            updated.pop(field_name, None)
+                        else:
+                            updated[field_name] = value
+                    new_episodes.append(updated)
+
+                for unknown_ep in patch_map:
+                    logger.warning("Skipping patch for unknown episode %s", unknown_ep)
+
+                project["episodes"] = new_episodes
 
             with project_change_source("webui"):
                 manager.save_project(name, project)

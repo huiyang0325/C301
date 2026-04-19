@@ -36,7 +36,11 @@ import type {
   CustomProviderModelInput,
   DiscoveredModel,
   CostEstimateResponse,
+  ReferenceVideoUnit,
+  ReferenceResource,
+  TransitionType,
 } from "@/types";
+import type { GenerationMode } from "@/utils/generation-mode";
 import type { GridGeneration } from "@/types/grid";
 import type { Asset, AssetType, AssetCreatePayload, AssetUpdatePayload } from "@/types/asset";
 import { getToken, clearToken } from "@/utils/auth";
@@ -142,7 +146,7 @@ export interface CreateProjectPayload {
   name?: string;
   content_mode?: "narration" | "drama";
   aspect_ratio?: "9:16" | "16:9";
-  generation_mode?: "single" | "grid";
+  generation_mode?: GenerationMode;
   default_duration?: number | null;
   style_template_id?: string | null;
   video_backend?: string | null;
@@ -1646,6 +1650,91 @@ class API {
     const filename = parts.slice(2).join("/");
     const qs = fp ? `?fp=${encodeURIComponent(fp)}` : "";
     return `${API_BASE}/global-assets/${type}/${filename}${qs}`;
+  }
+
+  // ==================== Reference-to-Video API ====================
+
+  /** List reference-video units for an episode. */
+  static async listReferenceVideoUnits(
+    projectName: string,
+    episode: number,
+  ): Promise<{ units: ReferenceVideoUnit[] }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/reference-videos/episodes/${episode}/units`,
+    );
+  }
+
+  /** Create a new reference-video unit. */
+  static async addReferenceVideoUnit(
+    projectName: string,
+    episode: number,
+    payload: {
+      prompt: string;
+      references: ReferenceResource[];
+      duration_seconds?: number;
+      transition_to_next?: TransitionType;
+      note?: string | null;
+    },
+  ): Promise<{ unit: ReferenceVideoUnit }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/reference-videos/episodes/${episode}/units`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  /** Patch prompt/references/duration/transition/note on an existing unit. */
+  static async patchReferenceVideoUnit(
+    projectName: string,
+    episode: number,
+    unitId: string,
+    patch: {
+      prompt?: string;
+      references?: ReferenceResource[];
+      duration_seconds?: number;
+      transition_to_next?: TransitionType;
+      note?: string | null;
+    },
+  ): Promise<{ unit: ReferenceVideoUnit }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/reference-videos/episodes/${episode}/units/${encodeURIComponent(unitId)}`,
+      { method: "PATCH", body: JSON.stringify(patch) },
+    );
+  }
+
+  /** Delete a unit. Returns void on 204. */
+  static async deleteReferenceVideoUnit(
+    projectName: string,
+    episode: number,
+    unitId: string,
+  ): Promise<void> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/reference-videos/episodes/${episode}/units/${encodeURIComponent(unitId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** Reorder units by providing the full ordered unit_id list. */
+  static async reorderReferenceVideoUnits(
+    projectName: string,
+    episode: number,
+    unitIds: string[],
+  ): Promise<{ units: ReferenceVideoUnit[] }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/reference-videos/episodes/${episode}/units/reorder`,
+      { method: "POST", body: JSON.stringify({ unit_ids: unitIds }) },
+    );
+  }
+
+  /** Enqueue generation; returns 202 with task_id. */
+  static async generateReferenceVideoUnit(
+    projectName: string,
+    episode: number,
+    unitId: string,
+  ): Promise<{ task_id: string; deduped: boolean }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/reference-videos/episodes/${episode}/units/${encodeURIComponent(unitId)}/generate`,
+      { method: "POST" },
+    );
   }
 }
 
