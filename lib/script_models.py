@@ -89,10 +89,14 @@ class GeneratedAssets(BaseModel):
 
 
 class NarrationSegment(BaseModel):
-    """说书模式的片段"""
+    """说书模式的片段
+
+    注意：不设独立 `episode` 字段。集号已经编码在 `segment_id`（格式 E{集}S{序号}）中，
+    与 `DramaScene.scene_id` / `ReferenceVideoUnit.unit_id` 保持一致。避免 AI 在每个
+    segment 上重复生成集号造成幻觉污染（详见 `NarrationEpisodeScript` docstring）。
+    """
 
     segment_id: str = Field(description="片段 ID，格式 E{集}S{序号} 或 E{集}S{序号}_{子序号}")
-    episode: int = Field(description="所属剧集")
     duration_seconds: int = Field(ge=1, le=60, description="片段时长（秒）")
     segment_break: bool = Field(default=False, description="是否为场景切换点")
     novel_text: str = Field(description="小说原文（必须原样保留，用于后期配音）")
@@ -114,9 +118,13 @@ class NovelInfo(BaseModel):
 
 
 class NarrationEpisodeScript(BaseModel):
-    """说书模式剧集脚本"""
+    """说书模式剧集脚本
 
-    episode: int = Field(description="剧集编号")
+    注意：`episode` 字段不在 schema 中。CLI 参数 `--episode N` 是集号的唯一真相源，
+    由 `ScriptGenerator._add_metadata` 写入。不让 AI 生成该字段，避免幻觉写错集号
+    进而污染 project.json（曾导致 episode_10.json 内部 episode=1 覆盖第 1 集条目）。
+    """
+
     title: str = Field(description="剧集标题")
     content_mode: Literal["narration"] = Field(default="narration", description="内容模式")
     duration_seconds: int = Field(default=0, description="总时长（秒）")
@@ -146,9 +154,12 @@ class DramaScene(BaseModel):
 
 
 class DramaEpisodeScript(BaseModel):
-    """剧集动画模式剧集脚本"""
+    """剧集动画模式剧集脚本
 
-    episode: int = Field(description="剧集编号")
+    注意：`episode` 字段不在 schema 中，集号由 CLI 真相源通过 `_add_metadata` 写入。
+    详见 `NarrationEpisodeScript` docstring。
+    """
+
     title: str = Field(description="剧集标题")
     content_mode: Literal["drama"] = Field(default="drama", description="内容模式")
     duration_seconds: int = Field(default=0, description="总时长（秒）")
@@ -202,9 +213,12 @@ class ReferenceVideoUnit(BaseModel):
 
 
 class ReferenceVideoScript(BaseModel):
-    """参考生视频模式剧集脚本。"""
+    """参考生视频模式剧集脚本。
 
-    episode: int = Field(description="剧集编号")
+    注意：`episode` 字段不在 schema 中，集号由 CLI 真相源通过 `_add_metadata` 写入。
+    详见 `NarrationEpisodeScript` docstring。
+    """
+
     title: str = Field(description="剧集标题")
     content_mode: Literal["reference_video"] = Field(default="reference_video", description="内容模式")
     duration_seconds: int = Field(default=0, description="总时长（秒）")

@@ -17,7 +17,6 @@ class TestScriptModels:
     def test_narration_segment_defaults_and_validation(self):
         segment = NarrationSegment(
             segment_id="E1S01",
-            episode=1,
             duration_seconds=4,
             novel_text="原文",
             characters_in_segment=["姜月茴"],
@@ -65,7 +64,6 @@ class TestScriptModels:
         """duration_seconds 接受 1-60 范围内任意整数。"""
         segment = NarrationSegment(
             segment_id="E1S01",
-            episode=1,
             duration_seconds=10,  # 之前会被 DurationSeconds 拒绝
             novel_text="原文",
             characters_in_segment=["姜月茴"],
@@ -82,7 +80,6 @@ class TestScriptModels:
         with pytest.raises(ValidationError):
             NarrationSegment(
                 segment_id="E1S01",
-                episode=1,
                 duration_seconds=0,
                 novel_text="原文",
                 characters_in_segment=["姜月茴"],
@@ -95,7 +92,6 @@ class TestScriptModels:
         with pytest.raises(ValidationError):
             NarrationSegment(
                 segment_id="E1S01",
-                episode=1,
                 duration_seconds=61,
                 novel_text="原文",
                 characters_in_segment=["姜月茴"],
@@ -121,14 +117,12 @@ class TestScriptModels:
 
     def test_episode_models_build_successfully(self):
         narration = NarrationEpisodeScript(
-            episode=1,
             title="第一集",
             summary="摘要",
             novel={"title": "小说", "chapter": "1"},
             segments=[],
         )
         drama = DramaEpisodeScript(
-            episode=1,
             title="第一集",
             summary="摘要",
             novel={"title": "小说", "chapter": "1"},
