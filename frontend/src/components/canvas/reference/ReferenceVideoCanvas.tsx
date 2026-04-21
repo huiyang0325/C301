@@ -1,5 +1,5 @@
 // frontend/src/components/canvas/reference/ReferenceVideoCanvas.tsx
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/shallow";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ChevronRight, Edit3, Loader2, Save, X as XIcon } from "lucide-react";
@@ -11,7 +11,8 @@ import { PreprocessingView } from "@/components/canvas/timeline/PreprocessingVie
 import { useReferenceVideoStore, referenceVideoCacheKey } from "@/stores/reference-video-store";
 import { useTasksStore } from "@/stores/tasks-store";
 import { useAppStore } from "@/stores/app-store";
-import type { ReferenceResource, ReferenceVideoUnit } from "@/types";
+import { errMsg } from "@/utils/async";
+import type { ReferenceResource, ReferenceVideoUnit, TaskStatus } from "@/types";
 
 export interface ReferenceVideoCanvasProps {
   projectName: string;
@@ -29,6 +30,13 @@ const PREPROC_DOT_CLASS: Record<PreprocStatus, string> = {
   empty: "bg-gray-500",
   ready: "bg-emerald-500",
 };
+
+/** Toast an error with tone="error". Optional `format` wraps the normalized
+ *  message (e.g. an i18n template); without it the raw message is shown. */
+function toastError(e: unknown, format?: (msg: string) => string): void {
+  const msg = errMsg(e);
+  useAppStore.getState().pushToast(format ? format(msg) : msg, "error");
+}
 
 export function ReferenceVideoCanvas({ projectName, episode, episodeTitle }: ReferenceVideoCanvasProps) {
   const { t } = useTranslation("dashboard");
@@ -73,32 +81,96 @@ export function ReferenceVideoCanvas({ projectName, episode, episodeTitle }: Ref
     }
   }, [units, selected, select]);
 
+  // #370 optimistic UI：任务队列走 3s 轮询（useTasksSSE.POLL_INTERVAL_MS=3000），
+  // 点击按钮到 `relevantTasks` 刷出队列记录之间存在最长 3 秒空窗期。POST 前把
+  // unit_id 登记到本地 set，按钮立即显示 busy；`generating` 派生把"optimistic 置位
+  // 且队列无对应行"视为真值——happy path 下终态任务在 pageSize 200 窗口里按
+  // updated_at DESC 保留，hasQueueRow 持续为 true，set 遗留项永远不再激活。
+  // 边界：若任务量或其他类型 churn 把该行挤出 200 条窗口，hasQueueRow 回落到
+  // false，遗留项会重新激活，按钮卡在 busy 直到切换 unit 或刷新。对单会话
+  // 典型规模（十到数百 unit）可接受；相比显式 pruning，派生逻辑更简单。
+  const [optimisticUnitIds, setOptimisticUnitIds] = useState<Set<string>>(() => new Set());
+
+  // #370 任务失败 toast：转变驱动（transition detection），不是状态驱动。
+  //
+  // 每轮 poll 记下每个 task_id 的上一次 status；只有当**上一轮不是 failed、这一轮
+  // 是 failed** 时才算"刚刚发生失败"，冒泡一次 toast。首次看到一个 task 就已经是
+  // failed 的（例如进页面时队列里的历史失败记录），prev 为 undefined——被视为我们
+  // 没有观测到转变，保持沉默。任务后续轮询里一直是 failed，prev==="failed" 也不再
+  // 触发（天然去重，不需要额外 toastedIds set）。
+  //
+  // 设计抉择：故意不为"3 秒轮询间隔内快速失败"的任务补齐——那种场景 POST 的 info
+  // toast（"已加入生成队列"）已经告诉了用户，任务队列 HUD 也会显示状态；拿不到
+  // transition 就不 toast，换来"历史失败静默"的正确语义。
+  const prevTaskStatusRef = useRef<Map<string, TaskStatus>>(new Map());
+  useEffect(() => {
+    const prev = prevTaskStatusRef.current;
+    const next = new Map<string, TaskStatus>();
+    for (const tk of relevantTasks) {
+      const before = prev.get(tk.task_id);
+      if (tk.status === "failed" && before !== undefined && before !== "failed") {
+        useAppStore.getState().pushToast(
+          t("reference_generation_task_failed", {
+            unitId: tk.resource_id,
+            reason: tk.error_message ?? t("reference_status_failed"),
+          }),
+          "error",
+        );
+      }
+      next.set(tk.task_id, tk.status);
+    }
+    prevTaskStatusRef.current = next;
+  }, [relevantTasks, t]);
+
+  // "optimistic 置位 且 队列尚无对应行" OR "队列里就在 queued/running"——
+  // 前者覆盖 POST→首次 poll 的 3s 空窗，后者覆盖正常运行期。队列接力后
+  // 前半项天然失效，无需显式 pruning。
   const generating = useMemo(() => {
     if (!selected) return false;
+    const hasQueueRow = relevantTasks.some((tk) => tk.resource_id === selected.unit_id);
+    if (optimisticUnitIds.has(selected.unit_id) && !hasQueueRow) return true;
     return relevantTasks.some(
       (tk) =>
         tk.resource_id === selected.unit_id &&
         (tk.status === "queued" || tk.status === "running"),
     );
-  }, [relevantTasks, selected]);
+  }, [relevantTasks, selected, optimisticUnitIds]);
 
   const handleAdd = useCallback(async () => {
     try {
       await addUnit(projectName, episode, { prompt: "", references: [] });
     } catch (e) {
-      useAppStore.getState().pushToast(e instanceof Error ? e.message : String(e), "error");
+      toastError(e);
     }
   }, [addUnit, projectName, episode]);
 
   const handleGenerate = useCallback(
     async (unitId: string) => {
+      setOptimisticUnitIds((s) => {
+        if (s.has(unitId)) return s;
+        const next = new Set(s);
+        next.add(unitId);
+        return next;
+      });
       try {
-        await generate(projectName, episode, unitId);
+        const { deduped } = await generate(projectName, episode, unitId);
+        useAppStore
+          .getState()
+          .pushToast(
+            t(deduped ? "reference_generate_deduped" : "reference_generate_queued"),
+            "info",
+          );
       } catch (e) {
-        useAppStore.getState().pushToast(e instanceof Error ? e.message : String(e), "error");
+        setOptimisticUnitIds((s) => {
+          if (!s.has(unitId)) return s;
+          const next = new Set(s);
+          next.delete(unitId);
+          return next;
+        });
+        toastError(e, (msg) => t("reference_generate_request_failed", { error: msg }));
       }
     },
-    [generate, projectName, episode],
+    [generate, projectName, episode, t],
   );
 
   const onAdd = useCallback(() => void handleAdd(), [handleAdd]);
@@ -126,7 +198,7 @@ export function ReferenceVideoCanvas({ projectName, episode, episodeTitle }: Ref
           ? { prompt: pendingPrompt, references: nextRefs }
           : { references: nextRefs };
       void patchUnit(projectName, episode, unitId, body).catch((e) => {
-        useAppStore.getState().pushToast(e instanceof Error ? e.message : String(e), "error");
+        toastError(e);
       });
     },
     [consumePendingPrompt, patchUnit, projectName, episode],
@@ -306,8 +378,10 @@ export function ReferenceVideoCanvas({ projectName, episode, episodeTitle }: Ref
       </div>
       {/* 外层 grid：<@md(448px) 单列；@md+ 双栏 (UnitList | 右侧 wrapper)。
           断点选 @md 是因为 agent chat 占右半屏时中栏常在 500-700px 区间，@2xl(672px) 错过太多场景。
-          显式 grid-rows-1 + minmax(0,1fr) 防止隐式 row 被 UnitList 内容撑开破坏 min-h-0/overflow 链路。 */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden @md:grid-cols-[minmax(200px,30%)_1fr]">
+          单列模式显式两行：UnitList 固 40%（不超过，最少 160px），editor wrapper 拿剩余 1fr——
+          否则两个子元素只有 1 个定义行、第二个落进隐式 auto 行，flex-1 链塌到 0，
+          textarea 在窄屏完全不可见（#368 后续回归）。@md+ 切回 2 列 × 1 行。 */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(160px,40%)_minmax(0,1fr)] overflow-hidden @md:grid-cols-[minmax(200px,30%)_1fr] @md:grid-rows-[minmax(0,1fr)]">
         <UnitList
           units={units}
           selectedId={selectedUnitId}

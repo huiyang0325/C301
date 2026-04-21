@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -375,19 +375,41 @@ describe("MentionPicker", () => {
     expect(tabEvent.defaultPrevented).toBe(true);
   });
 
-  it("does not close when pointerdown hits the anchorRef element", () => {
+  // #368: FloatingPortal should render the listbox as a direct descendant of
+  // document.body (rather than inside the component's render container) so
+  // that ancestor `overflow: hidden` / stacking contexts can never clip it.
+  it("portals the listbox to document.body", () => {
+    const { container } = render(
+      <MentionPicker
+        open
+        query=""
+        candidates={{ character: [{ name: "a", imagePath: null }], scene: [], prop: [] }}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const listbox = screen.getByRole("listbox");
+    // listbox 不应出现在 render() 返回的测试容器子树里
+    expect(container.contains(listbox)).toBe(false);
+    // 但必须在 document.body 子树里
+    expect(document.body.contains(listbox)).toBe(true);
+  });
+
+  it("does not close when pointerdown hits the anchorElement", () => {
     function Host({ onClose }: { onClose: () => void }) {
-      const anchorRef = useRef<HTMLButtonElement>(null);
+      // 用 state 承接按钮 DOM：与 ReferencePanel / ReferenceVideoCard 生产路径一致
+      // （floating-ui 的 setReference 需在元素挂载后触发 re-render 才能感知到）。
+      const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
       return (
         <div>
-          <button ref={anchorRef} data-testid="anchor" type="button">
+          <button ref={setAnchorEl} data-testid="anchor" type="button">
             toggle
           </button>
           <MentionPicker
             open
             query=""
             candidates={{ character: [{ name: "a", imagePath: null }], scene: [], prop: [] }}
-            anchorRef={anchorRef}
+            anchorElement={anchorEl}
             onSelect={vi.fn()}
             onClose={onClose}
           />

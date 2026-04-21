@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -39,6 +40,7 @@ from server.services.project_archive import (
     ProjectArchiveService,
     ProjectArchiveValidationError,
 )
+from server.services.project_cover import resolve_project_cover
 
 router = APIRouter()
 
@@ -353,17 +355,35 @@ async def list_projects(_user: CurrentUser):
                 # 尝试加载项目元数据
                 if manager.project_exists(name):
                     project = manager.load_project(name)
-                    # 获取缩略图（第一个分镜图）
-                    project_dir = manager.get_project_path(name)
-                    storyboards_dir = project_dir / "storyboards"
-                    thumbnail = None
-                    if storyboards_dir.exists():
-                        scene_images = sorted(storyboards_dir.glob("scene_*.png"))
-                        if scene_images:
-                            thumbnail = f"/api/v1/files/{name}/storyboards/{scene_images[0].name}"
+                    # 一次性预加载每集剧本，喂给 cover + status 两路下游，去除重复 JSON I/O。
+                    # key 为 episode['script_file'] 原值（match resolve_project_cover /
+                    # StatusCalculator 对 key 的期望）。任何一集加载失败都不影响列表：
+                    # 仅跳过入 map，下游消费者自然按"缺失"路径兜底。
+                    preloaded_scripts: dict[str, dict] = {}
+                    for ep in project.get("episodes") or []:
+                        script_file = ep.get("script_file")
+                        if not script_file:
+                            continue
+                        try:
+                            preloaded_scripts[script_file] = manager.load_script(name, script_file)
+                        except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as load_err:
+                            # 与 resolve_project_cover / StatusCalculator._load_episode_script
+                            # 对齐：I/O 缺失 + JSON/schema 解析失败 → 跳过此集，继续预加载其他集；
+                            # 非预期异常（RuntimeError/MemoryError 等）让其冒泡到外层 try，走 basic info 兜底行。
+                            logger.debug(
+                                "list_projects 预加载剧本失败 project=%s script=%s err=%s",
+                                name,
+                                script_file,
+                                load_err,
+                            )
+
+                    # 封面走 resolve_project_cover fallback 链：
+                    # video_thumbnail → storyboard_image → scene_sheet → character_sheet
+                    # —— 兼顾 reference / grid / storyboard 三种生成模式。
+                    thumbnail = resolve_project_cover(manager, name, project, preloaded_scripts=preloaded_scripts)
 
                     # 使用 StatusCalculator 计算进度（读时计算）
-                    status = calculator.calculate_project_status(name, project)
+                    status = calculator.calculate_project_status(name, project, preloaded_scripts=preloaded_scripts)
 
                     projects.append(
                         {
