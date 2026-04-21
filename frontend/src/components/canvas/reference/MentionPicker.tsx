@@ -1,7 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { assetColor } from "./asset-colors";
 import type { AssetKind } from "@/types/reference-video";
+
+/** Default DOM id for the listbox; paired with combobox aria-controls in ReferenceVideoCard. */
+export const MENTION_PICKER_DEFAULT_ID = "reference-editor-picker";
 
 export interface MentionCandidate {
   name: string;
@@ -16,6 +19,19 @@ export interface MentionPickerProps {
   onClose: () => void;
   /** Optional inline anchor style; when absent, picker renders in-flow below its parent. */
   className?: string;
+  /** Stable DOM id for the listbox; used by combobox aria-controls. Default: "reference-editor-picker". */
+  listboxId?: string;
+  /** Called whenever the keyboard-active option changes; receives the option's DOM id (null when empty). */
+  onActiveChange?: (optionId: string | null) => void;
+  /** Optional trigger element excluded from outside-pointerdown close so the caller's
+   * toggle button (open ↔ close) round-trips cleanly without a capture-phase race. */
+  anchorRef?: RefObject<HTMLElement | null>;
+}
+
+function optionId(kind: AssetKind, name: string): string {
+  // 安全化：把 CSS 不友好字符替换，避免选择器查询出错
+  const safe = name.replace(/[^A-Za-z0-9_\u4e00-\u9fff-]/g, "_");
+  return `reference-option-${kind}-${safe}`;
 }
 
 interface FlatItem {
@@ -34,6 +50,9 @@ export function MentionPicker({
   onSelect,
   onClose,
   className,
+  listboxId,
+  onActiveChange,
+  anchorRef,
 }: MentionPickerProps) {
   const { t } = useTranslation("dashboard");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -84,6 +103,10 @@ export function MentionPicker({
 
   const flatRef = useRef(flat);
   const clampedRef = useRef(clampedActive);
+  const listboxRef = useRef<HTMLDivElement>(null);
+  // 真实鼠标坐标。浏览器可能在列表滚动（键盘方向键选中触发）导致元素移到静止光标下时
+  // 补发 mousemove/mouseenter；仅当 (x, y) 相对上一次记录变化才视作用户主动移动。
+  const lastPointerXY = useRef<{ x: number; y: number }>({ x: -1, y: -1 });
 
   useLayoutEffect(() => {
     flatRef.current = flat;
@@ -114,12 +137,45 @@ export function MentionPicker({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onSelect, onClose]);
 
+  // Report the keyboard-active option id up to the parent (used by combobox's
+  // aria-activedescendant). Re-runs on flat/clampedActive change; when flat is
+  // empty (e.g. after close or no matches), flat[0] is undefined → null.
+  useEffect(() => {
+    if (!onActiveChange) return;
+    const current = flat[clampedActive];
+    onActiveChange(current ? optionId(current.type, current.name) : null);
+  }, [flat, clampedActive, onActiveChange]);
+
+  // Close on outside pointerdown. Capture phase so we run before the option's
+  // own `onMouseDown preventDefault` — the listbox root still gets the event
+  // through `contains()`, and any event landing outside the listbox tree
+  // (including the anchoring textarea) closes the picker.
+  //
+  // 例外：调用方传入的 anchorRef（如 toggle 按钮）需排除，否则同一按钮点一下会先在
+  // capture 阶段 onClose()，再在 click 的 toggle 里读取 queued false 并翻回 true，
+  // 结果用户无法用鼠标再按一次按钮关闭 picker。
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const el = listboxRef.current;
+      if (!el) return;
+      if (!(e.target instanceof Node)) return;
+      if (el.contains(e.target)) return;
+      if (anchorRef?.current?.contains(e.target)) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [open, onClose, anchorRef]);
+
   if (!open) return null;
 
   const empty = flat.length === 0;
 
   return (
     <div
+      ref={listboxRef}
+      id={listboxId ?? MENTION_PICKER_DEFAULT_ID}
       role="listbox"
       aria-label={t("reference_picker_title")}
       className={`z-30 max-h-64 w-64 overflow-y-auto rounded-md border border-gray-800 bg-gray-950 shadow-xl ${className ?? ""}`}
@@ -150,17 +206,30 @@ export function MentionPicker({
                 return (
                   <button
                     key={`${kind}:${item.name}`}
+                    id={optionId(kind, item.name)}
                     type="button"
                     role="option"
                     aria-selected={active}
-                    onMouseEnter={() => setActiveIndex(globalIndex)}
+                    // 仅在鼠标真实移动（坐标相对上次记录变化）时才覆盖 activeIndex，
+                    // 避免键盘选中导致列表滚动把元素移到静止光标下方时被浏览器补发的
+                    // mouseenter/mousemove 抢走高亮。mousemove 记坐标；mouseenter 对比。
+                    onMouseMove={(e) => {
+                      lastPointerXY.current = { x: e.clientX, y: e.clientY };
+                      if (clampedActive !== globalIndex) setActiveIndex(globalIndex);
+                    }}
+                    onMouseEnter={(e) => {
+                      const last = lastPointerXY.current;
+                      if (last.x === e.clientX && last.y === e.clientY) return;
+                      lastPointerXY.current = { x: e.clientX, y: e.clientY };
+                      if (clampedActive !== globalIndex) setActiveIndex(globalIndex);
+                    }}
                     // Suppress focus transfer on mousedown so the textarea keeps
                     // focus long enough for the click to fire on this option —
                     // avoids the "blur closes picker before click" race without
                     // relying on a setTimeout hack in the parent.
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => onSelect({ type: kind, name: item.name })}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors ${
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors focus-visible:ring-1 focus-visible:ring-indigo-400 focus-visible:outline-none ${
                       active ? "bg-indigo-500/15 text-indigo-200" : "text-gray-300 hover:bg-gray-900"
                     }`}
                   >

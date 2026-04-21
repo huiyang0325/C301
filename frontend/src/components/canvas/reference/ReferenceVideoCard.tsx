@@ -1,11 +1,16 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MentionPicker, type MentionCandidate } from "./MentionPicker";
+import { MENTION_PICKER_DEFAULT_ID, MentionPicker, type MentionCandidate } from "./MentionPicker";
 import { ASSET_COLORS, assetColor } from "./asset-colors";
 import { useShotPromptHighlight, type MentionLookup } from "@/hooks/useShotPromptHighlight";
 import { mergeReferences } from "@/utils/reference-mentions";
 import { useProjectsStore } from "@/stores/projects-store";
-import type { AssetKind, ReferenceResource, ReferenceVideoUnit } from "@/types/reference-video";
+import {
+  SHEET_FIELD,
+  type AssetKind,
+  type ReferenceResource,
+  type ReferenceVideoUnit,
+} from "@/types/reference-video";
 
 export interface ReferenceVideoCardProps {
   unit: ReferenceVideoUnit;
@@ -37,23 +42,9 @@ export function ReferenceVideoCard({
   const taRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
-  // Store { value, syncedUnitId } together so we can reset value inline during render
-  // when the unit identity changes — this is the React-recommended "derived state" pattern
-  // and avoids both useEffect-based setState and ref-during-render lint errors.
-  const [valueState, setValueState] = useState(() => ({
-    text: unitPromptText(unit),
-    syncedUnitId: unit.unit_id,
-  }));
-
-  // Derive the effective text: if unit changed, compute the new text synchronously.
-  // Calling setValueState here triggers a re-render immediately after this one with
-  // the new state, while currentText is used for this render to avoid a blank flash.
-  let currentText = valueState.text;
-  if (valueState.syncedUnitId !== unit.unit_id) {
-    const resetText = unitPromptText(unit);
-    setValueState({ text: resetText, syncedUnitId: unit.unit_id });
-    currentText = resetText;
-  }
+  // 父层以 key={unit.unit_id} 让 React 自动 remount 本组件，所以这里只持有当前 unit
+  // 的本地编辑态；切换 unit 时组件重建，initializer 会重新跑。
+  const [currentText, setCurrentText] = useState(() => unitPromptText(unit));
 
   const project = useProjectsStore((s) => s.currentProjectData);
 
@@ -81,32 +72,25 @@ export function ReferenceVideoCard({
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
+  const [activeOptionId, setActiveOptionId] = useState<string | null>(null);
   const atStartRef = useRef<number | null>(null);
 
   const candidates: Record<AssetKind, MentionCandidate[]> = useMemo(() => {
-    function toCandidates(
-      bucket: Record<string, { character_sheet?: string; scene_sheet?: string; prop_sheet?: string }> | undefined,
-      sheetKey: "character_sheet" | "scene_sheet" | "prop_sheet",
-    ): MentionCandidate[] {
-      if (!bucket) return [];
-      return Object.entries(bucket).map(([name, data]) => ({
+    const buckets: Record<AssetKind, Record<string, unknown> | undefined> = {
+      character: project?.characters,
+      scene: project?.scenes,
+      prop: project?.props,
+    };
+    const out = {} as Record<AssetKind, MentionCandidate[]>;
+    for (const kind of ["character", "scene", "prop"] as const) {
+      const bucket = buckets[kind];
+      out[kind] = Object.entries(bucket ?? {}).map(([name, data]) => ({
         name,
-        imagePath: data[sheetKey] ?? null,
+        imagePath: (data as Partial<Record<(typeof SHEET_FIELD)[AssetKind], string>>)[SHEET_FIELD[kind]] ?? null,
       }));
     }
-    return {
-      character: toCandidates(project?.characters, "character_sheet"),
-      scene: toCandidates(project?.scenes, "scene_sheet"),
-      prop: toCandidates(project?.props, "prop_sheet"),
-    };
+    return out;
   }, [project?.characters, project?.scenes, project?.props]);
-
-  const setText = useCallback(
-    (next: string) => {
-      setValueState({ text: next, syncedUnitId: unit.unit_id });
-    },
-    [unit.unit_id],
-  );
 
   const emitChange = useCallback(
     (nextValue: string) => {
@@ -122,10 +106,9 @@ export function ReferenceVideoCard({
       const ch = nextValue[i];
       if (ch === "@") {
         const prev = nextValue[i - 1];
-        // Only open the picker when the '@' is at a mention boundary:
-        // start-of-string or preceded by whitespace. This avoids triggering on
-        // `a@b` (email-like) or `@@foo` (double-@ typos).
-        if (i === 0 || /\s/.test(prev ?? "")) {
+        // 与 MENTION_RE `(?<!\w)` 对齐：@ 左侧不能是 ASCII 词字符，否则视为 email/id
+        // 残片。中文标点、空白、CJK、行首都满足"非 \w"，不会误拦截。
+        if (i === 0 || !/\w/.test(prev ?? "")) {
           atStartRef.current = i;
           setPickerQuery(nextValue.slice(i + 1, cursor));
           setPickerOpen(true);
@@ -143,7 +126,7 @@ export function ReferenceVideoCard({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const next = e.target.value;
-    setText(next);
+    setCurrentText(next);
     emitChange(next);
     updatePickerFromCursor(next, e.target.selectionStart ?? next.length);
   };
@@ -160,6 +143,7 @@ export function ReferenceVideoCard({
     setPickerOpen(false);
     setPickerQuery("");
     atStartRef.current = null;
+    setActiveOptionId(null);
   }, []);
 
   const handlePickerSelect = useCallback(
@@ -175,18 +159,19 @@ export function ReferenceVideoCard({
       const after = currentText.slice(cursor);
       const insert = `@${ref.name} `;
       const next = before + insert + after;
-      setText(next);
+      setCurrentText(next);
       emitChange(next);
       setPickerOpen(false);
       setPickerQuery("");
       atStartRef.current = null;
+      setActiveOptionId(null);
       requestAnimationFrame(() => {
         ta.focus();
         const pos = before.length + insert.length;
         ta.setSelectionRange(pos, pos);
       });
     },
-    [currentText, setText, emitChange],
+    [currentText, setCurrentText, emitChange],
   );
 
   const onScroll = () => {
@@ -245,8 +230,14 @@ export function ReferenceVideoCard({
           onClick={handleCursorUpdate}
           onBlur={handleTextareaBlur}
           onScroll={onScroll}
+          role="combobox"
+          aria-expanded={pickerOpen}
+          aria-controls={MENTION_PICKER_DEFAULT_ID}
+          aria-autocomplete="list"
+          aria-activedescendant={pickerOpen && activeOptionId ? activeOptionId : undefined}
+          aria-describedby={unknownMentions.length > 0 ? "reference-editor-unknown-desc" : undefined}
           placeholder={t("reference_editor_placeholder")}
-          aria-label={t("reference_editor_placeholder")}
+          aria-label={t("reference_editor_aria_name")}
           spellCheck={false}
           className="absolute inset-0 h-full w-full resize-none bg-transparent p-3 font-mono text-sm leading-6 text-transparent caret-gray-200 placeholder:text-gray-600 focus:outline-none"
         />
@@ -262,14 +253,22 @@ export function ReferenceVideoCard({
                 setPickerOpen(false);
                 setPickerQuery("");
                 atStartRef.current = null;
+                setActiveOptionId(null);
               }}
+              onActiveChange={setActiveOptionId}
             />
           </div>
         )}
       </div>
 
       {unknownMentions.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1" role="status" aria-live="polite">
+        <div
+          id="reference-editor-unknown-desc"
+          role="status"
+          aria-live="polite"
+          className="mt-2 flex flex-wrap gap-1"
+        >
+          <span className="sr-only">{t("reference_editor_unknown_mentions_label")}: </span>
           {unknownMentions.map((name) => {
             const palette = ASSET_COLORS.unknown;
             return (

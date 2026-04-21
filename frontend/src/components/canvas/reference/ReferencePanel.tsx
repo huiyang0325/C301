@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   DndContext,
@@ -8,7 +8,7 @@ import {
   PointerSensor,
   KeyboardSensor,
 } from "@dnd-kit/core";
-import type { DragEndEvent } from "@dnd-kit/core";
+import type { Announcements, DragEndEvent, ScreenReaderInstructions } from "@dnd-kit/core";
 import {
   SortableContext,
   arrayMove,
@@ -22,9 +22,17 @@ import { assetColor } from "./asset-colors";
 import { MentionPicker, type MentionCandidate } from "./MentionPicker";
 import { API } from "@/api";
 import { useProjectsStore } from "@/stores/projects-store";
-import type { AssetKind, ReferenceResource } from "@/types/reference-video";
+import { SHEET_FIELD, type AssetKind, type ReferenceResource } from "@/types/reference-video";
 
 const PICKER_ID = "reference-panel-mention-picker";
+
+// Drag id format: `${type}:${name}`. Split on the first ":" so CJK names survive.
+const refId = (r: ReferenceResource): string => `${r.type}:${r.name}`;
+const refNameFromId = (id: string): string => id.slice(id.indexOf(":") + 1);
+
+type BucketEntry = Partial<Record<"character_sheet" | "scene_sheet" | "prop_sheet", string>>;
+const sheetOf = (bucket: Record<string, unknown> | undefined, kind: AssetKind, name: string): string | null =>
+  (bucket?.[name] as BucketEntry | undefined)?.[SHEET_FIELD[kind]] ?? null;
 
 export interface ReferencePanelProps {
   references: ReferenceResource[];
@@ -39,27 +47,25 @@ interface PillProps {
   refItem: ReferenceResource;
   index: number;
   projectName: string;
-  onRemove: () => void;
+  imagePath: string | null;
+  thumbFingerprint: number | null;
+  onRemove: (ref: ReferenceResource) => void;
 }
 
-function Pill({ refItem, index, projectName, onRemove }: PillProps) {
+const Pill = memo(function Pill({
+  refItem,
+  index,
+  projectName,
+  imagePath,
+  thumbFingerprint,
+  onRemove,
+}: PillProps) {
   const { t } = useTranslation("dashboard");
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: `${refItem.type}:${refItem.name}`,
+    id: refId(refItem),
   });
   const palette = assetColor(refItem.type);
-  const project = useProjectsStore((s) => s.currentProjectData);
-
-  let imagePath: string | null = null;
-  if (refItem.type === "character") {
-    imagePath = (project?.characters?.[refItem.name] as { character_sheet?: string } | undefined)?.character_sheet ?? null;
-  } else if (refItem.type === "scene") {
-    imagePath = (project?.scenes?.[refItem.name] as { scene_sheet?: string } | undefined)?.scene_sheet ?? null;
-  } else if (refItem.type === "prop") {
-    imagePath = (project?.props?.[refItem.name] as { prop_sheet?: string } | undefined)?.prop_sheet ?? null;
-  }
-  const thumbFp = useProjectsStore((s) => (imagePath ? s.getAssetFingerprint(imagePath) : null));
-  const thumbUrl = imagePath ? API.getFileUrl(projectName, imagePath, thumbFp) : null;
+  const thumbUrl = imagePath ? API.getFileUrl(projectName, imagePath, thumbFingerprint) : null;
 
   return (
     <div
@@ -82,7 +88,7 @@ function Pill({ refItem, index, projectName, onRemove }: PillProps) {
       <span className="truncate max-w-[120px]" title={refItem.name}>@{refItem.name}</span>
       <button
         type="button"
-        onClick={onRemove}
+        onClick={() => onRemove(refItem)}
         aria-label={t("reference_panel_remove_aria", { name: refItem.name })}
         className="text-gray-500 hover:text-red-400"
       >
@@ -90,7 +96,7 @@ function Pill({ refItem, index, projectName, onRemove }: PillProps) {
       </button>
     </div>
   );
-}
+});
 
 export function ReferencePanel({
   references,
@@ -101,55 +107,89 @@ export function ReferencePanel({
 }: ReferencePanelProps) {
   const { t } = useTranslation("dashboard");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
   // Fine-grained subscriptions: depend on the specific slices we actually read,
   // so unrelated changes to currentProjectData don't force candidates to rebuild.
   const characters = useProjectsStore((s) => s.currentProjectData?.characters);
   const scenes = useProjectsStore((s) => s.currentProjectData?.scenes);
   const props = useProjectsStore((s) => s.currentProjectData?.props);
+  const getFp = useProjectsStore((s) => s.getAssetFingerprint);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const existingKeys = useMemo(
-    () => new Set(references.map((r) => `${r.type}:${r.name}`)),
-    [references],
-  );
+  const existingKeys = useMemo(() => new Set(references.map(refId)), [references]);
 
-  const candidates: Record<AssetKind, MentionCandidate[]> = useMemo(
-    () => ({
-      character: Object.entries(characters ?? {})
-        .filter(([name]) => !existingKeys.has(`character:${name}`))
-        .map(([name, data]) => ({
-          name,
-          imagePath: (data as { character_sheet?: string }).character_sheet ?? null,
-        })),
-      scene: Object.entries(scenes ?? {})
-        .filter(([name]) => !existingKeys.has(`scene:${name}`))
-        .map(([name, data]) => ({
-          name,
-          imagePath: (data as { scene_sheet?: string }).scene_sheet ?? null,
-        })),
-      prop: Object.entries(props ?? {})
-        .filter(([name]) => !existingKeys.has(`prop:${name}`))
-        .map(([name, data]) => ({
-          name,
-          imagePath: (data as { prop_sheet?: string }).prop_sheet ?? null,
-        })),
-    }),
-    [existingKeys, characters, scenes, props],
-  );
+  const candidates: Record<AssetKind, MentionCandidate[]> = useMemo(() => {
+    const buckets: Record<AssetKind, Record<string, unknown> | undefined> = {
+      character: characters,
+      scene: scenes,
+      prop: props,
+    };
+    const out = {} as Record<AssetKind, MentionCandidate[]>;
+    for (const kind of ["character", "scene", "prop"] as const) {
+      out[kind] = Object.keys(buckets[kind] ?? {})
+        .filter((name) => !existingKeys.has(`${kind}:${name}`))
+        .map((name) => ({ name, imagePath: sheetOf(buckets[kind], kind, name) }));
+    }
+    return out;
+  }, [existingKeys, characters, scenes, props]);
+
+  // 一次性派生每个 pill 的 imagePath + fingerprint，避免 Pill 订阅 store。
+  const pillData = useMemo(() => {
+    const buckets: Record<AssetKind, Record<string, unknown> | undefined> = {
+      character: characters,
+      scene: scenes,
+      prop: props,
+    };
+    return references.map((r) => {
+      const imagePath = sheetOf(buckets[r.type], r.type, r.name);
+      return { ref: r, imagePath, fingerprint: imagePath ? getFp(imagePath) : null };
+    });
+  }, [references, characters, scenes, props, getFp]);
 
   const handleAddClick = () => setPickerOpen((v) => !v);
+
+  const indexOfId = (id: string): number => references.findIndex((r) => refId(r) === id);
 
   const onDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const fromIndex = references.findIndex((r) => `${r.type}:${r.name}` === active.id);
-    const toIndex = references.findIndex((r) => `${r.type}:${r.name}` === over.id);
+    const fromIndex = indexOfId(String(active.id));
+    const toIndex = indexOfId(String(over.id));
     if (fromIndex < 0 || toIndex < 0) return;
     onReorder(arrayMove(references, fromIndex, toIndex));
   };
+
+  // Keyboard drag announcements for screen readers. dnd-kit fires these on
+  // Space pickup / arrow-key move / Space drop / Esc cancel.
+  const announcements = useMemo<Announcements>(() => {
+    const locate = (id: string) => ({
+      name: refNameFromId(id),
+      index: references.findIndex((r) => refId(r) === id) + 1,
+    });
+    return {
+      onDragStart: ({ active }) => t("reference_panel_announce_pick_up", locate(String(active.id))),
+      onDragOver: ({ active, over }) => {
+        if (!over) return undefined;
+        const { index } = locate(String(over.id));
+        return t("reference_panel_announce_move", { name: refNameFromId(String(active.id)), index });
+      },
+      onDragEnd: ({ active, over }) => {
+        if (!over) return undefined;
+        const { index } = locate(String(over.id));
+        return t("reference_panel_announce_drop", { name: refNameFromId(String(active.id)), index });
+      },
+      onDragCancel: ({ active }) =>
+        t("reference_panel_announce_cancel", { name: refNameFromId(String(active.id)) }),
+    };
+  }, [t, references]);
+
+  const screenReaderInstructions = useMemo<ScreenReaderInstructions>(
+    () => ({ draggable: t("reference_panel_sr_instructions") }),
+    [t],
+  );
 
   return (
     <div className="relative border-t border-gray-800 bg-gray-950/40 p-2">
@@ -158,6 +198,7 @@ export function ReferencePanel({
           {t("reference_panel_title")}
         </span>
         <button
+          ref={addButtonRef}
           type="button"
           onClick={handleAddClick}
           aria-label={t("reference_panel_add")}
@@ -172,19 +213,23 @@ export function ReferencePanel({
       {references.length === 0 ? (
         <p className="text-xs text-gray-500">{t("reference_panel_empty")}</p>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext
-            items={references.map((r) => `${r.type}:${r.name}`)}
-            strategy={horizontalListSortingStrategy}
-          >
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+          accessibility={{ announcements, screenReaderInstructions }}
+        >
+          <SortableContext items={references.map(refId)} strategy={horizontalListSortingStrategy}>
             <div className="flex flex-wrap gap-1.5">
-              {references.map((r, i) => (
+              {pillData.map((d, i) => (
                 <Pill
-                  key={`${r.type}:${r.name}`}
-                  refItem={r}
+                  key={refId(d.ref)}
+                  refItem={d.ref}
                   index={i}
                   projectName={projectName}
-                  onRemove={() => onRemove(r)}
+                  imagePath={d.imagePath}
+                  thumbFingerprint={d.fingerprint}
+                  onRemove={onRemove}
                 />
               ))}
             </div>
@@ -197,6 +242,7 @@ export function ReferencePanel({
             open
             query=""
             candidates={candidates}
+            anchorRef={addButtonRef}
             onSelect={(ref) => {
               onAdd(ref);
               setPickerOpen(false);
