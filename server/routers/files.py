@@ -5,7 +5,6 @@
 """
 
 import asyncio
-import json
 import logging
 import shutil
 import tempfile
@@ -22,7 +21,7 @@ from lib.asset_types import ASSET_TYPES
 from lib.i18n import Translator
 from lib.image_utils import normalize_uploaded_image
 from lib.project_change_hints import emit_project_change_batch, project_change_source
-from lib.project_manager import ProjectManager
+from lib.project_manager import ProjectManager, effective_mode
 from lib.source_loader import (
     ConflictError,
     CorruptFileError,
@@ -594,12 +593,25 @@ def _extract_step_number(filename: str) -> int:
     return int(match.group(1)) if match else 0
 
 
-def _get_step_files(content_mode: str) -> dict:
-    """根据 content_mode 获取步骤文件名映射"""
+def _get_step_files(content_mode: str, generation_mode: str | None = None) -> dict:
+    """根据 generation_mode / content_mode 获取步骤文件名映射
+
+    reference_video 走 split-reference-video-units subagent → step1_reference_units.md，
+    其他模式回落到 content_mode 的 narration/drama 分支。
+    """
+    if generation_mode == "reference_video":
+        return {1: "step1_reference_units.md"}
     if content_mode == "narration":
         return {1: "step1_segments.md"}
-    else:
-        return {1: "step1_normalized_script.md"}
+    return {1: "step1_normalized_script.md"}
+
+
+# step1 实际文件候选 —— 读取失败时用于 fallback 探测，兼容 episode 级 generation_mode 覆盖
+_STEP1_CANDIDATES = [
+    "step1_reference_units.md",
+    "step1_segments.md",
+    "step1_normalized_script.md",
+]
 
 
 def _get_step_title(filename: str, _t: Callable[..., str]) -> str:
@@ -607,18 +619,42 @@ def _get_step_title(filename: str, _t: Callable[..., str]) -> str:
     titles = {
         "step1_normalized_script.md": _t("normalized_script"),
         "step1_segments.md": _t("segment_splitting"),
+        "step1_reference_units.md": _t("segment_splitting"),
     }
     return titles.get(filename, filename)
 
 
-def _get_content_mode(project_dir: Path) -> str:
-    """从 project.json 读取 content_mode"""
-    project_json_path = project_dir / "project.json"
-    if project_json_path.exists():
-        with open(project_json_path, encoding="utf-8") as f:
-            project_data = json.load(f)
-            return project_data.get("content_mode", "drama")
-    return "drama"
+def _load_project_modes(project_name: str, episode: int) -> tuple[str, str | None]:
+    """走 ProjectManager.load_project，派生 (content_mode, generation_mode)。
+
+    复用 load_project 以获得文件锁和 _migrate_legacy_style 迁移；generation_mode 的
+    episode→project→默认回退复用 lib.project_manager.effective_mode。
+    项目不存在时返回 ("drama", None)，由调用方走 content_mode-only 分支。
+    """
+    try:
+        data = get_project_manager().load_project(project_name)
+    except FileNotFoundError:
+        return "drama", None
+    content_mode = data.get("content_mode", "drama")
+    ep_dict = next(
+        (ep for ep in (data.get("episodes") or []) if ep.get("episode") == episode),
+        {},
+    )
+    return content_mode, effective_mode(project=data, episode=ep_dict)
+
+
+def _resolve_step1_path(drafts_dir: Path, step_num: int, primary: Path) -> Path:
+    """主路径不存在时在 _STEP1_CANDIDATES 里回落，兼容跨模式切换遗留文件。
+
+    step_num != 1 或主路径已存在：原样返回 primary；调用方自行 exists() 判定。
+    """
+    if step_num != 1 or primary.exists():
+        return primary
+    for candidate in _STEP1_CANDIDATES:
+        alt = drafts_dir / candidate
+        if alt.exists():
+            return alt
+    return primary
 
 
 @router.get("/projects/{project_name}/drafts/{episode}/step{step_num}")
@@ -628,13 +664,14 @@ async def get_draft_content(project_name: str, episode: int, step_num: int, _use
 
         def _sync():
             project_dir = get_project_manager().get_project_path(project_name)
-            content_mode = _get_content_mode(project_dir)
-            step_files = _get_step_files(content_mode)
+            content_mode, generation_mode = _load_project_modes(project_name, episode)
+            step_files = _get_step_files(content_mode, generation_mode)
 
             if step_num not in step_files:
                 raise HTTPException(status_code=400, detail=_t("invalid_step_num", step_num=step_num))
 
-            draft_path = project_dir / "drafts" / f"episode_{episode}" / step_files[step_num]
+            drafts_dir = project_dir / "drafts" / f"episode_{episode}"
+            draft_path = _resolve_step1_path(drafts_dir, step_num, drafts_dir / step_files[step_num])
 
             if not draft_path.exists():
                 raise HTTPException(status_code=404, detail=_t("draft_file_not_found"))
@@ -662,8 +699,8 @@ async def update_draft_content(
 
         def _sync():
             project_dir = get_project_manager().get_project_path(project_name)
-            content_mode = _get_content_mode(project_dir)
-            step_files = _get_step_files(content_mode)
+            content_mode, generation_mode = _load_project_modes(project_name, episode)
+            step_files = _get_step_files(content_mode, generation_mode)
 
             if step_num not in step_files:
                 raise HTTPException(status_code=400, detail=_t("invalid_step_num", step_num=step_num))
@@ -671,6 +708,9 @@ async def update_draft_content(
             drafts_dir = project_dir / "drafts" / f"episode_{episode}"
             drafts_dir.mkdir(parents=True, exist_ok=True)
 
+            # 写入始终落到当前模式的目标文件；fallback 仅用于读取/删除（兼容跨模式切换的旧 step1）。
+            # 若写入 fallback 到老文件，切模式后后续 subagent 读 step_files[step_num] 仍为空，
+            # 导致"前端保存成功但生成报缺少 step1"。
             draft_path = drafts_dir / step_files[step_num]
             is_new = not draft_path.exists()
             draft_path.write_text(content, encoding="utf-8")
@@ -710,13 +750,14 @@ async def delete_draft(project_name: str, episode: int, step_num: int, _user: Cu
 
         def _sync():
             project_dir = get_project_manager().get_project_path(project_name)
-            content_mode = _get_content_mode(project_dir)
-            step_files = _get_step_files(content_mode)
+            content_mode, generation_mode = _load_project_modes(project_name, episode)
+            step_files = _get_step_files(content_mode, generation_mode)
 
             if step_num not in step_files:
                 raise HTTPException(status_code=400, detail=_t("invalid_step_num", step_num=step_num))
 
-            draft_path = project_dir / "drafts" / f"episode_{episode}" / step_files[step_num]
+            drafts_dir = project_dir / "drafts" / f"episode_{episode}"
+            draft_path = _resolve_step1_path(drafts_dir, step_num, drafts_dir / step_files[step_num])
 
             if draft_path.exists():
                 draft_path.unlink()
