@@ -10,13 +10,27 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.config.repository import mask_secret
 from lib.custom_provider import make_provider_id
+from lib.custom_provider.endpoints import endpoint_to_media_type
+
+# Endpoint / discovery_format 字面量类型 —— Pydantic 自动按枚举校验，
+# 与 lib/custom_provider/endpoints.py:ENDPOINT_REGISTRY 的键集合保持同步。
+EndpointLiteral = Literal[
+    "openai-chat",
+    "gemini-generate",
+    "openai-images",
+    "gemini-image",
+    "openai-video",
+    "newapi-video",
+]
+DiscoveryFormatLiteral = Literal["openai", "google"]
 from lib.db import get_async_session
 from lib.db.base import dt_to_iso
 from lib.db.repositories.custom_provider_repo import CustomProviderRepository
@@ -46,7 +60,7 @@ _BACKEND_SETTING_KEYS = (
 class ModelInput(BaseModel):
     model_id: str
     display_name: str
-    media_type: str  # "text" | "image" | "video"
+    endpoint: EndpointLiteral
     is_default: bool = False
     is_enabled: bool = True
     price_unit: str | None = None
@@ -55,12 +69,6 @@ class ModelInput(BaseModel):
     currency: str | None = None
     supported_durations: list[int] | None = None
     resolution: str | None = None
-
-    @model_validator(mode="after")
-    def _check_price_consistency(self):
-        if self.price_output is not None and self.price_input is None:
-            raise ValueError("设置 price_output 时必须同时设置 price_input")
-        return self
 
     def to_db_dict(self) -> dict:
         """返回适合写入数据库的字典（supported_durations 序列化为 JSON 字符串）。"""
@@ -73,7 +81,7 @@ class ModelInput(BaseModel):
 
 class CreateProviderRequest(BaseModel):
     display_name: str
-    api_format: str  # "openai" | "google" | "newapi"
+    discovery_format: DiscoveryFormatLiteral
     base_url: str
     api_key: str
     models: list[ModelInput] = []
@@ -95,7 +103,8 @@ class FullUpdateProviderRequest(BaseModel):
 
 
 class ProviderConnectionRequest(BaseModel):
-    api_format: str
+    # 连接测试故意接受任意字符串，由 _run_connection_test 软失败返回 200 + success=False。
+    discovery_format: str
     base_url: str
     api_key: str
 
@@ -108,7 +117,7 @@ class ModelResponse(BaseModel):
     id: int
     model_id: str
     display_name: str
-    media_type: str
+    endpoint: str
     is_default: bool
     is_enabled: bool
     price_unit: str | None = None
@@ -122,7 +131,7 @@ class ModelResponse(BaseModel):
 class ProviderResponse(BaseModel):
     id: int
     display_name: str
-    api_format: str
+    discovery_format: str
     base_url: str
     api_key_masked: str
     models: list[ModelResponse]
@@ -150,7 +159,7 @@ def _model_to_response(m) -> ModelResponse:
         id=m.id,
         model_id=m.model_id,
         display_name=m.display_name,
-        media_type=m.media_type,
+        endpoint=m.endpoint,
         is_default=m.is_default,
         is_enabled=m.is_enabled,
         price_unit=m.price_unit,
@@ -166,7 +175,7 @@ def _provider_to_response(provider, models) -> ProviderResponse:
     return ProviderResponse(
         id=provider.id,
         display_name=provider.display_name,
-        api_format=provider.api_format,
+        discovery_format=provider.discovery_format,
         base_url=provider.base_url,
         api_key_masked=mask_secret(provider.api_key),
         models=[_model_to_response(m) for m in models],
@@ -194,11 +203,15 @@ def _cleanup_project_refs(prefix: str, setting_keys: tuple[str, ...]) -> None:
 
 
 def _check_duplicate_model_ids(models: list[ModelInput], _t: Callable[..., str]) -> None:
-    """校验模型列表中无重复 model_id 且启用模型有合法 model_id。"""
+    """校验模型列表：无重复 model_id；启用模型有合法 model_id 和 endpoint；价格组合自洽。"""
     seen: set[str] = set()
     for m in models:
         if m.is_enabled and not m.model_id.strip():
             raise HTTPException(status_code=422, detail=_t("model_id_required"))
+        if m.is_enabled and not m.endpoint:
+            raise HTTPException(status_code=422, detail=_t("endpoint_required"))
+        if m.price_output is not None and m.price_input is None:
+            raise HTTPException(status_code=422, detail=_t("price_input_required"))
         if m.model_id in seen:
             raise HTTPException(status_code=422, detail=_t("duplicate_model_id", model_id=m.model_id))
         if m.model_id:
@@ -206,11 +219,15 @@ def _check_duplicate_model_ids(models: list[ModelInput], _t: Callable[..., str])
 
 
 def _check_unique_defaults(models: list[ModelInput], _t: Callable[..., str]) -> None:
-    """校验每个 media_type 最多只有一个 is_default=True 的模型。"""
+    """校验每个推算出的 media_type 最多只有一个 is_default=True 的模型。"""
     defaults_by_type: dict[str, list[str]] = {}
     for m in models:
         if m.is_default:
-            defaults_by_type.setdefault(m.media_type, []).append(m.model_id)
+            try:
+                media_type = endpoint_to_media_type(m.endpoint)
+            except ValueError:
+                continue  # endpoint 已在 ModelInput validator 校验，此处跳过未知值
+            defaults_by_type.setdefault(media_type, []).append(m.model_id)
     duplicates = {mt: ids for mt, ids in defaults_by_type.items() if len(ids) > 1}
     if duplicates:
         parts = [f"{mt}({', '.join(ids)})" for mt, ids in duplicates.items()]
@@ -262,7 +279,7 @@ async def create_provider(
     model_dicts = [m.to_db_dict() for m in body.models] if body.models else None
     provider = await repo.create_provider(
         display_name=body.display_name,
-        api_format=body.api_format,
+        discovery_format=body.discovery_format,
         base_url=body.base_url,
         api_key=body.api_key,
         models=model_dicts,
@@ -439,14 +456,58 @@ async def discover_models_endpoint(
     _user: CurrentUser,
     _t: Translator,
 ):
-    """模型发现：根据 api_format + base_url + api_key 查询可用模型。"""
+    """模型发现：根据 discovery_format + base_url + api_key 查询可用模型。"""
+    return await _run_discover(body.discovery_format, body.base_url, body.api_key, _t)
+
+
+@router.post("/{provider_id}/discover")
+async def discover_models_by_id(
+    provider_id: int,
+    _user: CurrentUser,
+    _t: Translator,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """使用已存储凭证发现指定供应商的可用模型。"""
+    repo = CustomProviderRepository(session)
+    provider = await repo.get_provider(provider_id)
+    if provider is None:
+        raise HTTPException(status_code=404, detail=_t("provider_not_found"))
+    return await _run_discover(provider.discovery_format, provider.base_url, provider.api_key, _t)
+
+
+@router.post("/test")
+async def test_connection(
+    body: ProviderConnectionRequest,
+    _user: CurrentUser,
+    _t: Translator,
+):
+    """连接测试：验证 discovery_format + base_url + api_key 的连通性。"""
+    return await _run_connection_test(body.discovery_format, body.base_url, body.api_key, _t)
+
+
+@router.post("/{provider_id}/test")
+async def test_connection_by_id(
+    provider_id: int, _user: CurrentUser, _t: Translator, session: AsyncSession = Depends(get_async_session)
+):
+    """使用已存储凭证测试指定供应商的连通性。"""
+    repo = CustomProviderRepository(session)
+    provider = await repo.get_provider(provider_id)
+    if provider is None:
+        raise HTTPException(status_code=404, detail=_t("provider_not_found"))
+    return await _run_connection_test(provider.discovery_format, provider.base_url, provider.api_key, _t)
+
+
+async def _run_discover(
+    discovery_format: str, base_url: str | None, api_key: str, _t: Callable[..., str]
+) -> DiscoverResponse:
+    """共用的模型发现逻辑（明文凭证 / 已存储凭证两条入口共用）。"""
     from lib.custom_provider.discovery import discover_models
 
     try:
         models = await discover_models(
-            api_format=body.api_format,
-            base_url=body.base_url or None,
-            api_key=body.api_key,
+            discovery_format=discovery_format,
+            base_url=base_url or None,
+            api_key=api_key,
         )
         return DiscoverResponse(models=models)
     except ValueError as exc:
@@ -459,53 +520,25 @@ async def discover_models_endpoint(
         raise HTTPException(status_code=502, detail=_t("discovery_failed", err_msg=err_msg))
 
 
-@router.post("/test")
-async def test_connection(
-    body: ProviderConnectionRequest,
-    _user: CurrentUser,
-    _t: Translator,
-):
-    """连接测试：验证 api_format + base_url + api_key 的连通性。"""
-    return await _run_connection_test(body.api_format, body.base_url, body.api_key, _t)
-
-
-@router.post("/{provider_id}/test")
-async def test_connection_by_id(
-    provider_id: int, _user: CurrentUser, _t: Translator, session: AsyncSession = Depends(get_async_session)
-):
-    """使用已存储凭证测试指定供应商的连通性。"""
-    repo = CustomProviderRepository(session)
-    provider = await repo.get_provider(provider_id)
-    if provider is None:
-        raise HTTPException(status_code=404, detail=_t("provider_not_found"))
-    return await _run_connection_test(provider.api_format, provider.base_url, provider.api_key, _t)
-
-
 async def _run_connection_test(
-    api_format: str, base_url: str, api_key: str, _t: Callable[..., str]
+    discovery_format: str, base_url: str, api_key: str, _t: Callable[..., str]
 ) -> ConnectionTestResponse:
     """共用的连接测试逻辑。"""
     try:
-        if api_format == "openai":
+        if discovery_format == "openai":
             result = await asyncio.wait_for(
                 asyncio.to_thread(_test_openai, base_url, api_key, _t),
                 timeout=_CONNECTION_TEST_TIMEOUT,
             )
-        elif api_format == "google":
+        elif discovery_format == "google":
             result = await asyncio.wait_for(
                 asyncio.to_thread(_test_google, base_url, api_key, _t),
-                timeout=_CONNECTION_TEST_TIMEOUT,
-            )
-        elif api_format == "newapi":
-            # NewAPI 的 /v1/models 是 OpenAI 兼容
-            result = await asyncio.wait_for(
-                asyncio.to_thread(_test_openai, base_url, api_key, _t),
                 timeout=_CONNECTION_TEST_TIMEOUT,
             )
         else:
             return ConnectionTestResponse(
                 success=False,
-                message=_t("unsupported_format", api_format=api_format),
+                message=_t("unsupported_discovery_format", discovery_format=discovery_format),
             )
         return result
     except TimeoutError:
@@ -517,7 +550,7 @@ async def _run_connection_test(
         err_msg = str(exc)
         if len(err_msg) > 200:
             err_msg = err_msg[:200] + "..."
-        logger.warning("连接测试失败 [%s]: %s", api_format, err_msg)
+        logger.warning("连接测试失败 [%s]: %s", discovery_format, err_msg)
         return ConnectionTestResponse(
             success=False,
             message=_t("connection_failed", err_msg=err_msg),
