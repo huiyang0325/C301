@@ -334,13 +334,13 @@ class TestProjectManagerMore:
         pm.add_episode("demo", 1, "第一集-改", "scripts/episode_1.json")
         assert pm.load_project("demo")["episodes"][0]["title"].startswith("第一集")
 
-        assert str(pm.get_source_path("demo", "a.txt")).endswith("/source/a.txt")
-        assert str(pm.get_character_path("demo", "a.png")).endswith("/characters/a.png")
-        assert str(pm.get_storyboard_path("demo", "a.png")).endswith("/storyboards/a.png")
-        assert str(pm.get_video_path("demo", "a.mp4")).endswith("/videos/a.mp4")
-        assert str(pm.get_output_path("demo", "a.mp4")).endswith("/output/a.mp4")
-        assert str(pm.get_scene_path("demo", "a.png")).endswith("/scenes/a.png")
-        assert str(pm.get_prop_path("demo", "a.png")).endswith("/props/a.png")
+        assert pm.get_source_path("demo", "a.txt").as_posix().endswith("/source/a.txt")
+        assert pm.get_character_path("demo", "a.png").as_posix().endswith("/characters/a.png")
+        assert pm.get_storyboard_path("demo", "a.png").as_posix().endswith("/storyboards/a.png")
+        assert pm.get_video_path("demo", "a.mp4").as_posix().endswith("/videos/a.mp4")
+        assert pm.get_output_path("demo", "a.mp4").as_posix().endswith("/output/a.mp4")
+        assert pm.get_scene_path("demo", "a.png").as_posix().endswith("/scenes/a.png")
+        assert pm.get_prop_path("demo", "a.png").as_posix().endswith("/props/a.png")
 
         with pytest.raises(KeyError):
             pm.get_project_character("demo", "none")

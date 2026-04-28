@@ -35,6 +35,7 @@ dependencies = [
     "lxml>=6.1.0",
     "pymupdf>=1.27.2.2",
     "packaging>=24.0",
+    "portalocker>=2.10.1",
 ]
 
 [dependency-groups]

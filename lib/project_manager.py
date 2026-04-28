@@ -4,7 +4,6 @@
 管理视频项目的目录结构、分镜剧本读写、状态追踪。
 """
 
-import fcntl
 import json
 import logging
 import os
@@ -17,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import portalocker
 from pydantic import BaseModel, Field
 
 from lib.asset_types import ASSET_SPECS
@@ -1070,7 +1070,7 @@ class ProjectManager:
 
     @contextmanager
     def _project_lock(self, project_name: str):
-        """通过专用 lock file 获取项目元数据的排他锁。
+        """通过隐藏 lock file 获取项目文件的排他锁。
 
         使用独立的 .project.json.lock 而非数据文件本身，避免 os.replace
         更换 inode 后锁失效的问题。
@@ -1078,13 +1078,8 @@ class ProjectManager:
         project_file = self._get_project_file_path(project_name)
         lock_path = project_file.parent / f".{project_file.name}.lock"
         lock_path.touch(exist_ok=True)
-        fd = open(lock_path)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+        with portalocker.Lock(lock_path, flags=portalocker.LOCK_EX):
             yield
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-            fd.close()
 
     @contextmanager
     def _script_lock(self, project_name: str, script_filename: str):
@@ -1106,13 +1101,8 @@ class ProjectManager:
         lock_path = real.parent / f".{real.name}.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         lock_path.touch(exist_ok=True)
-        fd = open(lock_path)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+        with portalocker.Lock(lock_path, flags=portalocker.LOCK_EX):
             yield
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-            fd.close()
 
     def save_project(self, project_name: str, project: dict) -> Path:
         """

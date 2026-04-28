@@ -735,7 +735,7 @@ async def update_draft_content(
             except Exception:
                 logger.warning("发送 draft 事件失败 project=%s episode=%s", project_name, episode, exc_info=True)
 
-            return {"success": True, "path": str(draft_path.relative_to(project_dir))}
+            return {"success": True, "path": draft_path.relative_to(project_dir).as_posix()}
 
         return await asyncio.to_thread(_sync)
 
