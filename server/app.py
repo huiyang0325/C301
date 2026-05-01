@@ -3,7 +3,10 @@
 
 启动方式:
     cd ArcReel
-    uv run uvicorn server.app:app --reload --port 1241
+    uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
+
+注意：必须用 --reload-dir 限定监视目录，否则 watchfiles 会扫描
+node_modules / .venv / .git / .worktrees 等十几万个文件，单核 CPU 50%+。
 """
 
 import asyncio

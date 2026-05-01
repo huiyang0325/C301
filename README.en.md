@@ -277,7 +277,10 @@ cd frontend && pnpm install && cd ..
 uv run alembic upgrade head
 
 # Start backend (Terminal 1)
-uv run uvicorn server.app:app --reload --port 1241
+# Note: --reload-dir is required. Without it, watchfiles scans the entire
+# project tree (node_modules / .venv / .git / .worktrees, 150k+ files),
+# pinning a CPU core at 50%+.
+uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
 
 # Start frontend (Terminal 2)
 cd frontend && pnpm dev
