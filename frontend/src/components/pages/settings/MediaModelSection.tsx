@@ -5,6 +5,7 @@ import { useWarnUnsaved } from "@/hooks/useWarnUnsaved";
 import { API } from "@/api";
 import type { SystemConfigSettings, SystemConfigOptions, SystemConfigPatch } from "@/types/system";
 import { ProviderModelSelect } from "@/components/ui/ProviderModelSelect";
+import { ImageModelDualSelect } from "@/components/shared/ImageModelDualSelect";
 import { PROVIDER_NAMES } from "@/components/ui/ProviderIcon";
 import { useAppStore } from "@/stores/app-store";
 import { useConfigStatusStore } from "@/stores/config-status-store";
@@ -71,7 +72,16 @@ export function MediaModelSection() {
   const textBackends: string[] = options.text_backends ?? [];
 
   const currentVideo = draft.default_video_backend ?? settings.default_video_backend ?? "";
-  const currentImage = draft.default_image_backend ?? settings.default_image_backend ?? "";
+  const currentImageT2I =
+    draft.default_image_backend_t2i ??
+    settings.default_image_backend_t2i ??
+    settings.default_image_backend ??
+    "";
+  const currentImageI2I =
+    draft.default_image_backend_i2i ??
+    settings.default_image_backend_i2i ??
+    settings.default_image_backend ??
+    "";
   const currentAudio = draft.video_generate_audio ?? settings.video_generate_audio ?? false;
 
   return (
@@ -116,18 +126,27 @@ export function MediaModelSection() {
         </label>
       </div>
 
-      {/* Image backend selector */}
+      {/* Image backend selectors (T2I + I2I) */}
       <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
         <div className="mb-3 text-sm font-medium text-gray-100">{t("default_image_model")}</div>
         {imageBackends.length > 0 ? (
-          <ProviderModelSelect
-            value={currentImage}
+          <ImageModelDualSelect
+            valueT2I={currentImageT2I}
+            valueI2I={currentImageI2I}
             options={imageBackends}
             providerNames={allProviderNames}
-            onChange={(v) => setDraft((prev) => ({ ...prev, default_image_backend: v }))}
-            allowDefault
+            onChange={({ t2i, i2i }) =>
+              setDraft((prev) => ({
+                ...prev,
+                default_image_backend_t2i: t2i,
+                default_image_backend_i2i: i2i,
+              }))
+            }
+            labelT2I={t("image_model_t2i")}
+            labelI2I={t("image_model_i2i")}
             defaultLabel={t("auto_select")}
             defaultHint={t("auto")}
+            showCapabilityHint={false}
           />
         ) : (
           <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-sm text-gray-500">

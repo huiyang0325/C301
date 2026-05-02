@@ -20,6 +20,8 @@ class TestRegistry:
             "openai-chat",
             "gemini-generate",
             "openai-images",
+            "openai-images-generations",
+            "openai-images-edits",
             "gemini-image",
             "openai-video",
             "newapi-video",
@@ -46,6 +48,7 @@ class TestRegistry:
             "display_name_key": "endpoint_openai_chat_display",
             "request_method": "POST",
             "request_path_template": "/v1/chat/completions",
+            "image_capabilities": None,
         }
 
     def test_media_type_groups(self):
@@ -53,7 +56,7 @@ class TestRegistry:
         image_keys = {s.key for s in ENDPOINT_REGISTRY.values() if s.media_type == "image"}
         video_keys = {s.key for s in ENDPOINT_REGISTRY.values() if s.media_type == "video"}
         assert text_keys == {"openai-chat", "gemini-generate"}
-        assert image_keys == {"openai-images", "gemini-image"}
+        assert image_keys == {"openai-images", "openai-images-generations", "openai-images-edits", "gemini-image"}
         assert video_keys == {"openai-video", "newapi-video"}
 
 
@@ -107,3 +110,41 @@ class TestInferEndpoint:
     )
     def test_infer(self, model_id, discovery_format, expected):
         assert infer_endpoint(model_id, discovery_format) == expected
+
+
+def test_image_endpoint_registry_has_four_entries():
+    from lib.custom_provider.endpoints import ENDPOINT_KEYS_BY_MEDIA_TYPE
+
+    image_keys = set(ENDPOINT_KEYS_BY_MEDIA_TYPE["image"])
+    assert image_keys == {"openai-images", "openai-images-generations", "openai-images-edits", "gemini-image"}
+
+
+def test_split_endpoints_have_single_capability():
+    from lib.custom_provider.endpoints import endpoint_to_image_capabilities
+    from lib.image_backends import ImageCapability
+
+    assert endpoint_to_image_capabilities("openai-images-generations") == frozenset({ImageCapability.TEXT_TO_IMAGE})
+    assert endpoint_to_image_capabilities("openai-images-edits") == frozenset({ImageCapability.IMAGE_TO_IMAGE})
+
+
+def test_existing_image_endpoints_have_full_capabilities():
+    """EndpointSpec 新增 image_capabilities 字段；已存在的 image entry 默认填两个能力。"""
+    from lib.custom_provider.endpoints import (
+        ENDPOINT_REGISTRY,
+        endpoint_spec_to_dict,
+        endpoint_to_image_capabilities,
+    )
+    from lib.image_backends import ImageCapability
+
+    full = frozenset({ImageCapability.TEXT_TO_IMAGE, ImageCapability.IMAGE_TO_IMAGE})
+    assert ENDPOINT_REGISTRY["openai-images"].image_capabilities == full
+    assert ENDPOINT_REGISTRY["gemini-image"].image_capabilities == full
+    assert ENDPOINT_REGISTRY["openai-chat"].image_capabilities is None
+    assert endpoint_to_image_capabilities("openai-images") == full
+
+    with pytest.raises(ValueError):
+        endpoint_to_image_capabilities("openai-chat")
+
+    # Verify endpoint_spec_to_dict serializes capabilities to sorted list[str]
+    serialized = endpoint_spec_to_dict(ENDPOINT_REGISTRY["openai-images"])
+    assert serialized["image_capabilities"] == ["image_to_image", "text_to_image"]

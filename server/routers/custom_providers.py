@@ -19,11 +19,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.config.repository import mask_secret
 from lib.config.service import ConfigService
 from lib.custom_provider import make_provider_id
-from lib.custom_provider.endpoints import ENDPOINT_REGISTRY, endpoint_spec_to_dict, endpoint_to_media_type
+from lib.custom_provider.endpoints import (
+    ENDPOINT_REGISTRY,
+    endpoint_spec_to_dict,
+    endpoint_to_image_capabilities,
+    endpoint_to_media_type,
+)
 from lib.db import get_async_session
 from lib.db.base import dt_to_iso
 from lib.db.repositories.custom_provider_repo import CustomProviderRepository
 from lib.i18n import Translator
+from lib.image_backends.base import ImageCapability
 from server.auth import CurrentUser
 from server.dependencies import get_config_service
 
@@ -49,6 +55,8 @@ _CONNECTION_TEST_TIMEOUT = 15  # 秒
 _BACKEND_SETTING_KEYS = (
     "default_video_backend",
     "default_image_backend",
+    "default_image_backend_t2i",
+    "default_image_backend_i2i",
     "default_text_backend",
     "text_backend_script",
     "text_backend_overview",
@@ -170,6 +178,7 @@ class EndpointDescriptor(BaseModel):
     display_name_key: str
     request_method: str
     request_path_template: str
+    image_capabilities: list[str] | None = None  # image 类填能力字符串列表，其他为 None
 
 
 class EndpointCatalogResponse(BaseModel):
@@ -247,16 +256,43 @@ def _check_duplicate_model_ids(models: list[ModelInput], _t: Callable[..., str])
 
 
 def _check_unique_defaults(models: list[ModelInput], _t: Callable[..., str]) -> None:
-    """校验每个推算出的 media_type 最多只有一个 is_default=True 的模型。"""
-    defaults_by_type: dict[str, list[str]] = {}
+    """校验默认模型互斥。
+
+    - text / video endpoint：同一 media_type 至多 1 个 is_default=True（保留旧规则）。
+    - image endpoint：image capability 集合两两不相交（即同一 capability 至多 1 个默认）。
+    """
+    text_video_defaults: dict[str, list[str]] = {}
+    image_defaults: list[tuple[str, frozenset[ImageCapability]]] = []
     for m in models:
-        if m.is_default:
-            try:
-                media_type = endpoint_to_media_type(m.endpoint)
-            except ValueError:
-                continue  # endpoint 已在 ModelInput validator 校验，此处跳过未知值
-            defaults_by_type.setdefault(media_type, []).append(m.model_id)
-    duplicates = {mt: ids for mt, ids in defaults_by_type.items() if len(ids) > 1}
+        if not m.is_default:
+            continue
+        try:
+            mt = endpoint_to_media_type(m.endpoint)
+        except ValueError:
+            continue  # endpoint 已在 ModelInput validator 校验，此处跳过未知值
+        if mt != "image":
+            text_video_defaults.setdefault(mt, []).append(m.model_id)
+            continue
+        try:
+            caps = endpoint_to_image_capabilities(m.endpoint)
+        except ValueError:
+            continue
+        image_defaults.append((m.model_id, caps))
+
+    duplicates: dict[str, list[str]] = {}
+    for mt, ids in text_video_defaults.items():
+        if len(ids) > 1:
+            duplicates[mt] = ids
+
+    # image：按 capability 反向索引，任一槽位有 >1 个默认即视为冲突（O(n) 替代 O(n²) 两两 caps 求交）
+    cap_to_ids: dict[ImageCapability, list[str]] = {}
+    for mid, caps in image_defaults:
+        for c in caps:
+            cap_to_ids.setdefault(c, []).append(mid)
+    conflict_ids = [mid for ids in cap_to_ids.values() if len(ids) > 1 for mid in ids]
+    if conflict_ids:
+        duplicates["image"] = list(dict.fromkeys(conflict_ids))
+
     if duplicates:
         parts = [f"{mt}({', '.join(ids)})" for mt, ids in duplicates.items()]
         raise HTTPException(

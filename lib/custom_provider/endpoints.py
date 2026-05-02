@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from lib.config.url_utils import ensure_google_base_url, ensure_openai_base_url
 from lib.custom_provider.backends import CustomImageBackend, CustomTextBackend, CustomVideoBackend
+from lib.image_backends.base import ImageCapability
 from lib.image_backends.gemini import GeminiImageBackend
 from lib.image_backends.openai import OpenAIImageBackend
 from lib.text_backends.gemini import GeminiTextBackend
@@ -40,6 +41,7 @@ class EndpointSpec:
     request_method: str  # "POST"
     request_path_template: str  # "/v1/chat/completions"，可含 {model} 等占位
     build_backend: Callable[[CustomProvider, str], CustomTextBackend | CustomImageBackend | CustomVideoBackend]
+    image_capabilities: frozenset[ImageCapability] | None = None  # image 类才填，非 image 类省略
 
 
 # ── 各 endpoint 的 build_backend 闭包 ──────────────────────────────
@@ -60,6 +62,28 @@ def _build_gemini_generate(provider, model_id: str) -> CustomTextBackend:
 def _build_openai_images(provider, model_id: str) -> CustomImageBackend:
     base_url = ensure_openai_base_url(provider.base_url)
     delegate = OpenAIImageBackend(api_key=provider.api_key, base_url=base_url, model=model_id)
+    return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
+
+
+def _build_openai_images_generations(provider, model_id: str) -> CustomImageBackend:
+    base_url = ensure_openai_base_url(provider.base_url)
+    delegate = OpenAIImageBackend(
+        api_key=provider.api_key,
+        base_url=base_url,
+        model=model_id,
+        mode="generations_only",
+    )
+    return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
+
+
+def _build_openai_images_edits(provider, model_id: str) -> CustomImageBackend:
+    base_url = ensure_openai_base_url(provider.base_url)
+    delegate = OpenAIImageBackend(
+        api_key=provider.api_key,
+        base_url=base_url,
+        model=model_id,
+        mode="edits_only",
+    )
     return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
 
 
@@ -111,7 +135,28 @@ ENDPOINT_REGISTRY: dict[str, EndpointSpec] = {
         request_method="POST",
         # /generations 与 /edits 由是否传参考图自动派发，brace 表达两条路径
         request_path_template="/v1/images/{generations,edits}",
+        image_capabilities=frozenset({ImageCapability.TEXT_TO_IMAGE, ImageCapability.IMAGE_TO_IMAGE}),
         build_backend=_build_openai_images,
+    ),
+    "openai-images-generations": EndpointSpec(
+        key="openai-images-generations",
+        media_type="image",
+        family="openai",
+        display_name_key="endpoint_openai_images_generations_display",
+        request_method="POST",
+        request_path_template="/v1/images/generations",
+        image_capabilities=frozenset({ImageCapability.TEXT_TO_IMAGE}),
+        build_backend=_build_openai_images_generations,
+    ),
+    "openai-images-edits": EndpointSpec(
+        key="openai-images-edits",
+        media_type="image",
+        family="openai",
+        display_name_key="endpoint_openai_images_edits_display",
+        request_method="POST",
+        request_path_template="/v1/images/edits",
+        image_capabilities=frozenset({ImageCapability.IMAGE_TO_IMAGE}),
+        build_backend=_build_openai_images_edits,
     ),
     "gemini-image": EndpointSpec(
         key="gemini-image",
@@ -120,6 +165,7 @@ ENDPOINT_REGISTRY: dict[str, EndpointSpec] = {
         display_name_key="endpoint_gemini_image_display",
         request_method="POST",
         request_path_template="/v1beta/models/{model}:generateContent",
+        image_capabilities=frozenset({ImageCapability.TEXT_TO_IMAGE, ImageCapability.IMAGE_TO_IMAGE}),
         build_backend=_build_gemini_image,
     ),
     "openai-video": EndpointSpec(
@@ -163,6 +209,14 @@ def endpoint_to_media_type(endpoint: str) -> str:
     return get_endpoint_spec(endpoint).media_type
 
 
+def endpoint_to_image_capabilities(endpoint: str) -> frozenset[ImageCapability]:
+    """返回 image 类 endpoint 的 capability 集合。非 image 类抛 ValueError。"""
+    spec = get_endpoint_spec(endpoint)
+    if spec.image_capabilities is None:
+        raise ValueError(f"endpoint {endpoint!r} is not an image endpoint")
+    return spec.image_capabilities
+
+
 def list_endpoints_by_media_type(media_type: str) -> list[EndpointSpec]:
     return [ENDPOINT_REGISTRY[k] for k in ENDPOINT_KEYS_BY_MEDIA_TYPE.get(media_type, ())]
 
@@ -171,6 +225,10 @@ def endpoint_spec_to_dict(spec: EndpointSpec) -> dict:
     """把 EndpointSpec 转成可序列化的纯数据 dict（剥掉不可 JSON 化的 build_backend 闭包）。"""
     data = asdict(spec)
     data.pop("build_backend", None)
+    if spec.image_capabilities is not None:
+        data["image_capabilities"] = sorted(c.value for c in spec.image_capabilities)
+    else:
+        data["image_capabilities"] = None
     return data
 
 

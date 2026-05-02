@@ -80,6 +80,8 @@ class CreateProjectRequest(BaseModel):
     style_template_id: str | None = None
     video_backend: str | None = None
     image_backend: str | None = None
+    image_provider_t2i: str | None = None
+    image_provider_i2i: str | None = None
     text_backend_script: str | None = None
     text_backend_overview: str | None = None
     text_backend_style: str | None = None
@@ -109,6 +111,8 @@ class UpdateProjectRequest(BaseModel):
     generation_mode: str | None = None
     video_backend: str | None = None
     image_backend: str | None = None
+    image_provider_t2i: str | None = None
+    image_provider_i2i: str | None = None
     video_generate_audio: bool | None = None
     text_backend_script: str | None = None
     text_backend_overview: str | None = None
@@ -453,6 +457,8 @@ async def create_project(
             for field_name in (
                 "video_backend",
                 "image_backend",
+                "image_provider_t2i",
+                "image_provider_i2i",
                 "text_backend_script",
                 "text_backend_overview",
                 "text_backend_style",
@@ -470,6 +476,8 @@ async def create_project(
                 for field in (
                     "video_backend",
                     "image_backend",
+                    "image_provider_t2i",
+                    "image_provider_i2i",
                     "text_backend_script",
                     "text_backend_overview",
                     "text_backend_style",
@@ -607,6 +615,8 @@ async def update_project(name: str, req: UpdateProjectRequest, _user: CurrentUse
             for field in (
                 "video_backend",
                 "image_backend",
+                "image_provider_t2i",
+                "image_provider_i2i",
                 "text_backend_script",
                 "text_backend_overview",
                 "text_backend_style",
@@ -618,6 +628,16 @@ async def update_project(name: str, req: UpdateProjectRequest, _user: CurrentUse
                         project[field] = value
                     else:
                         project.pop(field, None)
+
+            # 用户显式清空 t2i/i2i 任一时，同步清掉 legacy `image_backend`：否则 ProjectManager
+            # 的 lazy upgrade 会在下次 load_project 时用 legacy 值回填新字段，让"清空 → 跟随
+            # 全局默认"的语义失效。仅当客户端没在同一请求里写入 image_backend 才执行（避免
+            # 撤掉用户刚写入的值）。
+            if "image_backend" not in req.model_fields_set:
+                cleared_t2i = "image_provider_t2i" in req.model_fields_set and not req.image_provider_t2i
+                cleared_i2i = "image_provider_i2i" in req.model_fields_set and not req.image_provider_i2i
+                if cleared_t2i or cleared_i2i:
+                    project.pop("image_backend", None)
             if "video_generate_audio" in req.model_fields_set:
                 if req.video_generate_audio is None:
                     project.pop("video_generate_audio", None)

@@ -153,6 +153,8 @@ async def generate_grid(
                 if chunk_layout is None:
                     continue
 
+                # provider/model 由 execute_grid_task 在 _resolve_effective_image_backend
+                # 之后回填，因为只有 task 层能根据 reference_images 判断走 T2I 还是 I2I 槽
                 grid = GridGeneration.create(
                     episode=episode,
                     script_file=req.script_file,
@@ -160,8 +162,8 @@ async def generate_grid(
                     rows=chunk_layout.rows,
                     cols=chunk_layout.cols,
                     grid_size=chunk_layout.grid_size,
-                    provider=backend_snapshot.get("image_provider", ""),
-                    model=backend_snapshot.get("image_model", ""),
+                    provider="",
+                    model="",
                 )
 
                 prompt = build_grid_prompt(
@@ -272,6 +274,9 @@ async def regenerate_grid(project_name: str, grid_id: str, _user: CurrentUser):
 
         grid.status = "pending"
         grid.error_message = None
+        # 清空旧 metadata，由 execute_grid_task 按 needs_i2i 重新回填
+        grid.provider = ""
+        grid.model = ""
         gm.save(grid)
 
         project = get_project_manager().load_project(project_name)

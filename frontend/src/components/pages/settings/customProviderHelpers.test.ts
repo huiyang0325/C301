@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MediaType } from "@/types";
+import type { ImageCap, MediaType } from "@/types";
 import {
   priceLabel,
   urlPreviewFor,
@@ -13,9 +13,18 @@ const ENDPOINT_TO_MEDIA: Record<string, MediaType> = {
   "openai-chat": "text",
   "gemini-generate": "text",
   "openai-images": "image",
+  "openai-images-generations": "image",
+  "openai-images-edits": "image",
   "gemini-image": "image",
   "openai-video": "video",
   "newapi-video": "video",
+};
+
+const ENDPOINT_TO_CAPS: Record<string, ImageCap[]> = {
+  "openai-images": ["text_to_image", "image_to_image"],
+  "openai-images-generations": ["text_to_image"],
+  "openai-images-edits": ["image_to_image"],
+  "gemini-image": ["text_to_image", "image_to_image"],
 };
 
 describe("priceLabel", () => {
@@ -104,6 +113,61 @@ describe("toggleDefaultReducer", () => {
     ];
     const result = toggleDefaultReducer(rows, "b", ENDPOINT_TO_MEDIA);
     expect(result.find((r) => r.key === "a")?.is_default).toBe(true);
+    expect(result.find((r) => r.key === "b")?.is_default).toBe(true);
+  });
+
+  it("split image endpoints with disjoint caps coexist as defaults", () => {
+    const rows = [
+      { key: "g", endpoint: "openai-images-generations", is_default: false },
+      { key: "e", endpoint: "openai-images-edits", is_default: true },
+    ];
+    const result = toggleDefaultReducer(rows, "g", ENDPOINT_TO_MEDIA, ENDPOINT_TO_CAPS);
+    // -generations 设为 default，不应清掉 -edits（capability 不交叠）
+    expect(result.find((r) => r.key === "g")?.is_default).toBe(true);
+    expect(result.find((r) => r.key === "e")?.is_default).toBe(true);
+  });
+
+  it("wildcard openai-images clears split image rows when set as default", () => {
+    const rows = [
+      { key: "w", endpoint: "openai-images", is_default: false },
+      { key: "g", endpoint: "openai-images-generations", is_default: true },
+      { key: "e", endpoint: "openai-images-edits", is_default: true },
+    ];
+    const result = toggleDefaultReducer(rows, "w", ENDPOINT_TO_MEDIA, ENDPOINT_TO_CAPS);
+    expect(result.find((r) => r.key === "w")?.is_default).toBe(true);
+    expect(result.find((r) => r.key === "g")?.is_default).toBe(false);
+    expect(result.find((r) => r.key === "e")?.is_default).toBe(false);
+  });
+
+  it("two -generations defaults are mutually exclusive (same capability slot)", () => {
+    const rows = [
+      { key: "g1", endpoint: "openai-images-generations", is_default: true },
+      { key: "g2", endpoint: "openai-images-generations", is_default: false },
+    ];
+    const result = toggleDefaultReducer(rows, "g2", ENDPOINT_TO_MEDIA, ENDPOINT_TO_CAPS);
+    expect(result.find((r) => r.key === "g1")?.is_default).toBe(false);
+    expect(result.find((r) => r.key === "g2")?.is_default).toBe(true);
+  });
+
+  it("disabling an existing default does NOT clear other capability-overlapping defaults", () => {
+    // 回归：取消 wildcard image 默认时，不应把同样作为默认的 split-edits 也清掉
+    // （wildcard 与 -edits 在 I2I 槽 overlap，但用户并未启用新默认，不该触发互斥清理）
+    const rows = [
+      { key: "w", endpoint: "openai-images", is_default: true },
+      { key: "e", endpoint: "openai-images-edits", is_default: true },
+    ];
+    const result = toggleDefaultReducer(rows, "w", ENDPOINT_TO_MEDIA, ENDPOINT_TO_CAPS);
+    expect(result.find((r) => r.key === "w")?.is_default).toBe(false);
+    expect(result.find((r) => r.key === "e")?.is_default).toBe(true);
+  });
+
+  it("disabling an existing text default leaves other text defaults untouched", () => {
+    const rows = [
+      { key: "a", endpoint: "openai-chat", is_default: true },
+      { key: "b", endpoint: "gemini-generate", is_default: true },
+    ];
+    const result = toggleDefaultReducer(rows, "a", ENDPOINT_TO_MEDIA);
+    expect(result.find((r) => r.key === "a")?.is_default).toBe(false);
     expect(result.find((r) => r.key === "b")?.is_default).toBe(true);
   });
 });

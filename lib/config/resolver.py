@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -161,10 +161,19 @@ class ConfigResolver:
         async with self._open_session() as (session, svc):
             return await self._resolve_video_capabilities_from_project(svc, session, project)
 
-    async def default_image_backend(self) -> tuple[str, str]:
-        """返回 (provider_id, model_id)。"""
+    async def default_image_backend_t2i(self) -> tuple[str, str]:
+        """返回 (provider_id, model_id)，T2I 默认。"""
         async with self._open_session() as (session, svc):
-            return await self._resolve_default_image_backend(svc, session)
+            return await self._resolve_default_image_backend(svc, session, "t2i")
+
+    async def default_image_backend_i2i(self) -> tuple[str, str]:
+        """返回 (provider_id, model_id)，I2I 默认。"""
+        async with self._open_session() as (session, svc):
+            return await self._resolve_default_image_backend(svc, session, "i2i")
+
+    async def default_image_backend(self) -> tuple[str, str]:
+        """兼容 shim：旧调用方仍可调；返回 T2I 变体。"""
+        return await self.default_image_backend_t2i()
 
     async def provider_config(self, provider_id: str) -> dict[str, str]:
         """获取单个供应商配置。"""
@@ -321,9 +330,21 @@ class ConfigResolver:
             "generation_mode": generation_mode,
         }
 
-    async def _resolve_default_image_backend(self, svc: ConfigService, session: AsyncSession) -> tuple[str, str]:
-        raw = await svc.get_setting("default_image_backend", "")
-        if raw and "/" in raw:
+    async def _resolve_default_image_backend(
+        self, svc: ConfigService, session: AsyncSession, capability: Literal["t2i", "i2i"] = "t2i"
+    ) -> tuple[str, str]:
+        """优先读 default_image_backend_<cap>；新 key **不存在**才回退旧 default_image_backend；都缺则自动解析。
+
+        新 key 存在但值为空字符串 = 用户显式清空 = 跟随自动选择，不再回退 legacy。
+        一次 get_all_settings 把候选 key 都拿到，避免迁移期 / 未配置场景两次串行 DB 查询。
+        """
+        settings = await svc.get_all_settings()
+        cap_key = f"default_image_backend_{capability}"
+        if cap_key in settings:
+            raw = settings[cap_key]
+        else:
+            raw = settings.get("default_image_backend", "")
+        if "/" in raw:
             return ConfigService._parse_backend(raw, _DEFAULT_IMAGE_BACKEND)
         return await self._auto_resolve_backend(svc, session, "image")
 

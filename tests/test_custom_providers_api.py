@@ -197,7 +197,7 @@ class TestListProviders:
 class TestEndpointCatalog:
     """GET /endpoints 暴露 ENDPOINT_REGISTRY 作为前端单一真相源。"""
 
-    def test_lists_all_six_endpoints(self, client: TestClient):
+    def test_lists_all_endpoints(self, client: TestClient):
         resp = client.get("/api/v1/custom-providers/endpoints")
         assert resp.status_code == 200
         body = resp.json()
@@ -206,6 +206,8 @@ class TestEndpointCatalog:
             "openai-chat",
             "gemini-generate",
             "openai-images",
+            "openai-images-generations",
+            "openai-images-edits",
             "gemini-image",
             "openai-video",
             "newapi-video",
@@ -222,9 +224,21 @@ class TestEndpointCatalog:
                 "display_name_key",
                 "request_method",
                 "request_path_template",
+                "image_capabilities",
             }
             assert entry["request_method"] == "POST"
             assert entry["request_path_template"].startswith("/")
+
+    def test_endpoints_expose_image_capabilities(self, client: TestClient):
+        """每个 entry 上返回 image_capabilities：image 类填能力数组，其他为 None。"""
+        resp = client.get("/api/v1/custom-providers/endpoints")
+        assert resp.status_code == 200
+        by_key = {e["key"]: e for e in resp.json()["endpoints"]}
+        assert by_key["openai-chat"]["image_capabilities"] is None
+        assert sorted(by_key["openai-images"]["image_capabilities"]) == ["image_to_image", "text_to_image"]
+        assert by_key["openai-images-generations"]["image_capabilities"] == ["text_to_image"]
+        assert by_key["openai-images-edits"]["image_capabilities"] == ["image_to_image"]
+        assert sorted(by_key["gemini-image"]["image_capabilities"]) == ["image_to_image", "text_to_image"]
 
     def test_endpoint_route_not_shadowed_by_provider_id(self, client: TestClient):
         """回归：/endpoints 必须先于 /{provider_id} 注册，不能被解析为整型 provider_id。"""
@@ -1276,6 +1290,80 @@ async def test_default_conflict_grouped_by_endpoint_media(client):
     }
     resp = client.post("/api/v1/custom-providers", json=payload)
     assert resp.status_code == 422
+
+
+def test_check_unique_defaults_allows_split_image_endpoints():
+    """同 provider 内 -generations 与 -edits 两条都设默认 → 允许（capability 不交叠）。"""
+    from server.routers.custom_providers import ModelInput, _check_unique_defaults
+
+    models = [
+        ModelInput(model_id="m1", display_name="m1", endpoint="openai-images-generations", is_default=True),
+        ModelInput(model_id="m2", display_name="m2", endpoint="openai-images-edits", is_default=True),
+    ]
+
+    def t(key, **params):
+        return f"{key}:{params}"
+
+    # 不应抛
+    _check_unique_defaults(models, t)
+
+
+def test_check_unique_defaults_rejects_two_generations_defaults():
+    """同 provider 内两条 -generations 都设默认 → 422。"""
+    import pytest as pytest_module
+    from fastapi import HTTPException
+
+    from server.routers.custom_providers import ModelInput, _check_unique_defaults
+
+    models = [
+        ModelInput(model_id="m1", display_name="m1", endpoint="openai-images-generations", is_default=True),
+        ModelInput(model_id="m2", display_name="m2", endpoint="openai-images-generations", is_default=True),
+    ]
+
+    def t(key, **params):
+        return f"{key}:{params}"
+
+    with pytest_module.raises(HTTPException) as excinfo:
+        _check_unique_defaults(models, t)
+    assert excinfo.value.status_code == 422
+
+
+def test_check_unique_defaults_rejects_wildcard_with_split():
+    """通配 + -generations 同时默认 → 不允许（通配占 T2I 槽与 -generations 冲突）。"""
+    import pytest as pytest_module
+    from fastapi import HTTPException
+
+    from server.routers.custom_providers import ModelInput, _check_unique_defaults
+
+    models = [
+        ModelInput(model_id="m1", display_name="m1", endpoint="openai-images", is_default=True),
+        ModelInput(model_id="m2", display_name="m2", endpoint="openai-images-generations", is_default=True),
+    ]
+
+    def t(key, **params):
+        return f"{key}:{params}"
+
+    with pytest_module.raises(HTTPException):
+        _check_unique_defaults(models, t)
+
+
+def test_check_unique_defaults_text_still_media_type_exclusive():
+    """text/video 维持旧规则：同一 media_type 只能有一个默认。"""
+    import pytest as pytest_module
+    from fastapi import HTTPException
+
+    from server.routers.custom_providers import ModelInput, _check_unique_defaults
+
+    models = [
+        ModelInput(model_id="m1", display_name="m1", endpoint="openai-chat", is_default=True),
+        ModelInput(model_id="m2", display_name="m2", endpoint="gemini-generate", is_default=True),
+    ]
+
+    def t(key, **params):
+        return f"{key}:{params}"
+
+    with pytest_module.raises(HTTPException):
+        _check_unique_defaults(models, t)
 
 
 # ---------------------------------------------------------------------------

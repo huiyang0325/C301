@@ -46,6 +46,9 @@ class _FakeConfigService:
     async def get_setting(self, key: str, default: str = "") -> str:
         return self._settings.get(key, default)
 
+    async def get_all_settings(self) -> dict[str, str]:
+        return dict(self._settings)
+
     async def get_default_video_backend(self) -> tuple[str, str]:
         return ("gemini-aistudio", "veo-3.1-fast-generate-preview")
 
@@ -198,6 +201,89 @@ class TestDefaultBackends:
             async with factory() as session:
                 with pytest.raises(ValueError, match="未找到可用的 image 供应商"):
                     await resolver._resolve_default_image_backend(fake_svc, session)
+        finally:
+            await engine.dispose()
+
+    async def test_default_image_backend_t2i_reads_dedicated_setting(self):
+        """新 setting key default_image_backend_t2i 优先于旧 default_image_backend。"""
+        resolver = ConfigResolver.__new__(ConfigResolver)
+        fake_svc = _FakeConfigService(
+            settings={
+                "default_image_backend": "grok/grok-2-image",
+                "default_image_backend_t2i": "ark/stable-diffusion-3",
+            },
+        )
+        result = await resolver._resolve_default_image_backend(fake_svc, None, "t2i")
+        assert result == ("ark", "stable-diffusion-3")
+
+    async def test_default_image_backend_t2i_falls_back_to_legacy(self):
+        """只设旧 default_image_backend，新 _t2i 未设时回退到旧值。"""
+        resolver = ConfigResolver.__new__(ConfigResolver)
+        fake_svc = _FakeConfigService(
+            settings={"default_image_backend": "grok/grok-2-image"},
+        )
+        result = await resolver._resolve_default_image_backend(fake_svc, None, "t2i")
+        assert result == ("grok", "grok-2-image")
+
+    async def test_default_image_backend_i2i_reads_dedicated_setting(self):
+        """对称测试 i2i：新 key default_image_backend_i2i 优先于旧 default_image_backend。"""
+        resolver = ConfigResolver.__new__(ConfigResolver)
+        fake_svc = _FakeConfigService(
+            settings={
+                "default_image_backend": "grok/grok-2-image",
+                "default_image_backend_i2i": "ark/kolors-img2img",
+            },
+        )
+        result = await resolver._resolve_default_image_backend(fake_svc, None, "i2i")
+        assert result == ("ark", "kolors-img2img")
+
+    async def test_default_image_backend_i2i_falls_back_to_legacy(self):
+        """只设旧 default_image_backend，_i2i 未设时回退到旧值。"""
+        resolver = ConfigResolver.__new__(ConfigResolver)
+        fake_svc = _FakeConfigService(
+            settings={"default_image_backend": "grok/grok-2-image"},
+        )
+        result = await resolver._resolve_default_image_backend(fake_svc, None, "i2i")
+        assert result == ("grok", "grok-2-image")
+
+    async def test_default_image_backend_t2i_explicit_empty_does_not_fall_back(self):
+        """split key 显式置为空字符串时，不应回退到 legacy default_image_backend。
+
+        语义锁：用户主动把 default_image_backend_t2i="" 表示「不设默认 / 自动选择」，
+        必须走 _auto_resolve_backend；这里 ready_providers=[] 让 auto 路径抛错，
+        以此区分"走了 auto 路径"（期望）和"被 legacy 静默回退"（被锁住的 bug）。
+        """
+        factory, engine = await _make_session()
+        try:
+            resolver = ConfigResolver.__new__(ConfigResolver)
+            fake_svc = _FakeConfigService(
+                settings={
+                    "default_image_backend": "grok/grok-2-image",
+                    "default_image_backend_t2i": "",
+                },
+                ready_providers=[],
+            )
+            async with factory() as session:
+                with pytest.raises(ValueError, match="未找到可用的 image 供应商"):
+                    await resolver._resolve_default_image_backend(fake_svc, session, "t2i")
+        finally:
+            await engine.dispose()
+
+    async def test_default_image_backend_i2i_explicit_empty_does_not_fall_back(self):
+        """对称：default_image_backend_i2i="" 不应回退到 legacy。"""
+        factory, engine = await _make_session()
+        try:
+            resolver = ConfigResolver.__new__(ConfigResolver)
+            fake_svc = _FakeConfigService(
+                settings={
+                    "default_image_backend": "grok/grok-2-image",
+                    "default_image_backend_i2i": "",
+                },
+                ready_providers=[],
+            )
+            async with factory() as session:
+                with pytest.raises(ValueError, match="未找到可用的 image 供应商"):
+                    await resolver._resolve_default_image_backend(fake_svc, session, "i2i")
         finally:
             await engine.dispose()
 
