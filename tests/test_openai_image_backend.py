@@ -6,6 +6,8 @@ import base64
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from lib.image_backends.base import (
     ImageCapability,
     ImageGenerationRequest,
@@ -141,6 +143,29 @@ class TestOpenAIImageBackend:
         mock_client.images.generate.assert_not_awaited()
         edit_kwargs = mock_client.images.edit.call_args[1]
         assert "response_format" not in edit_kwargs
+
+    async def test_empty_data_raises(self, tmp_path: Path):
+        """OpenAI 返回空 data 数组时，应抛出清晰的 RuntimeError 而非 IndexError。"""
+        empty_response = MagicMock(spec=["data", "usage"])
+        empty_response.data = []
+        empty_response.usage = None
+
+        mock_client = AsyncMock()
+        mock_client.images.generate = AsyncMock(return_value=empty_response)
+
+        with patch("lib.openai_shared.AsyncOpenAI", return_value=mock_client):
+            from lib.image_backends.openai import OpenAIImageBackend
+
+            backend = OpenAIImageBackend(api_key="test-key")
+            request = ImageGenerationRequest(
+                prompt="A beautiful sunset",
+                output_path=tmp_path / "output.png",
+                aspect_ratio="9:16",
+                image_size="1K",
+            )
+
+            with pytest.raises(RuntimeError, match="data 为空"):
+                await backend.generate(request)
 
     async def test_text_to_image_url_fallback(self, tmp_path: Path):
         """网关只返回 url 时，应走 httpx 下载分支。"""
