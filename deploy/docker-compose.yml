@@ -1,15 +1,22 @@
 services:
   arcreel:
-    image: ghcr.io/arcreel/arcreel:latest
+    # image: ghcr.io/arcreel/arcreel:latest
+    build: ../
     # build: ../  # 本地构建时取消注释，注释掉 image 行
     ports:
       - "1241:1241"
     env_file: .env
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_AUTH_TOKEN:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-}
     volumes:
       - ./.env:/app/.env
-      - ./projects:/app/projects
-      - ./vertex_keys:/app/vertex_keys
+      - ../projects:/app/projects
+      - ../vertex_keys:/app/vertex_keys
       - ./claude_data:/root/.claude
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:1241/health"]

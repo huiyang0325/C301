@@ -1020,6 +1020,35 @@ class API {
     return this.request(`/tasks/${encodeURIComponent(taskId)}`);
   }
 
+  // ==================== ComfyUI API ====================
+
+  static async getComfyUiStatus(): Promise<{
+    queue_running: Array<{ prompt_id: string; number: number }>;
+    queue_pending: Array<{ prompt_id: string; number: number }>;
+    system: { comfyui_version: string; ram_free: number; devices: Array<{ name: string; vram_free: number }> };
+  }> {
+    return this.request("/comfyui/status");
+  }
+
+  static async getComfyUiTaskStatus(promptId: string): Promise<{
+    prompt_id: string;
+    status: "pending" | "running" | "completed" | "failed" | "not_found" | "timeout";
+    execution_time: number;
+    outputs: string[];
+    nodes?: Record<string, { executing: boolean; done: boolean; error?: string }>;
+    error?: string;
+  }> {
+    return this.request(`/comfyui/task/${encodeURIComponent(promptId)}`);
+  }
+
+  static async listComfyUiWorkflows(): Promise<{
+    workflows: Record<string, Array<{ workflow_id: string; display_name: string; description: string }>>;
+  }> {
+    return this.request("/comfyui/workflows");
+  }
+
+  // ==================== 任务列表 API ====================
+
   static async listTasks(
     filters: TaskListFilters = {}
   ): Promise<{ items: TaskItem[]; total: number; page: number; page_size: number }> {

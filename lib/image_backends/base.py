@@ -86,6 +86,8 @@ class ImageGenerationRequest:
     image_size: str | None = None
     project_name: str | None = None
     seed: int | None = None
+    # 扩展参数（用于特定后端如 ComfyUI 工作流 ID）
+    metadata: dict | None = field(default=None)
 
 
 @dataclass
@@ -104,6 +106,8 @@ class ImageGenerationResult:
     image_output_tokens: int | None = None
     text_input_tokens: int | None = None
     text_output_tokens: int | None = None
+    # ComfyUI 的 prompt_id，用于进度查询
+    prompt_id: str | None = None
 
 
 class ImageBackend(Protocol):

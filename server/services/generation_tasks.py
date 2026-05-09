@@ -31,7 +31,7 @@ from lib.prompt_utils import (
     is_structured_video_prompt,
     video_prompt_to_yaml,
 )
-from lib.providers import PROVIDER_ARK, PROVIDER_GEMINI, PROVIDER_GROK, PROVIDER_OPENAI
+from lib.providers import PROVIDER_ARK, PROVIDER_COMFYUI, PROVIDER_GEMINI, PROVIDER_GROK, PROVIDER_OPENAI
 from lib.storyboard_sequence import (
     build_previous_storyboard_reference,
     find_storyboard_item,
@@ -293,6 +293,11 @@ async def _get_or_create_image_backend(
         kwargs["base_url"] = db_config.get("base_url")
         kwargs["rate_limiter"] = rate_limiter
         kwargs["image_model"] = effective_model
+    elif backend_name == PROVIDER_COMFYUI:
+        # ComfyUI 使用本地服务，不需要 api_key
+        db_config = await resolver.provider_config(backend_name)
+        kwargs["comfyui_url"] = db_config.get("base_url") or "http://127.0.0.1:8188"
+        kwargs["default_workflow_id"] = effective_model or "image_9"
     else:
         await _fill_simple_provider_kwargs(backend_name, resolver, kwargs, effective_model)
 
@@ -312,11 +317,12 @@ async def _resolve_video_backend(
     注意：video_backend_type 仅在 video_backend 为 None（回退到 GeminiClient）时生效，
     因此只需要在全局默认回退分支中设置。
     """
-    default_video_provider_id, video_model = await resolver.default_video_backend()
     video_backend = None
     video_backend_type = "aistudio"
+    video_model = None
 
     if payload:
+        default_video_provider_id, video_model = await resolver.default_video_backend()
         # provider 统一从项目配置 → 全局默认解析，调用方无需传递
         project = await asyncio.to_thread(get_project_manager().load_project, project_name)
 
@@ -346,11 +352,13 @@ async def get_media_generator(
     *,
     user_id: str = DEFAULT_USER_ID,
     require_image_backend: bool = True,
+    require_video_backend: bool = True,
     needs_i2i: bool = False,
 ) -> MediaGenerator:
     """创建 MediaGenerator。仅按调用场景初始化所需的 backend。
 
     needs_i2i: 若调用方知晓本次任务带参考图，传 True 以选 I2I 默认 backend；否则用 T2I。
+    require_video_backend: 若调用方仅需图片生成，传 False 以避免视频 backend 解析失败。
     """
     from lib.config.resolver import ConfigResolver
     from lib.db import async_session_factory
@@ -373,12 +381,14 @@ async def get_media_generator(
                 default_image_model=image_model or None,
             )
 
-        # 解析 video backend（保持现有逻辑）
-        video_backend, _, _ = await _resolve_video_backend(
-            project_name,
-            r,
-            payload,
-        )
+        video_backend = None
+        if require_video_backend:
+            # 解析 video backend（保持现有逻辑）
+            video_backend, _, _ = await _resolve_video_backend(
+                project_name,
+                r,
+                payload,
+            )
 
     return MediaGenerator(
         project_path,
@@ -749,6 +759,7 @@ async def execute_storyboard_task(
         payload=payload,
         user_id=user_id,
         needs_i2i=_needs_i2i,
+        require_video_backend=False,
     )
     aspect_ratio = get_aspect_ratio(project, "storyboards")
 
@@ -950,7 +961,7 @@ async def execute_character_task(
     project, full_prompt, reference_images = await asyncio.to_thread(_prepare_char)
     _needs_i2i = bool(reference_images)
 
-    generator = await get_media_generator(project_name, payload=payload, user_id=user_id, needs_i2i=_needs_i2i)
+    generator = await get_media_generator(project_name, payload=payload, user_id=user_id, needs_i2i=_needs_i2i, require_video_backend=False)
     aspect_ratio = get_aspect_ratio(project, "characters")
 
     image_provider_id, image_model_id = await _resolve_effective_image_backend(project, payload, needs_i2i=_needs_i2i)
@@ -1021,7 +1032,7 @@ async def execute_design_task(
 
     project, full_prompt = await asyncio.to_thread(_prepare)
 
-    generator = await get_media_generator(project_name, payload=payload, user_id=user_id, needs_i2i=False)
+    generator = await get_media_generator(project_name, payload=payload, user_id=user_id, needs_i2i=False, require_video_backend=False)
     aspect_ratio = get_aspect_ratio(project, bucket_key)
 
     image_provider_id, image_model_id = await _resolve_effective_image_backend(project, payload, needs_i2i=False)
@@ -1200,6 +1211,7 @@ async def execute_grid_task(
             payload=payload,
             user_id=user_id,
             needs_i2i=_needs_i2i,
+            require_video_backend=False,
         )
 
         project = await asyncio.to_thread(get_project_manager().load_project, project_name)
