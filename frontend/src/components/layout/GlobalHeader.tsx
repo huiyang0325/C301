@@ -232,7 +232,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
       {/* ---- Left section ---- */}
       <div className="flex items-center gap-3">
         {/* Logo */}
-        <img src="/android-chrome-192x192.png" alt="ArcReel" className="h-5 w-5" />
+        <img src="/android-chrome-192x192.png" alt="奶糖科技" className="h-5 w-5" />
 
         {/* Back to projects */}
         <button

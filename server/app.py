@@ -9,6 +9,14 @@
 node_modules / .venv / .git / .worktrees 等十几万个文件，单核 CPU 50%+。
 """
 
+import platform
+import sys
+
+# Windows Python 3.12 subprocess bug workaround - must be at top before other imports
+if platform.system() == "Windows" and sys.version_info >= (3, 12):
+    from lib.windows_subprocess_patch import apply_patch
+    apply_patch()
+
 import asyncio
 import logging
 import time

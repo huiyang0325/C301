@@ -1,0 +1,1070 @@
+Available: 3799 nodes
+
+  [OK] a369bcf7-842e-4cb9-9f7d-abacc12bcf26
+
+=== 1-【闲鱼萌宝】2511单图编辑 .json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Required input is missing: file
+Failed to convert an input value to a FLOAT value: volume, notify.mp
+
+=== 2-【闲鱼萌宝】2511单图出分镜图.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Required input is missing: edited_text_widget
+Exception when validating node: 482
+Required input is 
+
+=== 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 6
+Required input is missing: filename_prefix
+Exception when validati
+
+=== 4-【闲鱼萌宝】2511三图编辑.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Required input is missing: filename_prefix
+Exception when validating node: 21
+Exception when validat
+
+=== 5-【闲鱼萌宝】单图可视化出多角度.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 27
+Exception when validating node: 30
+Exception when validating node
+
+=== 6-【闲鱼萌宝】Z-image 高清出图.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 8
+
+=== 7-【闲鱼萌宝】自动反推洗图+sd放大.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 15
+Exception when validating node: 59
+Exception when validating node
+
+=== 8-【闲鱼萌宝】图片sd放大.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 5
+Exception when validating node: 7
+
+=== 9-【闲鱼萌宝】双采样超多细节文生图.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 65
+Exception when validating node: 81
+Exception when validating node
+
+=== 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 44
+Exception when validating node: 10
+
+=== 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 5049
+Exception when validating node: 4851
+
+=== 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 319
+Exception when validating node: 345
+Exception when validating no
+
+=== 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 312
+
+=== 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json ===
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [SKIP] no text input
+  [FAIL] Exception when validating node: 330
+Exception when validating node: 354
+
+
+=== 汇总 ===
+通过: 0/508
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 1-【闲鱼萌宝】2511单图编辑 .json
+  FAIL        : 1-【闲鱼萌宝】2511单图编辑 .json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 2-【闲鱼萌宝】2511单图出分镜图.json
+  FAIL        : 2-【闲鱼萌宝】2511单图出分镜图.json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  FAIL        : 3-【闲鱼萌宝】2511双图编辑+姿态迁移 .json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 4-【闲鱼萌宝】2511三图编辑.json
+  FAIL        : 4-【闲鱼萌宝】2511三图编辑.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 5-【闲鱼萌宝】单图可视化出多角度.json
+  FAIL        : 5-【闲鱼萌宝】单图可视化出多角度.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 6-【闲鱼萌宝】Z-image 高清出图.json
+  FAIL        : 6-【闲鱼萌宝】Z-image 高清出图.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  FAIL        : 7-【闲鱼萌宝】自动反推洗图+sd放大.json
+  SKIP_NO_TEXT: 8-【闲鱼萌宝】图片sd放大.json
+  SKIP_NO_TEXT: 8-【闲鱼萌宝】图片sd放大.json
+  SKIP_NO_TEXT: 8-【闲鱼萌宝】图片sd放大.json
+  SKIP_NO_TEXT: 8-【闲鱼萌宝】图片sd放大.json
+  SKIP_NO_TEXT: 8-【闲鱼萌宝】图片sd放大.json
+  SKIP_NO_TEXT: 8-【闲鱼萌宝】图片sd放大.json
+  SKIP_NO_TEXT: 8-【闲鱼萌宝】图片sd放大.json
+  FAIL        : 8-【闲鱼萌宝】图片sd放大.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 9-【闲鱼萌宝】双采样超多细节文生图.json
+  FAIL        : 9-【闲鱼萌宝】双采样超多细节文生图.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  FAIL        : 10-11-【闲鱼萌宝】LTX-2.3 文&图生视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  FAIL        : 12-【闲鱼萌宝】LTX2.3-首尾帧视频优化版.json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  FAIL        : 13-【闲鱼萌宝】LTX 2.3单人对口型工作流 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  FAIL        : 14-【闲鱼萌宝】LTX2.3双人对话对口型 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  SKIP_NO_TEXT: 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json
+  FAIL        : 15-【闲鱼萌宝】LTX2.3多图参考引导生成工作流 .json

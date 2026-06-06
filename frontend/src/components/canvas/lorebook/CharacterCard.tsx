@@ -17,6 +17,8 @@ interface CharacterSavePayload {
   description: string;
   voiceStyle: string;
   referenceFile?: File | null;
+  referenceDeleted?: boolean;
+  prompt?: string;
 }
 
 interface CharacterCardProps {
@@ -52,9 +54,13 @@ export function CharacterCard({
   const [imgError, setImgError] = useState(false);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
+  const [referenceDeleted, setReferenceDeleted] = useState(false);
+  const [prompt, setPrompt] = useState(character.prompt ?? "");
+  const [promptEditable, setPromptEditable] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingSheet, setUploadingSheet] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [previewingPrompt, setPreviewingPrompt] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sheetInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -79,7 +85,21 @@ export function CharacterCard({
   useEffect(() => {
     setDescription(character.description);
     setVoiceStyle(character.voice_style ?? "");
-  }, [character.description, character.voice_style]);
+    setPromptEditable(false);
+    // 自动加载或构建 prompt
+    if (character.prompt) {
+      setPrompt(character.prompt);
+    } else if (character.description) {
+      // 无保存的 prompt 时，自动调用 preview API 构建
+      API.previewPrompt(projectName, "character", name, { description: character.description })
+        .then((result) => {
+          setPrompt(result.prompt);
+        })
+        .catch(() => {});
+    } else {
+      setPrompt("");
+    }
+  }, [character.description, character.voice_style, character.prompt, name, projectName]);
 
   useEffect(() => {
     setImgError(false);
@@ -91,6 +111,7 @@ export function CharacterCard({
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
+    setReferenceDeleted(false);
   }, [character.reference_image]);
 
   useEffect(() => {
@@ -116,12 +137,15 @@ export function CharacterCard({
   const isDirty =
     description !== character.description ||
     voiceStyle !== (character.voice_style ?? "") ||
-    referenceFile !== null;
+    referenceFile !== null ||
+    referenceDeleted ||
+    prompt !== (character.prompt ?? "");
 
   const handleReferenceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setReferenceDeleted(false);
     setReferenceFile(file);
     setReferencePreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -141,6 +165,19 @@ export function CharacterCard({
     }
   };
 
+  const handlePreviewPrompt = async () => {
+    setPreviewingPrompt(true);
+    try {
+      const result = await API.previewPrompt(projectName, "character", name, { description });
+      setPrompt(result.prompt);
+      setPromptEditable(false);
+    } catch (err) {
+      useAppStore.getState().pushToast(errMsg(err), "error");
+    } finally {
+      setPreviewingPrompt(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -148,6 +185,8 @@ export function CharacterCard({
         description,
         voiceStyle,
         referenceFile,
+        referenceDeleted,
+        prompt,
       });
     } finally {
       setSaving(false);
@@ -162,8 +201,8 @@ export function CharacterCard({
     ? API.getFileUrl(projectName, character.reference_image, referenceFp)
     : null;
 
-  const displayedReferenceUrl = referencePreview ?? savedReferenceUrl;
-  const hasSavedReference = Boolean(savedReferenceUrl) && !referencePreview;
+  const displayedReferenceUrl = referenceDeleted ? null : (referencePreview ?? savedReferenceUrl);
+  const hasSavedReference = Boolean(savedReferenceUrl) && !referencePreview && !referenceDeleted;
 
   return (
     <div
@@ -276,15 +315,31 @@ export function CharacterCard({
                 <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent px-3 py-2">
                   <span className="flex items-center gap-1.5 text-xs text-gray-200">
                     <ImagePlus className="h-3.5 w-3.5" />
-                    {referenceFile ? t("unsaved_reference") : t("saved_reference")}
+                    {referenceFile ? t("unsaved_reference") : referenceDeleted ? t("deleted_reference") : t("saved_reference")}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="rounded bg-black/40 px-2 py-1 text-xs text-gray-200 transition-colors hover:bg-black/60"
-                  >
-                    {t("change")}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {!referenceDeleted && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReferenceDeleted(true);
+                          setReferenceFile(null);
+                          setReferencePreview(null);
+                        }}
+                        className="rounded bg-black/40 px-2 py-1 text-xs text-gray-200 transition-colors hover:bg-red-600/60"
+                        title={t("delete_reference")}
+                      >
+                        {t("delete")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded bg-black/40 px-2 py-1 text-xs text-gray-200 transition-colors hover:bg-black/60"
+                    >
+                      {t("change")}
+                    </button>
+                  </div>
                 </div>
               </div>
             </PreviewableImageFrame>
@@ -329,6 +384,31 @@ export function CharacterCard({
         className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus-ring"
         placeholder={t("voice_style_example")}
       />
+
+      {/* 提示词区域 */}
+      <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-400">{t("prompt_label", "生成提示词")}</span>
+          <button
+            type="button"
+            onClick={() => void handlePreviewPrompt()}
+            disabled={previewingPrompt || !description}
+            className="rounded bg-indigo-600/30 px-2 py-1 text-xs text-indigo-300 transition-colors hover:bg-indigo-600/50 disabled:opacity-40"
+          >
+            {previewingPrompt ? t("generating", "生成中...") : t("refresh_prompt", "刷新")}
+          </button>
+        </div>
+        <textarea
+          value={prompt}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            setPromptEditable(true);
+          }}
+          rows={6}
+          className="w-full resize-none rounded border border-gray-700 bg-gray-900 px-3 py-2 text-xs text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus-ring"
+          placeholder={t("prompt_placeholder", "编辑生成提示词...")}
+        />
+      </div>
 
       {isDirty && (
         <button

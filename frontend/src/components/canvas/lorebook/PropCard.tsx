@@ -27,6 +27,11 @@ interface PropCardProps {
   generating?: boolean;
 }
 
+interface PropSavePayload {
+  description: string;
+  prompt?: string;
+}
+
 // ---------------------------------------------------------------------------
 // PropCard
 // ---------------------------------------------------------------------------
@@ -46,8 +51,12 @@ export function PropCard({
     (s) => prop.prop_sheet ? s.getAssetFingerprint(prop.prop_sheet) : null,
   );
   const [description, setDescription] = useState(prop.description);
+  const [prompt, setPrompt] = useState(prop.prompt ?? "");
+  const [promptEditable, setPromptEditable] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [uploadingSheet, setUploadingSheet] = useState(false);
+  const [previewingPrompt, setPreviewingPrompt] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const sheetInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,11 +76,21 @@ export function PropCard({
     }
   };
 
-  const isDirty = description !== prop.description;
+  const isDirty = description !== prop.description || prompt !== (prop.prompt ?? "");
 
   useEffect(() => {
     setDescription(prop.description);
-  }, [prop.description]);
+    setPromptEditable(false);
+    if (prop.prompt) {
+      setPrompt(prop.prompt);
+    } else if (prop.description) {
+      API.previewPrompt(projectName, "prop", name, { description: prop.description })
+        .then((result) => setPrompt(result.prompt))
+        .catch(() => {});
+    } else {
+      setPrompt("");
+    }
+  }, [prop.description, prop.prompt, name, projectName]);
 
   useEffect(() => {
     setImgError(false);
@@ -93,8 +112,26 @@ export function PropCard({
     autoResize();
   }, [description, autoResize]);
 
-  const handleSave = () => {
-    onUpdate(name, { description });
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onUpdate(name, { description, prompt });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePreviewPrompt = async () => {
+    setPreviewingPrompt(true);
+    try {
+      const result = await API.previewPrompt(projectName, "prop", name, { description });
+      setPrompt(result.prompt);
+      setPromptEditable(false);
+    } catch (err) {
+      useAppStore.getState().pushToast(errMsg(err), "error");
+    } finally {
+      setPreviewingPrompt(false);
+    }
   };
 
   const sheetUrl = prop.prop_sheet
@@ -191,22 +228,50 @@ export function PropCard({
         placeholder={t("prop_desc_placeholder")}
       />
 
+      {/* 提示词区域 */}
+      <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-400">{t("prompt_label", "生成提示词")}</span>
+          <button
+            type="button"
+            onClick={() => void handlePreviewPrompt()}
+            disabled={previewingPrompt || !description}
+            className="rounded bg-indigo-600/30 px-2 py-1 text-xs text-indigo-300 transition-colors hover:bg-indigo-600/50 disabled:opacity-40"
+          >
+            {previewingPrompt ? t("generating", "生成中...") : t("refresh_prompt", "刷新")}
+          </button>
+        </div>
+        <textarea
+          value={prompt}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            setPromptEditable(true);
+          }}
+          rows={4}
+          className="w-full resize-none rounded border border-gray-700 bg-gray-900 px-3 py-2 text-xs text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus-ring"
+          placeholder={t("prompt_placeholder", "编辑生成提示词...")}
+        />
+      </div>
+
       {isDirty && (
         <button
           type="button"
-          onClick={handleSave}
-          className="mb-3 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+          onClick={() => void handleSave()}
+          disabled={saving}
+          className="mt-3 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors disabled:opacity-50"
         >
-          {t("common:save")}
+          {saving ? t("common:saving") : t("common:save")}
         </button>
       )}
 
-      <GenerateButton
-        onClick={() => onGenerate(name)}
-        loading={generating}
-        label={prop.prop_sheet ? t("regenerate_design") : t("generate_design")}
-        className="w-full justify-center"
-      />
+      <div className="mt-3">
+        <GenerateButton
+          onClick={() => onGenerate(name)}
+          loading={generating}
+          label={prop.prop_sheet ? t("regenerate_design") : t("generate_design")}
+          className="w-full justify-center"
+        />
+      </div>
     </div>
   );
 }

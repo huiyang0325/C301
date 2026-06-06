@@ -102,21 +102,24 @@ export function MediaModelSection() {
       {/* Video backend selector */}
       <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
         <div className="mb-3 text-sm font-medium text-gray-100">{t("default_video_model")}</div>
-        {videoBackends.length > 0 ? (
-          <ProviderModelSelect
-            value={currentVideo}
-            options={videoBackends}
-            providerNames={allProviderNames}
-            onChange={(v) => setDraft((prev) => ({ ...prev, default_video_backend: v }))}
-            allowDefault
-            defaultLabel={t("auto_select")}
-            defaultHint={t("auto")}
-          />
-        ) : (
-          <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-sm text-gray-500">
-            {t("no_video_providers_hint")}
-          </div>
-        )}
+        {(() => {
+          const filtered = videoBackends;
+          return filtered.length > 0 ? (
+            <ProviderModelSelect
+              value={currentVideo}
+              options={filtered}
+              providerNames={allProviderNames}
+              onChange={(v) => setDraft((prev) => ({ ...prev, default_video_backend: v }))}
+              allowDefault
+              defaultLabel={t("auto_select")}
+              defaultHint={t("auto")}
+            />
+          ) : (
+            <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-sm text-gray-500">
+              {t("no_video_providers_hint")}
+            </div>
+          );
+        })()}
 
         {/* Audio toggle */}
         <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-gray-300">
@@ -136,32 +139,35 @@ export function MediaModelSection() {
       {/* Image backend selectors (T2I + I2I) */}
       <div className="rounded-xl border border-gray-800 bg-gray-950/40 p-4">
         <div className="mb-3 text-sm font-medium text-gray-100">{t("default_image_model")}</div>
-        {imageBackends.length > 0 ? (
-          <ImageModelDualSelect
-            valueT2I={currentImageT2I}
-            valueI2I={currentImageI2I}
-            options={imageBackends}
-            providerNames={allProviderNames}
-            customProviders={customProviders}
-            onChange={({ t2i, i2i }) =>
-              setDraft((prev) => ({
-                ...prev,
-                default_image_backend_t2i: t2i,
-                default_image_backend_i2i: i2i,
-              }))
-            }
-            labelPrimary={t("default_image_model")}
-            labelT2I={t("image_model_t2i")}
-            labelI2I={t("image_model_i2i")}
-            defaultLabel={t("auto_select")}
-            defaultHint={t("auto")}
-            showCapabilityHint={false}
-          />
-        ) : (
-          <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-sm text-gray-500">
-            {t("no_image_providers_hint")}
-          </div>
-        )}
+        {(() => {
+          const filtered = imageBackends;
+          return filtered.length > 0 ? (
+            <ImageModelDualSelect
+              valueT2I={currentImageT2I}
+              valueI2I={currentImageI2I}
+              options={filtered}
+              providerNames={allProviderNames}
+              customProviders={customProviders}
+              onChange={({ t2i, i2i }) =>
+                setDraft((prev) => ({
+                  ...prev,
+                  default_image_backend_t2i: t2i,
+                  default_image_backend_i2i: i2i,
+                }))
+              }
+              labelPrimary={t("default_image_model")}
+              labelT2I={t("image_model_t2i")}
+              labelI2I={t("image_model_i2i")}
+              defaultLabel={t("auto_select")}
+              defaultHint={t("auto")}
+              showCapabilityHint={false}
+            />
+          ) : (
+            <div className="rounded-lg border border-gray-800 bg-gray-900/60 px-3 py-2 text-sm text-gray-500">
+              {t("no_image_providers_hint")}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Text backend selectors */}

@@ -15,9 +15,11 @@ import logging
 import re
 
 import httpx
+from httpx import ReadTimeout
 
 from lib.logging_utils import format_kwargs_for_log
 from lib.providers import PROVIDER_MINIMAX
+from lib.retry import with_retry_async
 from lib.text_backends.base import (
     TextCapability,
     TextGenerationRequest,
@@ -84,6 +86,22 @@ class MiniMaxTextBackend:
     def capabilities(self) -> set[TextCapability]:
         return self._capabilities
 
+    async def _call_api(self, url: str, payload: dict, headers: dict) -> dict:
+        """调用 MiniMax API，支持重试。"""
+        async with httpx.AsyncClient(timeout=3600, trust_env=False) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+
+    @with_retry_async(
+        max_attempts=3,
+        backoff_seconds=(2, 4, 8),
+        retryable_errors=(ReadTimeout, TimeoutError, ConnectionError),
+    )
+    async def _call_api_with_retry(self, url: str, payload: dict, headers: dict) -> dict:
+        """带重试的 API 调用。"""
+        return await self._call_api(url, payload, headers)
+
     async def generate(self, request: TextGenerationRequest) -> TextGenerationResult:
         """异步生成文本，支持结构化输出和 vision。"""
         url = f"{self._base_url}/v1/chat/completions"
@@ -98,9 +116,10 @@ class MiniMaxTextBackend:
             "reasoning_split": True,  # 将 thinking 内容分离到 reasoning_details 字段
         }
 
-        # 如果提供了 response_schema，使用 MiniMax 的结构化输出
-        # 注意：ccswitch 可能不支持 json_schema 格式，改用 json_object 强制 JSON 输出
-        if request.response_schema is not None:
+        # 如果提供了 response_schema 且没有 system_prompt，使用 MiniMax 的结构化输出
+        # 注意：如果有 system_prompt，已经包含了详细的 JSON 格式要求，不需要 response_format
+        # 因为 response_format 会导致 MiniMax M2.7 返回 thinking 内容而不是正确的 JSON 结构
+        if request.response_schema is not None and not request.system_prompt:
             payload["response_format"] = {"type": "json_object"}
 
         if request.max_output_tokens is not None:
@@ -116,10 +135,7 @@ class MiniMaxTextBackend:
             format_kwargs_for_log(payload),
         )
 
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+        data = await self._call_api_with_retry(url, payload, headers)
 
         # 解析响应
         choice = data.get("choices", [{}])[0]
@@ -170,7 +186,88 @@ class MiniMaxTextBackend:
         # 最终安全检查：即使 text 以 { 开头，也要验证它是有效 JSON
         if text.startswith("{"):
             try:
-                json.loads(text)
+                parsed = json.loads(text)
+                # 验证是否包含必需字段（NarrationEpisodeScript 需要 title, segments 等）
+                required_fields = ["title", "segments", "summary", "novel"]
+                missing = [f for f in required_fields if f not in parsed]
+                if missing:
+                    logger.warning("JSON 有效但缺少字段 %s，尝试寻找更好的 JSON", missing)
+                    # 在 text 中搜索所有可能的 JSON 块，找一个包含所需字段的
+                    # 收集所有 { 的位置，从每个位置向后搜索
+                    all_opens = [i for i, c in enumerate(text) if c == "{"]
+                    best_candidate = None
+                    best_has_all = False
+                    best_field_count = 0
+
+                    for start in all_opens:
+                        # 从这个 { 位置向后，逐步扩大搜索范围
+                        # 扩展到文本末尾之外，确保能搜索到完整 JSON
+                        text_len = len(text)
+                        # 搜索范围：从小到大逐步扩展，确保能找到完整 JSON
+                        for end_offset in range(20, text_len + 100000, 50):
+                            end = start + end_offset
+                            if end >= text_len:
+                                end = text_len - 1
+                            if end <= start:
+                                break
+                            candidate = text[start:end + 1]
+                            try:
+                                candidate_parsed = json.loads(candidate)
+                                has_all = all(f in candidate_parsed for f in required_fields)
+                                field_count = sum(1 for f in required_fields if f in candidate_parsed)
+                                if has_all:
+                                    best_candidate = candidate
+                                    best_has_all = True
+                                    best_field_count = field_count
+                                    break
+                                elif field_count > best_field_count:
+                                    best_candidate = candidate
+                                    best_field_count = field_count
+                            except json.JSONDecodeError:
+                                continue
+
+                    # 如果在 text 中找不到完整的 JSON，尝试从 reasoning_content 提取
+                    if not best_has_all and reasoning_content:
+                        logger.warning("text 中未找到完整 JSON，尝试从 reasoning_content 提取")
+                        reasoning_text = self._clean_thinking_content(reasoning_content)
+                        logger.warning("reasoning_text 长度=%d, starts_brace=%s", len(reasoning_text), reasoning_text.startswith("{"))
+
+                        if reasoning_text.startswith("{"):
+                            # 搜索 reasoning_content 中的完整 JSON
+                            re_all_opens = [i for i, c in enumerate(reasoning_text) if c == "{"]
+                            logger.warning("reasoning_text 中有 %d 个 { 位置", len(re_all_opens))
+
+                            for start in re_all_opens:
+                                text_len_r = len(reasoning_text)
+                                for end_offset in range(20, min(text_len_r + 50000, text_len_r + 50000), 50):
+                                    end = start + end_offset
+                                    if end >= text_len_r:
+                                        end = text_len_r - 1
+                                    if end <= start:
+                                        break
+                                    candidate = reasoning_text[start:end + 1]
+                                    try:
+                                        candidate_parsed = json.loads(candidate)
+                                        has_all = all(f in candidate_parsed for f in required_fields)
+                                        field_count = sum(1 for f in required_fields if f in candidate_parsed)
+                                        if has_all:
+                                            best_candidate = candidate
+                                            best_has_all = True
+                                            best_field_count = field_count
+                                            logger.warning("从 reasoning_content 找到完整 JSON, fields=%d, len=%d", field_count, len(candidate))
+                                            break
+                                        elif field_count > best_field_count:
+                                            best_candidate = candidate
+                                            best_field_count = field_count
+                                    except json.JSONDecodeError:
+                                        continue
+
+                    if best_has_all and best_candidate:
+                        logger.warning("从 content 中找到更完整的 JSON，长度=%d，字段数=%d", len(best_candidate), best_field_count)
+                        text = best_candidate
+                    elif best_candidate and len(best_candidate) > 200:
+                        logger.warning("使用次优 JSON，长度=%d，字段数=%d", len(best_candidate), best_field_count)
+                        text = best_candidate
                 # 是有效 JSON，使用它
                 pass
             except json.JSONDecodeError:
@@ -222,9 +319,23 @@ class MiniMaxTextBackend:
         """将 TextGenerationRequest 转为 MiniMax messages 格式。"""
         messages: list[dict] = []
 
-        # 如果需要结构化输出，添加 JSON 强制输出的 system prompt
-        if request.response_schema:
-            # 获取 schema 信息用于提示
+        # 构建 system message：如果有 system_prompt，将其与 schema 要求合并
+        if request.system_prompt:
+            if request.response_schema:
+                # 合并 system_prompt 和 schema 要求
+                schema = resolve_schema(request.response_schema)
+                schema_desc = json.dumps(schema, ensure_ascii=False)
+                combined = (
+                    f"{request.system_prompt}\n\n"
+                    f"请严格遵循以下 JSON Schema 返回数据：\n"
+                    f"{schema_desc}\n"
+                    f"要求：1. 仅返回 JSON，不要其他文字；2. 不要 thinking 或解释；3. 直接输出可解析的 JSON"
+                )
+                messages.append({"role": "system", "content": combined})
+            else:
+                messages.append({"role": "system", "content": request.system_prompt})
+        elif request.response_schema:
+            # 只有 schema，没有 system_prompt
             schema = resolve_schema(request.response_schema)
             schema_desc = json.dumps(schema, ensure_ascii=False)
             json_prompt = (
@@ -233,8 +344,6 @@ class MiniMaxTextBackend:
                 f"要求：1. 仅返回 JSON，不要其他文字；2. 不要 thinking 或解释；3. 直接输出可解析的 JSON"
             )
             messages.append({"role": "system", "content": json_prompt})
-        elif request.system_prompt:
-            messages.append({"role": "system", "content": request.system_prompt})
 
         # 构建 user message
         if request.images:
@@ -351,19 +460,30 @@ class MiniMaxTextBackend:
                     pass
 
         # 策略4：从原始文本中找所有 { 和 } 的配对，取最后一个有效的
+        # 但优先选择包含更多必需字段的 JSON
         all_opens = [i for i, c in enumerate(stripped) if c == "{"]
         all_closes = [i for i, c in enumerate(stripped) if c == "}"]
 
-        for close_idx in reversed(all_closes):
-            for open_idx in reversed(all_opens):
+        best_candidate = None
+        best_candidate_fields = 0
+        for open_idx in all_opens:
+            for close_idx in all_closes:
                 if open_idx < close_idx:
-                    candidate = stripped[open_idx : close_idx + 1]
+                    candidate = stripped[open_idx:close_idx + 1]
                     try:
-                        json.loads(candidate)
-                        logger.warning("从原始文本中找到有效JSON，open_idx=%d, close_idx=%d", open_idx, close_idx)
-                        return candidate
+                        candidate_parsed = json.loads(candidate)
+                        # 计算这个 candidate 包含多少必需字段
+                        fields_count = sum(1 for f in ["title", "summary", "novel", "segments", "content_mode", "duration_seconds"] if f in candidate_parsed)
+                        if fields_count > best_candidate_fields:
+                            best_candidate = candidate
+                            best_candidate_fields = fields_count
+                            logger.warning("找到更好的 JSON candidate: fields=%d, open_idx=%d, close_idx=%d", fields_count, open_idx, close_idx)
                     except json.JSONDecodeError:
                         continue
+
+        if best_candidate and best_candidate_fields > 0:
+            logger.warning("从原始文本中找到有效 JSON，fields=%d，长度=%d", best_candidate_fields, len(best_candidate))
+            return best_candidate
 
         # 策略5：处理 reasoning_content 没有 </think> 闭合标签的情况
         # 直接从 <think> 之后的内容中找 JSON

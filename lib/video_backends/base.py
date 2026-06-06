@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Generic, Protocol, TypeVar
 
 import httpx
 
@@ -27,7 +27,9 @@ IMAGE_MIME_TYPES: dict[str, str] = {
 }
 
 
-async def poll_with_retry[T](
+T = TypeVar("T")
+
+async def poll_with_retry(
     *,
     poll_fn: Callable[[], Awaitable[T]],
     is_done: Callable[[T], bool],

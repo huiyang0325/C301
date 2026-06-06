@@ -37,9 +37,10 @@ from lib.text_generator import TextGenerator
 
 logger = logging.getLogger(__name__)
 
-# 大型 JSON 剧本输出上限：22+ 场景典型约 14K token，留 2× 安全边际。
+# 大型 JSON 剧本输出上限：16K token，留 1.5× 安全边际。
 # 注意：受各模型硬上限约束（如 doubao-seed-1-8 ~8192），需选择支持 ≥16K 输出的模型。
-SCRIPT_MAX_OUTPUT_TOKENS = 32000
+# MiniMax M2.7 在输出 32K token 时容易超时，设置 16000 更安全。
+SCRIPT_MAX_OUTPUT_TOKENS = 16000
 
 
 class ScriptGenerator:

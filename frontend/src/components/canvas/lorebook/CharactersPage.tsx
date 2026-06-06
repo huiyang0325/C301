@@ -12,7 +12,7 @@ import type { Character } from "@/types";
 interface Props {
   projectName: string;
   characters: Record<string, Character>;
-  onSaveCharacter: (name: string, payload: { description: string; voiceStyle: string; referenceFile?: File | null }) => Promise<void>;
+  onSaveCharacter: (name: string, payload: { description: string; voiceStyle: string; referenceFile?: File | null; referenceDeleted?: boolean; prompt?: string }) => Promise<void>;
   onGenerateCharacter: (name: string) => void;
   onAddCharacter: (name: string, description: string, voiceStyle: string, referenceFile?: File | null) => Promise<void>;
   onRestoreCharacterVersion?: () => Promise<void> | void;

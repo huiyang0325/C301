@@ -30,15 +30,41 @@ class ComfyUIClient:
     def __init__(self, base_url: str = DEFAULT_COMFYUI_URL):
         self._base_url = base_url.rstrip("/")
         self._client: httpx.AsyncClient | None = None
+        self._available_types: set[str] | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=300)
+            self._client = httpx.AsyncClient(timeout=300, trust_env=False)
         return self._client
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
+
+    async def _load_available_types(self) -> set[str]:
+        """加载 ComfyUI 可用的节点类型列表。"""
+        if self._available_types is not None:
+            return self._available_types
+        try:
+            client = await self._get_client()
+            resp = await client.get(f"{self._base_url}/object_info")
+            resp.raise_for_status()
+            self._available_types = set(resp.json().keys())
+            logger.info("ComfyUI 可用节点类型: %d 个", len(self._available_types))
+        except Exception as e:
+            logger.warning("无法获取 ComfyUI 节点类型列表: %s", e)
+            self._available_types = set()
+        return self._available_types
+
+    def is_node_available(self, class_type: str) -> bool:
+        """检查节点类型是否可用。"""
+        if self._available_types is None:
+            return True  # 未知时默认允许
+        return class_type in self._available_types
+
+    def get_available_types_sync(self) -> set[str] | None:
+        """同步获取可用节点类型（需要先调用过异步方法）。"""
+        return self._available_types
 
     async def get_system_stats(self) -> dict[str, Any]:
         """获取 ComfyUI 系统状态（包括队列信息）。"""
@@ -75,8 +101,10 @@ class ComfyUIClient:
         """提交工作流到队列，返回 prompt_id。"""
         client = await self._get_client()
         resp = await client.post(f"{self._base_url}/prompt", json={"prompt": workflow})
-        print(f"[ComfyUI] status={resp.status_code} body={resp.text[:500]}")
-        resp.raise_for_status()
+        body_preview = resp.text[:1000]
+        print(f"[ComfyUI] status={resp.status_code} body={body_preview}")
+        if resp.status_code >= 400:
+            raise RuntimeError(f"ComfyUI API error {resp.status_code}: {body_preview}")
         data = resp.json()
         return data.get("prompt_id", "")
 

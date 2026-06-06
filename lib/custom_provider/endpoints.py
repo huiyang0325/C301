@@ -100,9 +100,69 @@ def _build_gemini_image(provider, model_id: str) -> CustomImageBackend:
     return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
 
 
+def _build_apimart_image(provider, model_id: str) -> CustomImageBackend:
+    from lib.image_backends.apimart import APIMartImageBackend
+    delegate = APIMartImageBackend(
+        api_key=provider.api_key,
+        base_url=provider.base_url or "https://api.apimart.ai",
+        model=model_id,
+    )
+    return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
+
+
+def _build_kyy_image(provider, model_id: str) -> CustomImageBackend:
+    from lib.image_backends.kyy import KYYImageBackend
+    delegate = KYYImageBackend(
+        api_key=provider.api_key,
+        base_url=provider.base_url or "https://zcbservice.aizfw.cn/kyyReactApiServer",
+        model=model_id,
+    )
+    return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
+
+
 def _build_openai_video(provider, model_id: str) -> CustomVideoBackend:
     base_url = ensure_openai_base_url(provider.base_url)
     delegate = OpenAIVideoBackend(api_key=provider.api_key, base_url=base_url, model=model_id)
+    return CustomVideoBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
+
+
+def _build_apimart_video(provider, model_id: str) -> CustomVideoBackend:
+    from lib.video_backends.apimart import APIMartVideoBackend
+    delegate = APIMartVideoBackend(
+        api_key=provider.api_key,
+        base_url=provider.base_url or "https://api.apimart.ai",
+        model=model_id,
+    )
+    return CustomVideoBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
+
+
+def _build_kyy_video(provider, model_id: str) -> CustomVideoBackend:
+    from lib.video_backends.kyy import KyyVideoBackend
+    delegate = KyyVideoBackend(
+        api_key=provider.api_key,
+        base_url=provider.base_url or "https://zcbservice.aizfw.cn/kyyReactApiServer",
+        model=model_id,
+    )
+    return CustomVideoBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
+
+
+def _build_keyi_video(provider, model_id: str) -> CustomVideoBackend:
+    from lib.video_backends.keyi import KeyiVideoBackend
+    delegate = KeyiVideoBackend(
+        api_key=provider.api_key,
+        base_url=provider.base_url or "https://zcbservice.aizfw.cn/kyyReactApiServer",
+        model=model_id,
+    )
+    return CustomVideoBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
+
+
+def _build_grok_keyi_video(provider, model_id: str) -> CustomVideoBackend:
+    from lib.video_backends.grok_keyi import GrokKeyiVideoBackend
+    delegate = GrokKeyiVideoBackend(
+        api_key=provider.api_key,
+        base_url=provider.base_url or "https://zcbservice.aizfw.cn/kyyReactApiServer",
+        model=model_id,
+    )
     return CustomVideoBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
 
 
@@ -184,6 +244,26 @@ ENDPOINT_REGISTRY: dict[str, EndpointSpec] = {
         image_capabilities=frozenset({ImageCapability.TEXT_TO_IMAGE, ImageCapability.IMAGE_TO_IMAGE}),
         build_backend=_build_gemini_image,
     ),
+    "apimart-image": EndpointSpec(
+        key="apimart-image",
+        media_type="image",
+        family="apimart",
+        display_name_key="endpoint_apimart_image_display",
+        request_method="POST",
+        request_path_template="/v1/images/generations",
+        image_capabilities=frozenset({ImageCapability.TEXT_TO_IMAGE, ImageCapability.IMAGE_TO_IMAGE}),
+        build_backend=_build_apimart_image,
+    ),
+    "kyy-image": EndpointSpec(
+        key="kyy-image",
+        media_type="image",
+        family="kyy",
+        display_name_key="endpoint_kyy_image_display",
+        request_method="POST",
+        request_path_template="/v1/banana/images",
+        image_capabilities=frozenset({ImageCapability.TEXT_TO_IMAGE, ImageCapability.IMAGE_TO_IMAGE}),
+        build_backend=_build_kyy_image,
+    ),
     "openai-video": EndpointSpec(
         key="openai-video",
         media_type="video",
@@ -192,6 +272,42 @@ ENDPOINT_REGISTRY: dict[str, EndpointSpec] = {
         request_method="POST",
         request_path_template="/v1/videos",
         build_backend=_build_openai_video,
+    ),
+    "apimart-video": EndpointSpec(
+        key="apimart-video",
+        media_type="video",
+        family="apimart",
+        display_name_key="endpoint_apimart_video_display",
+        request_method="POST",
+        request_path_template="/v1/videos/generations",
+        build_backend=_build_apimart_video,
+    ),
+    "kyy-video": EndpointSpec(
+        key="kyy-video",
+        media_type="video",
+        family="kyy",
+        display_name_key="endpoint_kyy_video_display",
+        request_method="POST",
+        request_path_template="/v1/seedance/videos",
+        build_backend=_build_kyy_video,
+    ),
+    "keyi-video": EndpointSpec(
+        key="keyi-video",
+        media_type="video",
+        family="keyi",
+        display_name_key="endpoint_keyi_video_display",
+        request_method="POST",
+        request_path_template="/v1/veo/videos",
+        build_backend=_build_keyi_video,
+    ),
+    "grok-keyi-video": EndpointSpec(
+        key="grok-keyi-video",
+        media_type="video",
+        family="grok-keyi",
+        display_name_key="endpoint_grok_keyi_video_display",
+        request_method="POST",
+        request_path_template="/v1/grok/videos",
+        build_backend=_build_grok_keyi_video,
     ),
     "newapi-video": EndpointSpec(
         key="newapi-video",

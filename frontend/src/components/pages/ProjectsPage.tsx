@@ -280,10 +280,10 @@ export function ProjectsPage() {
           <h1 className="flex items-center gap-2.5">
             <img
               src="/android-chrome-192x192.png"
-              alt="ArcReel"
+              alt="奶糖科技"
               className="h-7 w-7 rounded-lg border border-gray-800 bg-gray-900 p-0.5 shadow-md shadow-black/40"
             />
-            <span className="text-lg font-semibold tracking-tight text-white">ArcReel</span>
+            <span className="text-lg font-semibold tracking-tight text-white">奶糖科技</span>
             <span className="text-sm font-normal text-gray-500">{t("dashboard:projects")}</span>
             {projects.length > 0 && (
               <span className="text-xs text-gray-600">· {t("assets:project_count", { count: projects.length })}</span>

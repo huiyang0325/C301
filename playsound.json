@@ -1,0 +1,58 @@
+{
+  "input": {
+    "required": {
+      "any": [
+        "*",
+        {}
+      ],
+      "mode": [
+        [
+          "always",
+          "on empty queue"
+        ],
+        {}
+      ],
+      "volume": [
+        "FLOAT",
+        {
+          "min": 0,
+          "max": 1,
+          "step": 0.1,
+          "default": 0.5
+        }
+      ],
+      "file": [
+        "STRING",
+        {
+          "default": "notify.mp3"
+        }
+      ]
+    }
+  },
+  "input_order": {
+    "required": [
+      "any",
+      "mode",
+      "volume",
+      "file"
+    ]
+  },
+  "is_input_list": true,
+  "output": [
+    "*"
+  ],
+  "output_is_list": [
+    true
+  ],
+  "output_name": [
+    "*"
+  ],
+  "name": "PlaySound|pysssss",
+  "display_name": "PlaySound 🐍",
+  "description": "",
+  "python_module": "custom_nodes.comfyui-custom-scripts",
+  "category": "utils",
+  "output_node": true,
+  "has_intermediate_output": false,
+  "search_aliases": []
+}

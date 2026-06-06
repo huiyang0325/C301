@@ -22,7 +22,9 @@ frontend/ (React SPA)  →  server/ (FastAPI)  →  lib/ (核心库)
 # 后端
 # 启动开发服务器（必须用 --reload-dir 限定监视目录，否则 watchfiles 会扫描
 # node_modules / .venv / .git / .worktrees 等十几万个文件，单核 CPU 50%+）
-uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
+# 注意：uvicorn 不会自动加载 .env，必须显式调用 load_dotenv()
+# --reload-dir 限定监视目录以避免 watchfiles 扫描 node_modules / .venv / .git 等大量文件
+python -c "from dotenv import load_dotenv; load_dotenv('.env'); import uvicorn; uvicorn.run('server.app:app', host='127.0.0.1', port=1246, reload=True, reload_dirs=['lib', 'server', 'tests'])"
 
 uv run python -m pytest                              # 测试（-v 单文件 / -k 关键字 / --cov 覆盖率）
 uv run ruff check . && uv run ruff format .          # lint + format

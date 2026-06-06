@@ -411,7 +411,9 @@ class SessionManager:
         if project_context:
             parts.append(project_context)
 
-        return "\n".join(parts)
+        # Replace newlines with spaces to avoid Windows cmd.exe quoting issues
+        # with the Claude Code CLI subprocess
+        return "\n".join(parts).replace("\n", " ")
 
     def _build_project_context(self, project_name: str) -> str:
         """Build project-specific context from project.json metadata."""
@@ -1208,9 +1210,15 @@ class SessionManager:
 
             await self._ensure_capacity()
             managed_ref: list[ManagedSession | None] = [None]
+
+            # When session store is disabled, don't pass resume_id for existing sessions.
+            # With ARCREEL_SDK_SESSION_STORE=off, CLI has no local conversation data,
+            # so resuming an existing session would fail with "No conversation found".
+            from lib.agent_session_store import session_store_enabled
+
             options = self._build_options(
                 meta.project_name,
-                meta.id,  # SessionMeta.id 就是 sdk_session_id
+                resume_id=meta.id if session_store_enabled() else None,
                 can_use_tool=await self._build_can_use_tool_callback(session_id, managed_ref),
             )
 

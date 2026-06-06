@@ -182,7 +182,30 @@
       "Bash(taskkill //F //PID 14628)",
       "Bash(taskkill //F //PID 26436)",
       "Bash(powershell *)",
-      "Bash(taskkill //F //PID 24812)"
+      "Bash(taskkill //F //PID 24812)",
+      "Bash(git config *)",
+      "Bash(sqlite3 *)",
+      "Bash(taskkill /F /PID 40152)",
+      "Bash(taskkill /F /PID 29420)",
+      "Bash(taskkill //F //PID 29420)",
+      "Bash(taskkill //F //PID 34016)",
+      "Bash(taskkill //F //PID 24824)",
+      "Bash(taskkill //F //PID 45220)",
+      "WebFetch(domain:docs.comfy.org)",
+      "WebFetch(domain:comfyui.github.io)",
+      "WebFetch(domain:stablecog.com)",
+      "WebFetch(domain:www.geeksforgeeks.org)",
+      "Bash(python test_all_workflows.py)",
+      "Bash(python test_simple.py)",
+      "Bash(python test_debug.py)",
+      "Bash(gh api *)",
+      "Bash(python -c *)",
+      "Bash(python *.py *)",
+      "Bash(*)",
+      "WebFetch(domain:docs.apimart.ai)",
+      "WebFetch(domain:docs.globalaiopc.com)",
+      "Bash(rm -f \"E:/ArcReel_2026-06-06.zip\")",
+      "Bash(zip -r \"E:/ArcReel_2026-06-06.zip\" frontend lib server scripts tests agent_runtime_profile deploy docs CLAUDE.md pyproject.toml -x \"*.pyc\" -x \"__pycache__\" -x \"*.log\" -x \".git*\" -x \"node_modules/*\" -x \"*.egg-info/*\")"
     ]
   }
 }

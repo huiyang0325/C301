@@ -1,0 +1,59 @@
+{
+  "input": {
+    "required": {
+      "offload_model": [
+        "BOOLEAN",
+        {
+          "default": true
+        }
+      ],
+      "offload_cache": [
+        "BOOLEAN",
+        {
+          "default": true
+        }
+      ]
+    },
+    "optional": {
+      "anything": [
+        "*",
+        {}
+      ]
+    },
+    "hidden": {
+      "unique_id": "UNIQUE_ID",
+      "extra_pnginfo": "EXTRA_PNGINFO"
+    }
+  },
+  "input_order": {
+    "required": [
+      "offload_model",
+      "offload_cache"
+    ],
+    "optional": [
+      "anything"
+    ],
+    "hidden": [
+      "unique_id",
+      "extra_pnginfo"
+    ]
+  },
+  "is_input_list": false,
+  "output": [
+    "*"
+  ],
+  "output_is_list": [
+    false
+  ],
+  "output_name": [
+    "output"
+  ],
+  "name": "VRAMCleanup",
+  "display_name": "🎈VRAM-Cleanup",
+  "description": "",
+  "python_module": "custom_nodes.comfyui_memory_cleanup",
+  "category": "Memory Management",
+  "output_node": true,
+  "has_intermediate_output": false,
+  "search_aliases": []
+}

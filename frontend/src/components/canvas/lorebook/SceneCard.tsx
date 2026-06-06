@@ -27,6 +27,11 @@ interface SceneCardProps {
   generating?: boolean;
 }
 
+interface SceneSavePayload {
+  description: string;
+  prompt?: string;
+}
+
 // ---------------------------------------------------------------------------
 // SceneCard
 // ---------------------------------------------------------------------------
@@ -46,8 +51,12 @@ export function SceneCard({
     (s) => scene.scene_sheet ? s.getAssetFingerprint(scene.scene_sheet) : null,
   );
   const [description, setDescription] = useState(scene.description);
+  const [prompt, setPrompt] = useState(scene.prompt ?? "");
+  const [promptEditable, setPromptEditable] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [uploadingSheet, setUploadingSheet] = useState(false);
+  const [previewingPrompt, setPreviewingPrompt] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const sheetInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,11 +76,21 @@ export function SceneCard({
     }
   };
 
-  const isDirty = description !== scene.description;
+  const isDirty = description !== scene.description || prompt !== (scene.prompt ?? "");
 
   useEffect(() => {
     setDescription(scene.description);
-  }, [scene.description]);
+    setPromptEditable(false);
+    if (scene.prompt) {
+      setPrompt(scene.prompt);
+    } else if (scene.description) {
+      API.previewPrompt(projectName, "scene", name, { description: scene.description })
+        .then((result) => setPrompt(result.prompt))
+        .catch(() => {});
+    } else {
+      setPrompt("");
+    }
+  }, [scene.description, scene.prompt, name, projectName]);
 
   useEffect(() => {
     setImgError(false);
@@ -93,8 +112,26 @@ export function SceneCard({
     autoResize();
   }, [description, autoResize]);
 
-  const handleSave = () => {
-    onUpdate(name, { description });
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onUpdate(name, { description, prompt });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePreviewPrompt = async () => {
+    setPreviewingPrompt(true);
+    try {
+      const result = await API.previewPrompt(projectName, "scene", name, { description });
+      setPrompt(result.prompt);
+      setPromptEditable(false);
+    } catch (err) {
+      useAppStore.getState().pushToast(errMsg(err), "error");
+    } finally {
+      setPreviewingPrompt(false);
+    }
   };
 
   const sheetUrl = scene.scene_sheet
@@ -191,22 +228,50 @@ export function SceneCard({
         placeholder={t("scene_desc_placeholder")}
       />
 
+      {/* 提示词区域 */}
+      <div className="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-medium text-gray-400">{t("prompt_label", "生成提示词")}</span>
+          <button
+            type="button"
+            onClick={() => void handlePreviewPrompt()}
+            disabled={previewingPrompt || !description}
+            className="rounded bg-indigo-600/30 px-2 py-1 text-xs text-indigo-300 transition-colors hover:bg-indigo-600/50 disabled:opacity-40"
+          >
+            {previewingPrompt ? t("generating", "生成中...") : t("refresh_prompt", "刷新")}
+          </button>
+        </div>
+        <textarea
+          value={prompt}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            setPromptEditable(true);
+          }}
+          rows={4}
+          className="w-full resize-none rounded border border-gray-700 bg-gray-900 px-3 py-2 text-xs text-gray-200 placeholder-gray-500 focus:border-indigo-500 focus-ring"
+          placeholder={t("prompt_placeholder", "编辑生成提示词...")}
+        />
+      </div>
+
       {isDirty && (
         <button
           type="button"
-          onClick={handleSave}
-          className="mb-3 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors"
+          onClick={() => void handleSave()}
+          disabled={saving}
+          className="mt-3 rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 transition-colors disabled:opacity-50"
         >
-          {t("common:save")}
+          {saving ? t("common:saving") : t("common:save")}
         </button>
       )}
 
-      <GenerateButton
-        onClick={() => onGenerate(name)}
-        loading={generating}
-        label={scene.scene_sheet ? t("regenerate_design") : t("generate_design")}
-        className="w-full justify-center"
-      />
+      <div className="mt-3">
+        <GenerateButton
+          onClick={() => onGenerate(name)}
+          loading={generating}
+          label={scene.scene_sheet ? t("regenerate_design") : t("generate_design")}
+          className="w-full justify-center"
+        />
+      </div>
     </div>
   );
 }

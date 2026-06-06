@@ -45,3 +45,12 @@ from lib.comfyui_backends import ComfyUIImageBackend
 from lib.providers import PROVIDER_COMFYUI
 
 register_backend(PROVIDER_COMFYUI, ComfyUIImageBackend)
+
+from lib.image_backends.apimart import APIMartImageBackend
+
+register_backend("apimart", APIMartImageBackend)
+
+from lib.image_backends.kyy import KYYImageBackend
+from lib.providers import PROVIDER_KYY
+
+register_backend(PROVIDER_KYY, KYYImageBackend)

@@ -32,7 +32,7 @@ class ComfyUIImageBackend:
         self,
         *,
         comfyui_url: str = "http://127.0.0.1:8188",
-        default_workflow_id: str = "image_1",
+        default_workflow_id: str = "image_9",
     ):
         self._client = ComfyUIClient(base_url=comfyui_url)
         self._registry = get_workflow_registry()
@@ -52,6 +52,10 @@ class ComfyUIImageBackend:
 
     async def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         """通过 ComfyUI 工作流生成图片。"""
+        # 预加载可用节点类型（如尚未加载）
+        if self._client._available_types is None:
+            await self._client._load_available_types()
+
         # 从 request.metadata 获取工作流 ID
         workflow_id = (request.metadata or {}).get("workflow_id", self._default_workflow_id)
 
@@ -110,6 +114,7 @@ class ComfyUIImageBackend:
         链接格式: ComfyUI API 使用 [node_id, slot_index] 格式引用上游节点
         """
         prompt = {}
+        available_types = self._client.get_available_types_sync() if hasattr(self._client, 'get_available_types_sync') else None
 
         # 构建 link_id -> (source_node, source_output) 的映射
         # links 格式: [link_id, source_node, source_output, target_node, target_input, type]
@@ -121,22 +126,52 @@ class ComfyUIImageBackend:
 
         for node in workflow.get("nodes", []):
             node_id = str(node.get("id"))
+            class_type = node.get("type", "")
+
+            # 跳过不可用的节点类型
+            if available_types is not None and class_type not in available_types:
+                logger.warning("跳过不可用的节点: %s (%s)", node_id, class_type)
+                continue
+
+            # 获取节点的 input_order（如果有的话，用于确定 widget 值的正确消耗顺序）
+            input_order = node.get("input_order", [])
+            is_input_list = node.get("is_input_list", False)
 
             # 构建 inputs 字典
             inputs = {}
+            widgets_values = node.get("widgets_values", [])
+            widgets_values_idx = 0
+            if not isinstance(widgets_values, list):
+                widgets_values = []
+
+            # 如果节点有 input_order 且 is_input_list=True，说明 widget 值要按 input_order 顺序分配
+            # input_order 格式: {'required': ['input_a', 'input_b', ...]}
+            if input_order and is_input_list:
+                required_order = input_order.get("required", [])
+                # 建立 name -> index 的映射
+                input_name_to_wvs_idx = {}
+                for name in required_order:
+                    if widgets_values_idx < len(widgets_values):
+                        input_name_to_wvs_idx[name] = widgets_values_idx
+                        widgets_values_idx += 1
+
             for inp in node.get("inputs", []):
                 name = inp.get("name", "")
+                # Reroute 节点的输入 name 在工作流文件中是空字符串，但 API 需要 'value'
+                if name == "" and class_type == "ReroutePrimitive|pysssss":
+                    name = "value"
                 link = inp.get("link")
 
                 if link is not None and link in link_map:
                     # 输入有链接，格式: [source_node_id, source_output_slot]
                     inputs[name] = link_map[link]
-                else:
-                    # 输入无链接，使用 widget_values
-                    widgets_values = inp.get("widgets_values", [])
-                    if widgets_values:
-                        # 单值字段直接用值
-                        inputs[name] = widgets_values[0] if len(widgets_values) == 1 else widgets_values
+                elif input_order and is_input_list and name in input_name_to_wvs_idx:
+                    # 按 input_order 顺序分配 widget 值
+                    inputs[name] = widgets_values[input_name_to_wvs_idx[name]]
+                elif widgets_values_idx < len(widgets_values):
+                    # 输入无链接，按顺序从 node.widgets_values 取值填充（兼容旧格式）
+                    inputs[name] = widgets_values[widgets_values_idx]
+                    widgets_values_idx += 1
 
             prompt[node_id] = {
                 "class_type": node.get("type"),

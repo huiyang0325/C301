@@ -1,0 +1,348 @@
+{
+  "1": {
+    "class_type": "CFGNorm",
+    "inputs": {
+      "model": [
+        28,
+        0
+      ],
+      "strength": 1
+    }
+  },
+  "2": {
+    "class_type": "PlaySound|pysssss",
+    "inputs": {
+      "any": [
+        12,
+        0
+      ],
+      "mode": 1,
+      "volume": "notify.mp3"
+    }
+  },
+  "3": {
+    "class_type": "PreviewImage",
+    "inputs": {
+      "images": [
+        6,
+        0
+      ]
+    }
+  },
+  "4": {
+    "class_type": "Image Comparer (rgthree)",
+    "inputs": {
+      "image_a": [
+        12,
+        0
+      ],
+      "image_b": [
+        24,
+        0
+      ]
+    }
+  },
+  "5": {
+    "class_type": "ReroutePrimitive|pysssss",
+    "inputs": {
+      "value": [
+        20,
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "LayerUtility: ImageReelComposit",
+    "inputs": {
+      "reel_1": [
+        25,
+        0
+      ],
+      "reel_2": "Alibaba-PuHuiTi-Heavy.ttf",
+      "reel_3": 30,
+      "reel_4": 8,
+      "font_file": "light"
+    }
+  },
+  "7": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        12,
+        0
+      ],
+      "filename_prefix": "ComfyUI"
+    }
+  },
+  "8": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        19,
+        0
+      ],
+      "image1": [
+        18,
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": {
+      "clip": [
+        19,
+        0
+      ],
+      "vae": "将女人的头发变成绿色",
+      "image1": [
+        18,
+        0
+      ],
+      "prompt": [
+        27,
+        0
+      ]
+    }
+  },
+  "10": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": [
+        9,
+        0
+      ],
+      "latent": [
+        21,
+        0
+      ]
+    }
+  },
+  "11": {
+    "class_type": "ReferenceLatent",
+    "inputs": {
+      "conditioning": [
+        8,
+        0
+      ],
+      "latent": [
+        21,
+        0
+      ]
+    }
+  },
+  "14": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        16,
+        0
+      ],
+      "vae": [
+        5,
+        0
+      ]
+    }
+  },
+  "15": {
+    "class_type": "INTConstant",
+    "inputs": {
+      "value": 1280
+    }
+  },
+  "16": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        1,
+        0
+      ],
+      "positive": [
+        10,
+        0
+      ],
+      "negative": [
+        11,
+        0
+      ],
+      "latent_image": [
+        22,
+        0
+      ],
+      "seed": 311378131658745,
+      "steps": "randomize",
+      "cfg": 4,
+      "sampler_name": 1,
+      "scheduler": "euler_ancestral",
+      "denoise": "simple"
+    }
+  },
+  "17": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        23,
+        0
+      ],
+      "vae": [
+        20,
+        0
+      ]
+    }
+  },
+  "18": {
+    "class_type": "ReroutePrimitive|pysssss",
+    "inputs": {
+      "value": [
+        26,
+        0
+      ]
+    }
+  },
+  "19": {
+    "class_type": "ReroutePrimitive|pysssss",
+    "inputs": {
+      "value": [
+        29,
+        0
+      ]
+    }
+  },
+  "20": {
+    "class_type": "ReroutePrimitive|pysssss",
+    "inputs": {
+      "value": [
+        30,
+        2
+      ]
+    }
+  },
+  "21": {
+    "class_type": "ReroutePrimitive|pysssss",
+    "inputs": {
+      "value": [
+        17,
+        0
+      ]
+    }
+  },
+  "22": {
+    "class_type": "ReroutePrimitive|pysssss",
+    "inputs": {
+      "value": [
+        21,
+        0
+      ]
+    }
+  },
+  "23": {
+    "class_type": "LayerUtility: ImageScaleByAspectRatio V2",
+    "inputs": {
+      "image": [
+        26,
+        0
+      ],
+      "mask": "original",
+      "aspect_ratio": 1,
+      "proportional_width": 1,
+      "proportional_height": "letterbox",
+      "fit": "lanczos",
+      "method": "8",
+      "round_to_multiple": "longest",
+      "scale_to_side": 1536,
+      "scale_to_length": [
+        15,
+        0
+      ],
+      "background_color": "#000000"
+    }
+  },
+  "24": {
+    "class_type": "ReroutePrimitive|pysssss",
+    "inputs": {
+      "value": [
+        18,
+        0
+      ]
+    }
+  },
+  "25": {
+    "class_type": "LayerUtility: ImageReel",
+    "inputs": {
+      "image1": [
+        24,
+        0
+      ],
+      "image2": [
+        12,
+        0
+      ],
+      "image3": "original",
+      "image4": "Final Effect",
+      "image3_text": 1024,
+      "image4_text": 32
+    }
+  },
+  "28": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        30,
+        0
+      ],
+      "lora_name": "Qwen-Image-Edit-F2P.safetensors",
+      "strength_model": 0.25
+    }
+  },
+  "29": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    }
+  },
+  "26": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ComfyUI_00130_.png",
+      "upload": "image"
+    }
+  },
+  "27": {
+    "class_type": "CR Prompt Text",
+    "inputs": {
+      "prompt": "去掉图中男子脸上的汗液"
+    }
+  },
+  "30": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Qwen-Rapid-AIO-NSFW-v18.safetensors"
+    }
+  },
+  "13": {
+    "class_type": "RAMCleanup",
+    "inputs": {
+      "anything": [
+        14,
+        0
+      ],
+      "clean_file_cache": true,
+      "clean_processes": true,
+      "clean_dlls": true,
+      "retry_times": 3
+    }
+  },
+  "12": {
+    "class_type": "VRAMCleanup",
+    "inputs": {
+      "anything": [
+        13,
+        0
+      ],
+      "offload_model": true,
+      "offload_cache": true
+    }
+  }
+}

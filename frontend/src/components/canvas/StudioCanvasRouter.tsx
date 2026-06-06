@@ -211,6 +211,8 @@ export function StudioCanvasRouter() {
       description: string;
       voiceStyle: string;
       referenceFile?: File | null;
+      referenceDeleted?: boolean;
+      prompt?: string;
     },
   ) => {
     if (!currentProjectName) return;
@@ -218,6 +220,12 @@ export function StudioCanvasRouter() {
       await API.updateCharacter(currentProjectName, name, {
         description: payload.description,
         voice_style: payload.voiceStyle,
+        ...(payload.referenceDeleted
+          ? { reference_image: "" }
+          : {}),
+        ...(payload.prompt !== undefined
+          ? { prompt: payload.prompt }
+          : {}),
       });
 
       if (payload.referenceFile) {
@@ -230,7 +238,7 @@ export function StudioCanvasRouter() {
       }
 
       await refreshProject(
-        payload.referenceFile
+        payload.referenceFile || payload.referenceDeleted
           ? [buildEntityRevisionKey("character", name)]
           : [],
       );
@@ -243,10 +251,13 @@ export function StudioCanvasRouter() {
   const handleGenerateCharacter = useCallback(async (name: string) => {
     if (!currentProjectName) return;
     try {
+      const char = currentProjectData?.characters?.[name];
+      // 优先使用保存的 prompt，否则用 description
+      const promptToUse = char?.prompt || char?.description || "";
       await API.generateCharacter(
         currentProjectName,
         name,
-        currentProjectData?.characters?.[name]?.description ?? "",
+        promptToUse,
       );
       useAppStore
         .getState()

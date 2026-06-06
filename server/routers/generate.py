@@ -18,6 +18,7 @@ from lib.asset_types import ASSET_SPECS
 from lib.generation_queue import get_generation_queue
 from lib.i18n import Translator
 from lib.project_manager import ProjectManager
+from lib.prompt_builders import build_character_prompt, build_scene_prompt, build_prop_prompt
 from lib.prompt_utils import (
     is_structured_image_prompt,
     is_structured_video_prompt,
@@ -63,6 +64,10 @@ class GenerateSceneRequest(BaseModel):
 
 class GeneratePropRequest(BaseModel):
     prompt: str
+
+
+class PreviewPromptRequest(BaseModel):
+    description: str
 
 
 _LEGACY_PROVIDER_NAMES: dict[str, str] = {
@@ -408,3 +413,33 @@ async def generate_prop(
     except Exception as e:
         logger.exception("请求处理失败")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/projects/{project_name}/preview-prompt/{asset_type}/{asset_name}")
+async def preview_asset_prompt(
+    project_name: str,
+    asset_type: str,
+    asset_name: str,
+    req: PreviewPromptRequest,
+    _user: CurrentUser,
+    _t: Translator,
+):
+    """预览资产设计图的 prompt（根据 description 自动构建）"""
+    if asset_type not in ASSET_SPECS:
+        raise HTTPException(status_code=400, detail=_t("invalid_asset_type"))
+
+    def _sync():
+        project = get_project_manager().load_project(project_name)
+        style = project.get("style", "")
+        style_description = project.get("style_description", "")
+
+        if asset_type == "character":
+            return build_character_prompt(asset_name, req.description, style, style_description)
+        elif asset_type == "scene":
+            return build_scene_prompt(asset_name, req.description, style, style_description)
+        elif asset_type == "prop":
+            return build_prop_prompt(asset_name, req.description, style, style_description)
+        return ""
+
+    prompt = await asyncio.to_thread(_sync)
+    return {"prompt": prompt}

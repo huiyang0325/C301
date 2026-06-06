@@ -10,6 +10,9 @@ export const PROVIDER_NAMES: Record<string, string> = {
   ark: "火山方舟",
   grok: "Grok",
   openai: "OpenAI",
+  kyy: "KYY",
+  keyi: "Keyi",
+  grok_keyi: "Grok-Keyi",
 };
 
 /**

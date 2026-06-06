@@ -513,6 +513,21 @@ class API {
     );
   }
 
+  static async previewPrompt(
+    projectName: string,
+    assetType: string,
+    assetName: string,
+    body: { description: string }
+  ): Promise<{ prompt: string }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/preview-prompt/${assetType}/${encodeURIComponent(assetName)}`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      }
+    );
+  }
+
   // ==================== 项目场景管理 ====================
 
   static async addProjectScene(

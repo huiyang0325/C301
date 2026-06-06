@@ -20,16 +20,19 @@ export interface Character {
   character_sheet?: string;
   voice_style?: string;
   reference_image?: string;
+  prompt?: string;
 }
 
 export interface Scene {
   description: string;
   scene_sheet?: string;
+  prompt?: string;
 }
 
 export interface Prop {
   description: string;
   prop_sheet?: string;
+  prompt?: string;
 }
 
 export interface AspectRatio {

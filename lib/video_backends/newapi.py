@@ -146,7 +146,7 @@ class NewAPIVideoBackend:
         logger.info("NewAPI 视频生成开始: model=%s, duration=%s", self._model, request.duration_seconds)
         logger.info("调用 %s 视频 SDK payload=%s", self.name, format_kwargs_for_log(payload))
 
-        async with httpx.AsyncClient(timeout=self._http_timeout) as client:
+        async with httpx.AsyncClient(timeout=self._http_timeout, trust_env=False) as client:
             task_id = await self._create_task(client, payload)
             logger.info("NewAPI 任务创建: task_id=%s", task_id)
 

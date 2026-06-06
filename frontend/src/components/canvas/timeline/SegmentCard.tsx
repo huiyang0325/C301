@@ -5,6 +5,7 @@ import { ImageIcon, Film, Clock, Edit3 } from "lucide-react";
 import { API } from "@/api";
 import { DEFAULT_DURATIONS } from "@/utils/provider-models";
 import { VersionTimeMachine } from "@/components/canvas/timeline/VersionTimeMachine";
+import { VideoPromptPreview } from "@/components/canvas/timeline/VideoPromptPreview";
 import { AvatarStack } from "@/components/ui/AvatarStack";
 import { ClueStack } from "@/components/ui/ClueStack";
 import {
@@ -539,6 +540,11 @@ function PromptColumn({
             }}
             placeholder={t("video_prompt_placeholder")}
           />
+        )}
+
+        {/* Video Prompt Preview — 可视化实际发送给模型的提示词 */}
+        {isStructuredVideo && vidDraft && (
+          <VideoPromptPreview prompt={vidDraft} collapsible />
         )}
       </div>
     </div>
