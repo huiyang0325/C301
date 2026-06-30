@@ -205,7 +205,8 @@
       "WebFetch(domain:docs.apimart.ai)",
       "WebFetch(domain:docs.globalaiopc.com)",
       "Bash(rm -f \"E:/ArcReel_2026-06-06.zip\")",
-      "Bash(zip -r \"E:/ArcReel_2026-06-06.zip\" frontend lib server scripts tests agent_runtime_profile deploy docs CLAUDE.md pyproject.toml -x \"*.pyc\" -x \"__pycache__\" -x \"*.log\" -x \".git*\" -x \"node_modules/*\" -x \"*.egg-info/*\")"
+      "Bash(zip -r \"E:/ArcReel_2026-06-06.zip\" frontend lib server scripts tests agent_runtime_profile deploy docs CLAUDE.md pyproject.toml -x \"*.pyc\" -x \"__pycache__\" -x \"*.log\" -x \".git*\" -x \"node_modules/*\" -x \"*.egg-info/*\")",
+      "WebFetch(domain:bytedance.larkoffice.com)"
     ]
   }
 }

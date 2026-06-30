@@ -12,8 +12,8 @@ node_modules / .venv / .git / .worktrees 等十几万个文件，单核 CPU 50%+
 import platform
 import sys
 
-# Windows Python 3.12 subprocess bug workaround - must be at top before other imports
-if platform.system() == "Windows" and sys.version_info >= (3, 12):
+# Windows subprocess bug workaround - must be at top before other imports
+if platform.system() == "Windows":
     from lib.windows_subprocess_patch import apply_patch
     apply_patch()
 
@@ -44,6 +44,7 @@ from server.routers import (
     agent_chat,
     api_keys,
     assets,
+    arrangements,
     assistant,
     characters,
     comfyui,
@@ -317,6 +318,7 @@ app.include_router(cost_estimation.router, prefix="/api/v1", tags=["费用估算
 app.include_router(comfyui.router, prefix="/api/v1", tags=["ComfyUI"])
 app.include_router(grids.router, prefix="/api/v1", tags=["宫格图"])
 app.include_router(reference_videos.router, prefix="/api/v1", tags=["参考生视频"])
+app.include_router(arrangements.router, prefix="/api/v1", tags=["长视频编排"])
 app.include_router(assets.router, prefix="/api/v1", tags=["全局资产库"])
 
 

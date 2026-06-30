@@ -18,8 +18,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Only apply on Windows Python 3.12+
-SHOULD_PATCH = platform.system() == "Windows" and sys.version_info >= (3, 12)
+# Only apply on Windows
+SHOULD_PATCH = platform.system() == "Windows"
 
 # Store original
 _original_create_subprocess_exec: Any = None

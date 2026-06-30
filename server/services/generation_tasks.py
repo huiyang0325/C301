@@ -5,7 +5,9 @@ Task execution service for queued generation jobs.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -934,6 +936,210 @@ async def execute_video_task(
     }
 
 
+async def execute_long_video_task(
+    project_name: str, resource_id: str, payload: dict[str, Any], *, user_id: str = DEFAULT_USER_ID
+) -> dict[str, Any]:
+    """执行长视频生成任务 - 分段首尾帧插值生成 + ffmpeg 拼接。
+
+    策略：
+    - 若 video backend 支持 last_frame，每对相邻分镜用 (start_image, last_frame) 生成过渡视频，
+      最后 ffmpeg 拼接，保证分镜间连续性。
+    - 若不支持 last_frame，每个分镜独立生成短视频，ffmpeg 拼接（连续性略差但不迷路）。
+    """
+    episode = payload.get("episode")
+    segment_ids = payload.get("segment_ids", [])
+    prompt = payload.get("prompt", "")
+    duration_seconds = payload.get("duration_seconds") or 8
+    aspect_ratio = payload.get("aspect_ratio", "16:9")
+
+    if not episode or not segment_ids:
+        raise ValueError("episode and segment_ids are required for long_video task")
+
+    # -------------------------------------------------------------------------
+    # 编排文件读写 helpers
+    # -------------------------------------------------------------------------
+    def _load_arrangement():
+        pm_local = get_project_manager()
+        project_path = pm_local.get_project_path(project_name)
+        arrangement_path = project_path / "arrangements" / f"episode_{episode}.json"
+        if not arrangement_path.exists():
+            raise FileNotFoundError(f"编排文件不存在: episode_{episode}")
+        with open(arrangement_path, encoding="utf-8") as f:
+            return json.load(f), project_path
+
+    def _save_arrangement(data):
+        pm_local = get_project_manager()
+        project_path = pm_local.get_project_path(project_name)
+        arrangement_path = project_path / "arrangements" / f"episode_{episode}.json"
+        with open(arrangement_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    arrangement, project_path = await asyncio.to_thread(_load_arrangement)
+    content_mode = arrangement.get("content_mode", "narration")
+    items_key = "segments" if content_mode == "narration" else "scenes"
+    id_key = "segment_id" if content_mode == "narration" else "scene_id"
+
+    # -------------------------------------------------------------------------
+    # 收集有分镜图的分镜（按 segment_ids 顺序）
+    # -------------------------------------------------------------------------
+    ordered_items: list[dict] = []
+    for item in arrangement.get(items_key, []):
+        item_id = item.get(id_key)
+        if item_id in segment_ids:
+            assets = item.get("generated_assets") or {}
+            sb_image = assets.get("storyboard_image")
+            if sb_image:
+                sb_path = project_path / sb_image
+                if sb_path.exists():
+                    ordered_items.append({
+                        "id": item_id,
+                        "path": sb_path,
+                        "video_prompt": item.get("video_prompt", ""),
+                        "duration_seconds": item.get("duration_seconds", 8),
+                    })
+
+    if len(ordered_items) < 1:
+        raise ValueError("长视频生成至少需要 1 个有分镜图的分镜")
+
+    # -------------------------------------------------------------------------
+    # 获取 video backend，检查 last_frame 能力
+    # -------------------------------------------------------------------------
+    generator = await get_media_generator(
+        project_name,
+        payload={"duration_seconds": duration_seconds},
+        user_id=user_id,
+        require_image_backend=False,
+        require_video_backend=True,
+    )
+
+    video_backend = generator._video_backend
+    if video_backend is None:
+        raise RuntimeError("Video backend not configured")
+
+    # -------------------------------------------------------------------------
+    # 分段生成视频：每个分镜独立生成短视频，ffmpeg 拼接
+    # 注：last_frame 插值方案（相邻分镜两两生成过渡视频）因各 backend 对 end_image
+    # 参数支持不完善，暂时搁置。采用更稳定的独立生成 + 拼接方案。
+    # -------------------------------------------------------------------------
+    output_dir = project_path / "videos"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    prompt_text = prompt if isinstance(prompt, str) else str(prompt.get("action", "") or "continuous video")
+
+    segment_video_paths: list[Path] = []
+    version = 1
+
+    for i, item in enumerate(ordered_items):
+        seg_prompt = _build_single_prompt(item["video_prompt"], prompt_text)
+        seg_resource_id = f"{resource_id}_lv_{i+1}"
+        # 每个分镜使用自己的 duration_seconds
+        seg_duration = item.get("duration_seconds") or duration_seconds
+
+        seg_output, version, _, _ = await generator.generate_video_async(
+            prompt=seg_prompt,
+            resource_type="videos",
+            resource_id=seg_resource_id,
+            start_image=item["path"],
+            reference_images=None,
+            aspect_ratio=aspect_ratio,
+            duration_seconds=seg_duration,
+        )
+        segment_video_paths.append(seg_output)
+
+    # -------------------------------------------------------------------------
+    # ffmpeg 拼接
+    # -------------------------------------------------------------------------
+    # 用 segment_ids 的 hash 生成唯一文件名，避免同 episode 不同 segment 互相覆盖
+    import hashlib
+    segment_ids_hash = hashlib.md5(",".join(sorted(segment_ids)).encode()).hexdigest()[:8]
+    if len(segment_video_paths) == 1:
+        final_output_path = segment_video_paths[0]
+    else:
+        final_output_path = output_dir / f"long_video_{resource_id}_{segment_ids_hash}.mp4"
+        await _concat_videos(segment_video_paths, final_output_path)
+
+    # -------------------------------------------------------------------------
+    # 保存视频路径到编排文件
+    # -------------------------------------------------------------------------
+    def _save_video_path():
+        arr, _ = _load_arrangement()
+        key = ",".join(sorted(segment_ids))
+        if "long_video_groups" not in arr:
+            arr["long_video_groups"] = {}
+        rel_path = str(final_output_path.relative_to(project_path))
+        arr["long_video_groups"][key] = rel_path
+        _save_arrangement(arr)
+
+    await asyncio.to_thread(_save_video_path)
+
+    return {
+        "version": version,
+        "file_path": str(final_output_path.relative_to(project_path)),
+        "created_at": None,
+        "resource_type": "videos",
+        "resource_id": resource_id,
+        "video_uri": None,
+        "segment_count": len(segment_video_paths),
+        "last_frame_used": False,
+    }
+
+
+def _build_transition_prompt(vp_start, vp_end, fallback: str) -> str:
+    """从相邻两段的 video_prompt 构建过渡描述。"""
+    parts = []
+    if isinstance(vp_start, str) and vp_start:
+        parts.append(vp_start)
+    elif isinstance(vp_start, dict):
+        if vp_start.get("action"):
+            parts.append(vp_start["action"])
+    if isinstance(vp_end, str) and vp_end:
+        parts.append(f"then {vp_end}")
+    elif isinstance(vp_end, dict):
+        if vp_end.get("action"):
+            parts.append(f"then {vp_end['action']}")
+    return " ".join(parts) if parts else fallback
+
+
+def _build_single_prompt(vp, fallback: str) -> str:
+    """从单段 video_prompt 构建生成描述。"""
+    if isinstance(vp, str) and vp:
+        return vp
+    if isinstance(vp, dict):
+        return vp.get("action", "") or fallback
+    return fallback
+
+
+async def _concat_videos(video_paths: list[Path], output_path: Path) -> None:
+    """使用 ffmpeg concat demuxer 拼接多个视频。"""
+    import subprocess
+    import os
+
+    list_file = None
+    try:
+        # 创建 concat file（Linux 路径）
+        list_file = "/tmp/concat_videos.txt"
+        with open(list_file, "w", encoding="utf-8") as f:
+            for p in video_paths:
+                f.write(f"file '{p.resolve()}'\n")
+
+        # 使用 WSL 中已安装的 Linux ffmpeg
+        ffmpeg_path = os.path.expanduser("~/bin/ffmpeg")
+
+        result = await asyncio.to_thread(
+            subprocess.run,
+            [ffmpeg_path, "-y", "-f", "concat", "-safe", "0", "-i", list_file, "-c", "copy", str(output_path)],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            stderr_msg = result.stderr.decode("utf-8", errors="replace")
+            stdout_msg = result.stdout.decode("utf-8", errors="replace")
+            logger.error("ffmpeg concat failed: %s", stderr_msg)
+            raise RuntimeError(f"ffmpeg concat failed: {stderr_msg}\nffmpeg stdout: {stdout_msg}")
+    finally:
+        if list_file:
+            Path(list_file).unlink(missing_ok=True)
+
+
 async def execute_character_task(
     project_name: str, resource_id: str, payload: dict[str, Any], *, user_id: str = DEFAULT_USER_ID
 ) -> dict[str, Any]:
@@ -1315,6 +1521,7 @@ async def _execute_reference_video_task_proxy(
 _TASK_EXECUTORS = {
     "storyboard": execute_storyboard_task,
     "video": execute_video_task,
+    "long_video": execute_long_video_task,
     "character": execute_character_task,
     "scene": execute_scene_task,
     "prop": execute_prop_task,

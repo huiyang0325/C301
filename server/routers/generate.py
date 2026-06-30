@@ -54,6 +54,15 @@ class GenerateVideoRequest(BaseModel):
     seed: int | None = None
 
 
+class GenerateLongVideoRequest(BaseModel):
+    """生成长视频请求 — 接收一组分镜的 storyboard images 作为参考图。"""
+    episode: int
+    segment_ids: list[str]
+    prompt: str | dict
+    duration_seconds: int | None = None
+    aspect_ratio: str = "16:9"
+
+
 class GenerateCharacterRequest(BaseModel):
     prompt: str
 
@@ -443,3 +452,63 @@ async def preview_asset_prompt(
 
     prompt = await asyncio.to_thread(_sync)
     return {"prompt": prompt}
+
+
+# ==================== 长视频生成 ====================
+
+
+@router.post("/projects/{project_name}/generate/long-video")
+async def generate_long_video(
+    project_name: str,
+    req: GenerateLongVideoRequest,
+    _user: CurrentUser,
+    _t: Translator,
+):
+    """
+    提交长视频生成任务到队列，立即返回 task_id。
+
+    编排数据存储在 arrangements/episode_{N}.json，与原始剧本独立。
+    生成完成后视频路径会自动保存到编排文件的 long_video_groups 字段。
+    """
+    try:
+        # 1. 验证编排文件存在
+        def _check_arrangement():
+            pm_local = get_project_manager()
+            project_path = pm_local.get_project_path(project_name)
+            arrangement_path = project_path / "arrangements" / f"episode_{req.episode}.json"
+            if not arrangement_path.exists():
+                raise HTTPException(status_code=404, detail=_t("arrangement_not_found", episode=req.episode))
+
+        await asyncio.to_thread(_check_arrangement)
+
+        # 2. 入队
+        queue = get_generation_queue()
+        result = await queue.enqueue_task(
+            project_name=project_name,
+            task_type="long_video",
+            media_type="video",
+            resource_id=f"long_video_{req.episode}",
+            payload={
+                "episode": req.episode,
+                "segment_ids": req.segment_ids,
+                "prompt": req.prompt,
+                "duration_seconds": req.duration_seconds,
+                "aspect_ratio": req.aspect_ratio,
+            },
+            source="webui",
+            user_id=_user.id,
+        )
+
+        return {
+            "success": True,
+            "task_id": result["task_id"],
+            "message": _t("long_video_task_submitted", count=len(req.segment_ids)),
+        }
+
+    except HTTPException:
+        raise
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("生成长视频失败")
+        raise HTTPException(status_code=500, detail=str(e))

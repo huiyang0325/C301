@@ -654,6 +654,67 @@ class API {
     );
   }
 
+  // ==================== 长视频编排 ====================
+
+  static async getArrangement(
+    projectName: string,
+    episode: number
+  ): Promise<EpisodeScript> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/arrangements/${episode}`
+    );
+  }
+
+  static async deleteArrangement(
+    projectName: string,
+    episode: number
+  ): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/arrangements/${episode}`,
+      { method: "DELETE" }
+    );
+  }
+
+  static async deleteArrangementSegment(
+    projectName: string,
+    episode: number,
+    segmentId: string
+  ): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/arrangements/${episode}/segments/${encodeURIComponent(segmentId)}`,
+      { method: "DELETE" }
+    );
+  }
+
+  static async reorderArrangement(
+    projectName: string,
+    episode: number,
+    segmentIds: string[]
+  ): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/arrangements/${episode}/reorder`,
+      {
+        method: "POST",
+        body: JSON.stringify({ segment_ids: segmentIds }),
+      }
+    );
+  }
+
+  static async updateArrangementSegment(
+    projectName: string,
+    episode: number,
+    segmentId: string,
+    updates: Record<string, unknown>
+  ): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/arrangements/${episode}/segments/${encodeURIComponent(segmentId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      }
+    );
+  }
+
   // ==================== 文件管理 ====================
 
   static async uploadFile(
@@ -1883,6 +1944,47 @@ class API {
     return this.request(
       `/projects/${encodeURIComponent(projectName)}/reference-videos/episodes/${episode}/units/${encodeURIComponent(unitId)}/generate`,
       { method: "POST" },
+    );
+  }
+
+  // ==================== 长视频生成 API ====================
+
+  /**
+   * 生成长视频 — 将一组分镜的 storyboard images 作为参考图生成连续视频。
+   * @param projectName - 项目名称
+   * @param episode - 剧集编号
+   * @param segmentIds - 分镜 ID 列表
+   * @param prompt - 视频生成 prompt
+   * @param durationSeconds - 时长（秒）
+   * @param aspectRatio - 宽高比
+   */
+  static async generateLongVideo(
+    projectName: string,
+    episode: number,
+    segmentIds: string[],
+    prompt: string | Record<string, unknown>,
+    durationSeconds?: number,
+    aspectRatio: string = "16:9",
+  ): Promise<{
+    success: boolean;
+    video_path: string;
+    video_uri: string | null;
+    segment_count: number;
+    reference_images_used: number;
+    message: string;
+  }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/generate/long-video`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          episode,
+          segment_ids: segmentIds,
+          prompt,
+          duration_seconds: durationSeconds,
+          aspect_ratio: aspectRatio,
+        }),
+      },
     );
   }
 }

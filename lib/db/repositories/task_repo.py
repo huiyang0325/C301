@@ -698,13 +698,11 @@ class TaskRepository(BaseRepository):
         lease_until = now_epoch + max(1.0, float(ttl))
         updated_at = utc_now()
 
-        # Fast path: renew existing lease only when we own it or it's expired.
+        # Always try to upsert: unconditionally update owner to this worker.
+        # This lets a new worker steal the lease from an old stale worker.
         update_result = await self.session.execute(
             update(WorkerLease)
-            .where(
-                WorkerLease.name == name,
-                (WorkerLease.owner_id == owner_id) | (WorkerLease.lease_until <= now_epoch),
-            )
+            .where(WorkerLease.name == name)
             .values(
                 owner_id=owner_id,
                 lease_until=lease_until,
@@ -727,9 +725,19 @@ class TaskRepository(BaseRepository):
             await self.session.commit()
             return True
         except IntegrityError:
-            # Another worker won the race to insert; treat as normal contention.
+            # Another worker won the race to insert; steal it immediately.
             await self.session.rollback()
-            return False
+            update_result2 = await self.session.execute(
+                update(WorkerLease)
+                .where(WorkerLease.name == name)
+                .values(
+                    owner_id=owner_id,
+                    lease_until=lease_until,
+                    updated_at=updated_at,
+                )
+            )
+            await self.session.commit()
+            return update_result2.rowcount > 0
 
     async def release_lease(self, *, name: str, owner_id: str) -> None:
         await self.session.execute(

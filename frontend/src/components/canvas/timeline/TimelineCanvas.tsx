@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { SegmentCard } from "./SegmentCard";
 import { GridSegmentGroup } from "./GridSegmentGroup";
 import { PreprocessingView } from "./PreprocessingView";
+import { LongVideoArrange } from "./LongVideoArrange";
 import { useScrollTarget } from "@/hooks/useScrollTarget";
 import { useAppStore } from "@/stores/app-store";
 import { useCostStore } from "@/stores/cost-store";
@@ -147,7 +148,7 @@ export function TimelineCanvas({
   const hasScript = Boolean(episodeScript);
   const showTabs = Boolean(hasDraft);
   const defaultTab = hasScript ? "timeline" : "preprocessing";
-  const [activeTab, setActiveTab] = useState<"preprocessing" | "timeline">(defaultTab);
+  const [activeTab, setActiveTab] = useState<"preprocessing" | "timeline" | "longvideo">(defaultTab);
 
   // Auto-switch to timeline when script becomes available
   useEffect(() => {
@@ -371,6 +372,20 @@ export function TimelineCanvas({
             >
               {t("timeline_tab")}
             </button>
+            <button
+              type="button"
+              onClick={() => hasScript && setActiveTab("longvideo")}
+              disabled={!hasScript}
+              className={`border-b-2 px-4 py-2 text-sm transition-colors focus-ring rounded-t ${
+                activeTab === "longvideo"
+                  ? "border-indigo-500 text-indigo-400 font-medium"
+                  : !hasScript
+                    ? "border-transparent text-gray-700 cursor-not-allowed"
+                    : "border-transparent text-gray-500 hover:text-gray-300"
+              }`}
+            >
+              {t("longvideo_tab")}
+            </button>
           </div>
         )}
 
@@ -379,6 +394,15 @@ export function TimelineCanvas({
           <PreprocessingView
             projectName={projectName}
             episode={episode}
+            contentMode={contentMode}
+          />
+        ) : activeTab === "longvideo" && episodeScript ? (
+          <LongVideoArrange
+            projectName={projectName}
+            episode={episode}
+            episodeScript={episodeScript}
+            scriptFile={scriptFile}
+            projectData={projectData}
             contentMode={contentMode}
           />
         ) : episodeScript ? (

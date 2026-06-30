@@ -98,7 +98,7 @@ if [[ "$IS_WSL" == "true" && -n "$WSL_IP" ]]; then
     cd "$SCRIPT_DIR"
 
     # WSL 中通过 cmd.exe 启动 Windows 的 pnpm
-    cmd.exe //c "cd /d C:\\Users\\Administrator\\ArcReel\\frontend && start pnpm dev --port $FRONTEND_PORT" &
+    cmd.exe //c "cd /d E:\\ArcReel\\frontend && start pnpm dev --port $FRONTEND_PORT" &
     FRONTEND_PID=$!
 else
     cd "$SCRIPT_DIR/frontend"
